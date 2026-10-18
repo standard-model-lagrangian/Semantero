@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.planner.morning</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/zsh</string>
+        <string>/Users/frederick/Visual Studio /productivity work /bin/planner-run.sh</string>
+        <string>morning</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/frederick/Visual Studio /productivity work </string>
+    <!-- Checks every 5 minutes and at login; does the day's work once, on the first check
+         after 4am while online, then exits immediately on every later check. -->
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StartInterval</key>
+    <integer>300</integer>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/Users/frederick/Visual Studio /productivity work /logs/morning.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/frederick/Visual Studio /productivity work /logs/morning.log</string>
+</dict>
+</plist>

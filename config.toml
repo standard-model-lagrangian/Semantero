@@ -1,0 +1,30 @@
+vault = "~/Documents/Obsidian Vault"
+daily_folder = ""        # daily notes (YYYY-MM-DD.md) live at the vault root
+data_dir = ".planner"    # hidden from Obsidian; holds sidecars and thread registry
+reviews_folder = "Reviews"
+daily_template = "Templates/Daily.md"   # same file Obsidian's Daily Notes uses
+
+[brief]
+collapsed = true         # callout starts folded; set false to have it open
+slip_window_notes = 6    # "slipping" looks at your last N notes...
+slip_min = 3             # ...and flags work that appears in at least this many without progress
+
+[schedule]
+day_starts_hour = 4      # opening the laptop before this still counts as the previous day
+offline_grace_min = 60   # after this long offline, run anyway with the local model
+
+[models]
+extract = "groq:openai/gpt-oss-120b"   # nightly; won the Oct 2026 thread comparison
+reasoning_effort = "high"              # gpt-oss on Groq: ~9s/note vs ~4s at the default medium
+extract_fallback = "ollama:qwen3:8b"   # used if Groq fails; re-extracted with Groq on the next run
+weekly = "anthropic:claude-haiku-5-5"
+weekly_effort = "high"
+
+ollama_url = "http://localhost:11434"
+ollama_think = true      # reasoning on: ~2x slower, much better threads; fine for one note a night
+num_ctx = 8192
+num_predict = 4096       # token cap per call; stops runaway reasoning
+timeout_s = 420
+
+[extract]
+thread_window_days = 21  # threads seen this recently are offered for reuse

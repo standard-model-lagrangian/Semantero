@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.planner.weekly</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/zsh</string>
+        <string>/Users/frederick/Visual Studio /productivity work /bin/planner-run.sh</string>
+        <string>weekly</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/frederick/Visual Studio /productivity work </string>
+    <!-- Sundays 21:00, after most done sections are written. If asleep, runs on wake; a Monday catch-up still reviews the week just gone. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Weekday</key>
+        <integer>0</integer>
+        <key>Hour</key>
+        <integer>21</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/Users/frederick/Visual Studio /productivity work /logs/weekly.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/frederick/Visual Studio /productivity work /logs/weekly.log</string>
+</dict>
+</plist>
