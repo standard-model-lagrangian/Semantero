@@ -16,6 +16,8 @@ from pathlib import Path
 from .config import ROOT
 from .llm import OPENAI_COMPAT, SECRETS, LLMError, list_models
 
+from .vault import future_notes, logical_today
+
 REBUILD = 'cd "{root}" && rm -rf .venv && python3 -m venv .venv && .venv/bin/pip install anthropic'
 JOBS = ["com.planner.morning", "com.planner.weekly"]
 
@@ -47,6 +49,15 @@ def check_vault_access(cfg) -> Result | None:
         return Result("vault access", False,
                       "macOS is blocking the planner from your vault. In System Settings → Privacy & Security → "
                       "Files and Folders (or Full Disk Access), allow python3 / zsh, then run `planner doctor`.")
+    return None
+
+
+def check_future_notes(cfg, today: date) -> Result | None:
+    bad = future_notes(cfg.daily_dir, today)
+    if bad:
+        names = ", ".join(p.name for p in bad)
+        return Result("future notes", False,
+                      f"{names} is dated in the future, so it's skipped. Rename it to the day it belongs to.")
     return None
 
 
@@ -167,9 +178,10 @@ def check_recent_fallbacks(cfg, sides: list[dict], today: date) -> Result | None
 
 
 def run(cfg, sides: list[dict], online: bool, today: date | None = None) -> list[Result]:
-    today = today or date.today()
+    today = today or logical_today()
     checks = [
         ("vault access", lambda: check_vault_access(cfg)),
+        ("future notes", lambda: check_future_notes(cfg, today)),
         ("secrets.toml", lambda: check_secrets_mode(cfg)),
         ("launchd jobs", lambda: check_jobs(cfg)),
         ("python env", lambda: check_python(cfg)),

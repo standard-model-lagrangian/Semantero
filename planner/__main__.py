@@ -1,8 +1,10 @@
 import argparse
 import json
 import socket
+import subprocess
 import sys
 import time
+import urllib.parse
 from collections import Counter
 from datetime import date, datetime, timedelta
 
@@ -35,8 +37,15 @@ def cmd_backfill(cfg, args):
     if args.think:
         cfg.models["ollama_think"] = True
     for d, path in notes:
-        # The brief is our own output; the model must never read it as part of your plan.
-        note = brief.BLOCK_RE.sub("", path.read_text()).lstrip("\n")
+        # Check if this note has y: lines whose previous day note does not exist
+        _, y_lines = vault.split_yesterday(path.read_text())
+        if y_lines:
+            prev_d = d - timedelta(days=1)
+            prev_p = path.with_name(f"{prev_d.isoformat()}.md")
+            if not prev_p.exists():
+                print(f"y: lines in {d.isoformat()} have no note for {prev_d.isoformat()}; ignored", flush=True)
+
+        note = vault.note_text(path).lstrip("\n")
         if vault.is_blank(note, template):
             continue  # just the brief and/or empty template: a day you didn't write
 
@@ -140,7 +149,7 @@ def cmd_models(cfg, args):
 
 def cmd_brief(cfg, args):
     """Dry run by default: print the brief and where it would go. --write puts it in the note."""
-    day = date.fromisoformat(args.date) if args.date else date.today()
+    day = date.fromisoformat(args.date) if args.date else vault.logical_today(cfg.schedule.get("day_starts_hour", 4))
     st = stats.compute(day, load_sides(cfg.data_dir), cfg.daily_dir,
                        cfg.brief.get("slip_window_notes", 6), cfg.brief.get("slip_min", 3))
     block = brief.render(st, brief.week_focus(cfg.reviews_dir), cfg.brief.get("collapsed", True),
@@ -188,7 +197,7 @@ def cmd_nightly(cfg, args):
 def cmd_weekly(cfg, args):
     """Review the week ending last Sunday. Never overwrites an existing review (it holds your answers)."""
     print(f"=== weekly {datetime.now():%Y-%m-%d %H:%M}", flush=True)
-    end = date.fromisoformat(args.week_ending) if args.week_ending else weekly.week_ending(date.today())
+    end = date.fromisoformat(args.week_ending) if args.week_ending else weekly.week_ending(vault.logical_today(cfg.schedule.get("day_starts_hour", 4)))
     path = weekly.review_path(cfg.reviews_dir, end)
     if path.exists() and not args.force:
         print(f"{path.name} already exists; leaving it (and your answers) alone. Use --force to redo it.")
@@ -235,6 +244,111 @@ def online(model_spec: str) -> bool:
         return False
 
 
+def show_reminder(cfg, day: date) -> None:
+    vault_name = urllib.parse.quote(cfg.vault.name)
+    file_name = urllib.parse.quote(day.isoformat())
+    obsidian_uri = f"obsidian://open?vault={vault_name}&file={file_name}"
+    msg = "One line on what got done today, even 'nothing'."
+    osa = (
+        f'display dialog "{msg}" '
+        f'buttons {{"Later", "Open note"}} default button "Open note" giving up after 300'
+    )
+    res = subprocess.run(["osascript", "-e", osa], capture_output=True, text=True)
+    if res.returncode != 0:
+        health.notify("Planner", msg)
+        print(f"osascript dialog failed ({res.stderr.strip()}); sent notification instead", flush=True)
+    elif "button returned:Open note" in res.stdout:
+        subprocess.run(["open", obsidian_uri])
+
+
+def cmd_remind(cfg, args):
+    """Show the evening reminder now, for testing."""
+    day = date.fromisoformat(args.date) if args.date else vault.logical_today(cfg.schedule.get("day_starts_hour", 4))
+    state_path = cfg.data_dir / "state.json"
+    state = load_json(state_path, {"brief_inserted": []})
+    today_note = cfg.daily_dir / f"{day.isoformat()}.md"
+    if not args.force:
+        if not today_note.exists() or stats.has_done_section(today_note):
+            print(f"{today_note.name} already has a done record (or doesn't exist); no reminder needed. Use --force to show anyway.")
+            return
+    state["last_reminded"] = day.isoformat()
+    write_json(state_path, state)
+    show_reminder(cfg, day)
+
+
+def _daytime_tick(cfg, state: dict, day: date, now: datetime) -> None:
+    sched = cfg.schedule
+    state_path = cfg.data_dir / "state.json"
+    state_dirty = False
+    today_note = cfg.daily_dir / f"{day.isoformat()}.md"
+
+    # 1. Daytime y: refresh
+    if today_note.exists():
+        _, y_lines = vault.split_yesterday(today_note.read_text())
+        if y_lines:
+            y_key = vault.sha("\n".join(y_lines))
+            refreshed = state.get("y_refreshed", {})
+            if refreshed.get("day") != day.isoformat() or refreshed.get("key") != y_key:
+                mtime = datetime.fromtimestamp(today_note.stat().st_mtime)
+                if now - mtime >= timedelta(minutes=3):
+                    if online(cfg.models["extract"]):
+                        print(f"refreshing brief with y: lines from {today_note.name}", flush=True)
+                        bf = argparse.Namespace(force=False, limit=None, only=None, think=False)
+                        try:
+                            cmd_backfill(cfg, bf)
+                        except SystemExit as e:
+                            # Recorded below, so it isn't retried every 5 minutes; new y: lines try again.
+                            print(f"refresh extraction failed: {e}; retrying when the y: lines change", flush=True)
+                            state["y_refreshed"] = {"day": day.isoformat(), "key": y_key, "failed": True}
+                        else:
+                            # Keep this morning's ⚠ Setup lines; the refresh doesn't rerun the checks.
+                            saved = load_json(cfg.data_dir / "health.json", {})
+                            warnings = saved.get("warnings",
+                                                 [r["message"] for r in saved.get("results", []) if not r["ok"]])
+                            cmd_brief(cfg, argparse.Namespace(date=day.isoformat(), write=True, warnings=warnings))
+                            state["y_refreshed"] = {"day": day.isoformat(), "key": y_key}
+                        state_dirty = True
+
+    # 2. Evening reminder
+    remind_on = sched.get("remind", True)
+    remind_hour = sched.get("remind_hour", 21)
+    day_starts = sched.get("day_starts_hour", 4)
+    in_window = (now.hour >= remind_hour) or (now.hour < day_starts)
+    if remind_on and in_window and state.get("last_reminded") != day.isoformat():
+        if today_note.exists() and not stats.has_done_section(today_note):
+            state["last_reminded"] = day.isoformat()
+            write_json(state_path, state)
+            state_dirty = False
+            show_reminder(cfg, day)
+
+    if state_dirty:
+        write_json(state_path, state)
+
+
+def cmd_threads(cfg, args):
+    """Dry run by default: print Threads.md content. --write puts it in the vault."""
+    day = date.fromisoformat(args.date) if args.date else vault.logical_today(cfg.schedule.get("day_starts_hour", 4))
+    block = threads.render_dashboard(load_sides(cfg.data_dir), day, cfg)
+    threads_path = cfg.vault / cfg.threads.get("file", "Threads.md")
+    curr_threads = threads_path.read_text() if threads_path.exists() else None
+    new_threads = threads.upsert_threads(curr_threads, block)
+    if not args.write:
+        print(block)
+        if new_threads is None:
+            print(f"[dry run] would skip {threads_path.name}: markers removed")
+        else:
+            action = "create" if curr_threads is None else "replace"
+            print(f"[dry run] would {action} {threads_path.name}")
+        return
+    if new_threads is None:
+        print(f"skip {threads_path.name}: markers removed, leaving it alone")
+    elif new_threads != curr_threads:
+        brief.write_atomic(threads_path, new_threads)
+        print(f"wrote {threads_path.name}")
+    else:
+        print(f"{threads_path.name} unchanged")
+
+
 def cmd_morning(cfg, args):
     """Run once per day, on the first check after you open the laptop and are online.
 
@@ -243,10 +357,11 @@ def cmd_morning(cfg, args):
     """
     sched = cfg.schedule
     now = datetime.now()
-    day = (now - timedelta(hours=sched.get("day_starts_hour", 4))).date()
+    day = vault.logical_today(sched.get("day_starts_hour", 4), now)
     state_path = cfg.data_dir / "state.json"
     state = load_json(state_path, {"brief_inserted": []})
     if state.get("last_morning") == day.isoformat() and not args.force:
+        _daytime_tick(cfg, state, day, now)
         return
 
     is_online = online(cfg.models["extract"])
@@ -293,9 +408,10 @@ def cmd_morning(cfg, args):
         warnings.append(f"Couldn't extract your latest notes ({str(e)[:140]}); this brief uses older data.")
 
     results = health.run(cfg, load_sides(cfg.data_dir), is_online, today=day)
-    write_json(cfg.data_dir / "health.json", {"checked": now.isoformat(timespec="minutes"),
-                                              "results": [r.__dict__ for r in results]})
     warnings += [r.message for r in results if not r.ok]
+    # Daytime brief refreshes reuse these warnings.
+    write_json(cfg.data_dir / "health.json", {"checked": now.isoformat(timespec="minutes"),
+                                              "results": [r.__dict__ for r in results], "warnings": warnings})
     for w in warnings:
         print(f"warning: {w}", flush=True)
     try:
@@ -303,6 +419,18 @@ def cmd_morning(cfg, args):
     except PermissionError as e:
         health.notify("Planner", f"Couldn't write today's brief: {e}")
         raise
+
+    # Write Threads.md
+    threads_path = cfg.vault / cfg.threads.get("file", "Threads.md")
+    threads_block = threads.render_dashboard(load_sides(cfg.data_dir), day, cfg)
+    curr_threads = threads_path.read_text() if threads_path.exists() else None
+    new_threads = threads.upsert_threads(curr_threads, threads_block)
+    if new_threads is None:
+        print(f"skip {threads_path.name}: markers removed, leaving it alone", flush=True)
+    elif new_threads != curr_threads:
+        brief.write_atomic(threads_path, new_threads)
+        print(f"wrote {threads_path.name}", flush=True)
+
     state = load_json(state_path, {"brief_inserted": []})  # cmd_brief updated it
     state["last_morning"] = day.isoformat()
     state.pop("offline_since", None)
@@ -325,7 +453,7 @@ def cmd_doctor(cfg, args):
 def cmd_prompt(cfg, args):
     d = date.fromisoformat(args.date)
     path = cfg.daily_dir / f"{args.date}.md"
-    print(f"# system ({PROMPT_VERSION})\n{PROMPT}\n# user\n{user_message(d, path.read_text(), [])}")
+    print(f"# system ({PROMPT_VERSION})\n{PROMPT}\n# user\n{user_message(d, vault.note_text(path), [])}")
 
 
 def main():
@@ -355,6 +483,12 @@ def main():
     wk.add_argument("--dry-run", action="store_true", help="call the model and print the review; write nothing")
     wk.add_argument("--show-input", action="store_true", help="print what the model would read; no model call")
     wk.add_argument("--force", action="store_true", help="overwrite an existing review (loses your answers)")
+    th = sub.add_parser("threads", help="show Threads.md (dry run); --write updates the file")
+    th.add_argument("--date", help="dashboard as of this date (YYYY-MM-DD)")
+    th.add_argument("--write", action="store_true", help="write to Threads.md in the vault")
+    rm = sub.add_parser("remind", help="show evening reminder dialog (for testing)")
+    rm.add_argument("--date", help="date for reminder (YYYY-MM-DD)")
+    rm.add_argument("--force", action="store_true", help="show even if note has done section or already reminded")
     c = sub.add_parser("compare", help="compare thread assignments between two data folders")
     c.add_argument("dirs", nargs="+", help="data folders, e.g. .planner .planner-groq")
     c.add_argument("--summary", action="store_true", help="metrics only")
@@ -369,7 +503,7 @@ def main():
         cfg.data_dir = cfg.vault / args.data
     cmds = {"backfill": cmd_backfill, "show": cmd_show, "prompt": cmd_prompt, "compare": cmd_compare, "models": cmd_models,
             "brief": cmd_brief, "nightly": cmd_nightly, "weekly": cmd_weekly,
-            "morning": cmd_morning, "doctor": cmd_doctor}
+            "morning": cmd_morning, "doctor": cmd_doctor, "threads": cmd_threads, "remind": cmd_remind}
     try:
         cmds[args.cmd](cfg, args)
     except LLMError as e:

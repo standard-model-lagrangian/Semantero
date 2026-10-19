@@ -5,10 +5,8 @@ from datetime import date
 from pathlib import Path
 
 from .stats import WORK, Stats
+from .vault import BLOCK_RE, END, START
 
-START = "%% planner:start %%"
-END = "%% planner:end %%"
-BLOCK_RE = re.compile(re.escape(START) + r".*?" + re.escape(END) + r"\n?", re.S)
 FRONTMATTER_RE = re.compile(r"\A---\n.*?\n---\n", re.S)
 MAX_ITEMS = 4
 
@@ -47,8 +45,12 @@ def render(st: Stats, focus: list[str], collapsed: bool = True, warnings: list[s
         lines.append("> No earlier notes yet.")
     else:
         if st.carried:
-            items = " · ".join(_short(it["text"], 50) + (" (partial)" if it["status"] == "partial" else "")
-                               for it in st.carried[:MAX_ITEMS])
+            items = " · ".join(
+                _short(it["text"], 50)
+                + (f" (+{it['extra']})" if it.get("extra") else "")
+                + (" (partial)" if it["status"] == "partial" else "")
+                for it in st.carried[:MAX_ITEMS]
+            )
             more = f" · +{len(st.carried) - MAX_ITEMS} more" if len(st.carried) > MAX_ITEMS else ""
             if st.prev_has_done:
                 lines.append(f"> **Carried over** from {_day(st.prev_date)}: {items}{more}")

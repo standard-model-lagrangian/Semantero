@@ -12,6 +12,14 @@ slip_min = 3             # ...and flags work that appears in at least this many 
 [schedule]
 day_starts_hour = 4      # opening the laptop before this still counts as the previous day
 offline_grace_min = 60   # after this long offline, run anyway with the local model
+remind = true
+remind_hour = 21
+
+[threads]
+file = "Threads.md"
+active_days = 14
+quiet_days = 60
+lines_per_thread = 6
 
 [models]
 extract = "groq:openai/gpt-oss-120b"   # nightly; won the Oct 2026 thread comparison

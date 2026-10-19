@@ -5,18 +5,21 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from pathlib import Path
 
+from .vault import note_text
+
 WORK = ("A", "B", "C")
 PROGRESS = ("done", "partial")
 # A "done" heading on its own line, the end-of-day section from the template.
-DONE_HEADING = re.compile(r"^\s*#*\s*done\s*:?\s*$", re.I)
-SECTION_HEADING = re.compile(r"^\s*#*\s*(flow|type [abc]|done)\s*:?\s*$", re.I)
+DONE_HEADING = re.compile(r"^\s*#*\s*(?:status/)?done\s*:?\s*$", re.I)
+SECTION_HEADING = re.compile(r"^\s*#*\s*(flow|type [abc]|(?:status/)?done|thoughts?)\s*:?\s*$", re.I)
 
 
 def has_done_section(note_path: Path) -> bool:
     """A done heading with at least one non-empty line under it (the template's empty one doesn't count)."""
     if not note_path.exists():
         return False
-    lines = note_path.read_text().splitlines()
+    text = note_text(note_path)
+    lines = text.splitlines()
     for i, ln in enumerate(lines):
         if DONE_HEADING.match(ln):
             for nxt in lines[i + 1:]:
@@ -61,12 +64,31 @@ def compute(day: date, sides: list[dict], daily_dir: Path, slip_window_notes: in
     prev = before[-1]
     st.prev_date = prev["date"]
     st.prev_has_done = has_done_section(daily_dir / f"{prev['date']}.md")
+    raw_carried = []
     for it in prev["items"]:
         if it["kind"] != "task" or it["type"] not in WORK or not it["planned"]:
             continue
         # Without a done section, "unknown" means no record, not "not done"; the brief labels it so.
         if it["status"] != "done":
-            st.carried.append(it)
+            raw_carried.append(it)
+
+    grouped_carried: list[dict] = []
+    thread_indices: dict[str, int] = {}
+    for it in raw_carried:
+        tid = it.get("thread")
+        if tid:
+            if tid not in thread_indices:
+                thread_indices[tid] = len(grouped_carried)
+                grouped_carried.append({**it, "extra": 0})
+            else:
+                idx = thread_indices[tid]
+                entry = grouped_carried[idx]
+                entry["extra"] += 1
+                if it["status"] == "partial":
+                    entry["status"] = "partial"
+        else:
+            grouped_carried.append(it)
+    st.carried = grouped_carried
 
     # Slipping: work that keeps reappearing across your recent notes without progress.
     window = before[-slip_window_notes:]

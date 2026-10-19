@@ -115,10 +115,14 @@ def _extract(day: date, note: str, threads: list[dict], models_cfg: dict) -> dic
     for attempt in range(3):
         try:
             raw, thought = _call(msg, models_cfg)
-        except LLMError:
+        except LLMError as e:
             # Hosted JSON modes fail intermittently (e.g. Groq json_validate_failed); try again.
             if attempt == 2:
                 raise
+            if "json_validate_failed" in str(e) and models_cfg.get("reasoning_effort") == "high":
+                # gpt-oss at high effort returns an empty answer on some longer notes; medium gets through.
+                print("   JSON validation failed at reasoning_effort high; retrying at medium", flush=True)
+                models_cfg = {**models_cfg, "reasoning_effort": "medium"}
             continue
         parsed = normalize(raw)
         # Hosted models occasionally answer with an empty list; a note with text is never empty.

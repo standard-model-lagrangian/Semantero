@@ -8,6 +8,7 @@ from . import brief, fixes
 from .config import ROOT
 from .extract import thread_id
 from .stats import PROGRESS, WORK, has_done_section
+from .vault import note_text
 
 PROMPT = (ROOT / "prompts" / "weekly.md").read_text()
 HISTORY_WEEKS = 4
@@ -60,7 +61,7 @@ def digest(end: date, sides: list[dict], daily_dir: Path, reviews_dir: Path) -> 
     for s in hist:
         if not in_week(s["date"]):
             continue
-        raw = brief.BLOCK_RE.sub("", (daily_dir / f"{s['date']}.md").read_text()).strip()
+        raw = note_text(daily_dir / f"{s['date']}.md").strip()
         done = "has a done section" if has_done_section(daily_dir / f"{s['date']}.md") else "no done section"
         out.append(f"### {_day(s['date'])} ({done})\n```\n{raw}\n```\n")
     if not any(in_week(s["date"]) for s in hist):

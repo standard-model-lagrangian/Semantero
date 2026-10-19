@@ -16,6 +16,7 @@ class Config:
     reviews_dir: Path
     daily_template: Path
     schedule: dict
+    threads: dict
 
 
 def load(path: Path = ROOT / "config.toml") -> Config:
@@ -31,4 +32,5 @@ def load(path: Path = ROOT / "config.toml") -> Config:
         reviews_dir=vault / raw.get("reviews_folder", "Reviews"),
         daily_template=vault / raw.get("daily_template", "Templates/Daily.md"),
         schedule=raw.get("schedule", {}),
+        threads=raw.get("threads", {}),
     )
