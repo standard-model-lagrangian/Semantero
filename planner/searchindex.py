@@ -172,7 +172,7 @@ def build_index(cfg, full: bool = False, limit: int | None = None, embed_fn=None
                 abstract_text = f"{p.title}\n\n{p.abstract}"
                 sha = hashlib.sha256(abstract_text.encode("utf-8")).hexdigest()
                 paper_abstract_info.append((p.key, p.title, sha))
-                if sha not in cached_abstracts:
+                if sha not in cached_abstracts and sha not in pending_abstract_shas:
                     pending_embed_texts.append(abstract_text)
                     pending_abstract_shas.append(sha)
             else:

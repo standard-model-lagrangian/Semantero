@@ -112,8 +112,19 @@ async function main() {
   if (!keywordOnly && fs.existsSync(vectorsPath)) {
     const buf = fs.readFileSync(vectorsPath);
     const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
-    const totalRows = Math.floor(ab.byteLength / (dims * 4));
-    vectors = loadVectors(ab, totalRows, dims);
+    const rowRefs = new Set<number>();
+    for (const p of papers) {
+      if (p.abstractRow !== null && p.abstractRow !== undefined) {
+        rowRefs.add(p.abstractRow);
+      }
+    }
+    for (const c of chunks) {
+      if ((c as any).row !== null && (c as any).row !== undefined) {
+        rowRefs.add((c as any).row);
+      }
+    }
+    const expectedRows = rowRefs.size;
+    vectors = loadVectors(ab, expectedRows, dims);
 
     // Warm-up Ollama
     try {
@@ -146,22 +157,29 @@ async function main() {
   interface EvalResult {
     query: QueryEntry;
     rank: number; // 1-based, 0 if not found
-    latencyMs: number;
     topTitles: string[];
+    expectedPaperIdx: number;
     winningKind?: "abstract" | "chunk";
+    winningPage?: number;
   }
 
   const results: EvalResult[] = [];
-  const latencies: number[] = [];
+  const keywordLatencies: number[] = [];
+  const semanticLatencies: number[] = [];
 
   for (const q of queries) {
-    const t0 = performance.now();
+    const tKw0 = performance.now();
     const keywordRes = bm25.search(q.text);
-    const keywordList = keywordRes.map((r) => r.paperIndex);
+    const tKw1 = performance.now();
+    keywordLatencies.push(tKw1 - tKw0);
 
+    const keywordList = keywordRes.map((r) => r.paperIndex);
     let finalList: number[] = keywordList;
 
+    const semanticMap = new Map<number, { score: number; winningRow?: number; isAbstract?: boolean }>();
+
     if (!keywordOnly && vectors) {
+      const tSem0 = performance.now();
       try {
         const queryVec = await embedQuery(
           async (params) => {
@@ -183,11 +201,18 @@ async function main() {
           rowScores.set(m.row, m.score);
         }
 
-        const semanticList: { paperIndex: number; score: number }[] = [];
+        const semanticList: { paperIndex: number; score: number; winningRow?: number; isAbstract?: boolean }[] = [];
         for (let pIdx = 0; pIdx < papers.length; pIdx++) {
           const scored = scorePaperSemantic(paperRowRefs[pIdx], rowScores);
           if (scored.score > 0) {
-            semanticList.push({ paperIndex: pIdx, score: scored.score });
+            const item = {
+              paperIndex: pIdx,
+              score: scored.score,
+              winningRow: scored.winningRow ?? undefined,
+              isAbstract: scored.isAbstract,
+            };
+            semanticList.push(item);
+            semanticMap.set(pIdx, item);
           }
         }
         semanticList.sort((a, b) => b.score - a.score);
@@ -197,10 +222,9 @@ async function main() {
       } catch (e) {
         // fallback to keyword
       }
+      const tSem1 = performance.now();
+      semanticLatencies.push(tSem1 - tSem0);
     }
-
-    const elapsed = performance.now() - t0;
-    latencies.push(elapsed);
 
     // Find rank of expected papers
     let bestRank = 0;
@@ -213,13 +237,58 @@ async function main() {
       }
     }
 
+    // Find expected paper index in dataset
+    let expPaperIdx = -1;
+    for (let i = 0; i < papers.length; i++) {
+      if (q.expect.includes(papers[i].citekey)) {
+        expPaperIdx = i;
+        break;
+      }
+    }
+
+    let winningKind: "abstract" | "chunk" | undefined = undefined;
+    let winningPage: number | undefined = undefined;
+
+    if (expPaperIdx >= 0) {
+      if (!keywordOnly && vectors) {
+        const sem = semanticMap.get(expPaperIdx);
+        if (sem) {
+          if (!sem.isAbstract && sem.winningRow !== undefined) {
+            winningKind = "chunk";
+            const c = chunks.find((ch: any) => ch.row === sem.winningRow);
+            winningPage = c?.page;
+          } else {
+            winningKind = "abstract";
+          }
+        } else {
+          const km = keywordRes.find((k) => k.paperIndex === expPaperIdx);
+          if (km && km.bestChunkScore > km.metadataScore && km.bestChunkIndex !== undefined) {
+            winningKind = "chunk";
+            winningPage = chunks[km.bestChunkIndex]?.page;
+          } else {
+            winningKind = "abstract";
+          }
+        }
+      } else {
+        const km = keywordRes.find((k) => k.paperIndex === expPaperIdx);
+        if (km && km.bestChunkScore > km.metadataScore && km.bestChunkIndex !== undefined) {
+          winningKind = "chunk";
+          winningPage = chunks[km.bestChunkIndex]?.page;
+        } else {
+          winningKind = "abstract";
+        }
+      }
+    }
+
     const topTitles = finalList.slice(0, 3).map((idx) => papers[idx]?.title || "Unknown");
 
     results.push({
       query: q,
       rank: bestRank,
-      latencyMs: elapsed,
       topTitles,
+      expectedPaperIdx: expPaperIdx,
+      winningKind,
+      winningPage,
     });
   }
 
@@ -258,7 +327,10 @@ async function main() {
   }
 
   console.log("---------------------------------------------------------------");
-  console.log(`Latency p50: ${percentile(latencies, 50).toFixed(1)} ms, p95: ${percentile(latencies, 95).toFixed(1)} ms`);
+  console.log(`Keyword latency:        p50: ${percentile(keywordLatencies, 50).toFixed(1)} ms, p95: ${percentile(keywordLatencies, 95).toFixed(1)} ms`);
+  if (!keywordOnly && semanticLatencies.length > 0) {
+    console.log(`Semantic latency (warm): p50: ${percentile(semanticLatencies, 50).toFixed(1)} ms, p95: ${percentile(semanticLatencies, 95).toFixed(1)} ms`);
+  }
   console.log("---------------------------------------------------------------");
 
   // Print misses (expected paper not at rank 1)
@@ -267,9 +339,17 @@ async function main() {
     console.log(`Misses (${misses.length}/${results.length}):`);
     for (const m of misses) {
       const rankStr = m.rank > 0 ? `#${m.rank}` : "not in top results";
+      let sourceStr = "";
+      if (m.expectedPaperIdx < 0) {
+        sourceStr = " (not in index)";
+      } else if (m.winningKind === "chunk") {
+        sourceStr = ` (winning row: chunk, p. ${m.winningPage ?? "?"})`;
+      } else if (m.winningKind === "abstract") {
+        sourceStr = " (winning row: abstract)";
+      }
       console.log(`- Query: "${m.query.text}" (${m.query.kind})`);
-      console.log(`  Expected: ${m.query.expect.join(", ")} → Rank: ${rankStr}`);
-      console.log(`  Top titles: ${m.topTitles.slice(0, 2).join(" | ")}`);
+      console.log(`  Expected: ${m.query.expect.join(", ")} → Rank: ${rankStr}${sourceStr}`);
+      console.log(`  Top-3 titles: ${m.topTitles.join(" | ")}`);
     }
   } else {
     console.log("All queries retrieved expected paper at rank 1!");

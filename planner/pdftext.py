@@ -23,7 +23,7 @@ class Chunk:
 def clean_page_text(text: str) -> str:
     """Dehyphenate across lines and normalize whitespace."""
     # Join words hyphenated across line breaks: viscoelas-\nticity -> viscoelasticity
-    text = re.sub(r"(\b[a-zA-Z]+)-\r?\n([a-zA-Z]+\b)", r"\1\2", text)
+    text = re.sub(r"(\b[a-zA-Z]+)-[ \t]*\r?\n[ \t]*([a-zA-Z]+\b)", r"\1\2", text)
     # Collapse intra-line whitespace
     lines = [re.sub(r"[ \t]+", " ", line).strip() for line in text.splitlines()]
     return "\n".join(lines).strip()
@@ -86,7 +86,8 @@ def clean_document_pages(raw_pages: list[str]) -> list[tuple[int, str]]:
         page_text = " ".join(kept_lines)
         # Collapse multiple spaces
         page_text = re.sub(r"\s+", " ", page_text).strip()
-        cleaned_after_refs.append((page_num, page_text))
+        if page_text:
+            cleaned_after_refs.append((page_num, page_text))
 
     # 4. Merge short pages (< 40 words) forward into the next page
     merged_pages: list[tuple[int, str]] = []

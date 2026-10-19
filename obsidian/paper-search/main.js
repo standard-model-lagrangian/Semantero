@@ -210,7 +210,9 @@ function tokenize(text) {
       tokens.push(part);
     }
   }
-  const lastIncomplete = !/\s$/.test(text) && tokens.length > 0;
+  const hasTrailingSpace = /\s$/.test(text);
+  const lastRaw = rawParts.length > 0 ? rawParts[rawParts.length - 1] : "";
+  const lastIncomplete = !hasTrailingSpace && tokens.length > 0 && tokens[tokens.length - 1] === lastRaw;
   return { tokens, lastIncomplete };
 }
 function splitSentences(text) {
@@ -268,6 +270,18 @@ function bestSnippet(text, queryTokens, maxLen = 160) {
   if (end > bestSent.length) {
     end = bestSent.length;
     start = Math.max(0, end - maxLen);
+  }
+  if (start > 0) {
+    const nextSpace = bestSent.indexOf(" ", start);
+    if (nextSpace !== -1 && nextSpace < firstMatchIdx) {
+      start = nextSpace + 1;
+    }
+  }
+  if (end < bestSent.length) {
+    const prevSpace = bestSent.lastIndexOf(" ", end);
+    if (prevSpace !== -1 && prevSpace > start) {
+      end = prevSpace;
+    }
   }
   let snippet = bestSent.slice(start, end).trim();
   if (start > 0) {
@@ -460,6 +474,7 @@ var BM25Index = class {
     const bestChunkPerPaper = /* @__PURE__ */ new Map();
     for (let cIdx = 0; cIdx < this.chunks.length; cIdx++) {
       const s = chunkScores[cIdx];
+      if (s <= 0) continue;
       const pIdx = this.chunks[cIdx].paper;
       const cur = bestChunkPerPaper.get(pIdx);
       if (!cur || s > cur.score) {
@@ -469,8 +484,8 @@ var BM25Index = class {
     const results = [];
     for (let pIdx = 0; pIdx < this.papers.length; pIdx++) {
       const mScore = paperScores[pIdx];
-      const bestChunk = bestChunkPerPaper.get(pIdx) || { score: 0, chunkIdx: -1 };
-      const cScore = bestChunk.score;
+      const bestChunk = bestChunkPerPaper.get(pIdx);
+      const cScore = bestChunk ? bestChunk.score : 0;
       const finalScore = Math.max(mScore, cScore);
       if (finalScore > 0) {
         results.push({
@@ -478,7 +493,7 @@ var BM25Index = class {
           score: finalScore,
           metadataScore: mScore,
           bestChunkScore: cScore,
-          bestChunkIndex: bestChunk.chunkIdx >= 0 ? bestChunk.chunkIdx : void 0
+          bestChunkIndex: bestChunk && cScore > 0 ? bestChunk.chunkIdx : void 0
         });
       }
     }
@@ -529,9 +544,9 @@ function topK(queryVec, allVectors, rows, dims, k) {
 }
 
 // src/rank.ts
-function shouldRunSemantic(query) {
+function shouldRunSemantic(query, minChars = 12) {
   const trimmed = query.trim();
-  if (trimmed.length >= 12) {
+  if (trimmed.length >= minChars) {
     return true;
   }
   const { tokens, lastIncomplete } = tokenize(query);
@@ -708,11 +723,33 @@ var PaperSearchPlugin = class extends import_obsidian.Plugin {
       if (await adapter.exists(vectorsPath)) {
         const vecBuf = await adapter.readBinary(vectorsPath);
         const dims = manifest.dims;
-        const totalRows = Math.floor(vecBuf.byteLength / (dims * 4));
-        try {
-          vectors = loadVectors(vecBuf, totalRows, dims);
-        } catch (e) {
-          new import_obsidian.Notice(`Paper search index vector mismatch: ${e.message}`);
+        const rowRefs = /* @__PURE__ */ new Set();
+        for (const p of papers) {
+          if (p.abstractRow !== null && p.abstractRow !== void 0) {
+            rowRefs.add(p.abstractRow);
+          }
+        }
+        for (const c of chunks) {
+          if (c.row !== null && c.row !== void 0) {
+            rowRefs.add(c.row);
+          }
+        }
+        const expectedRows = rowRefs.size;
+        let rowsValid = true;
+        for (const r of rowRefs) {
+          if (r < 0 || r >= expectedRows) {
+            rowsValid = false;
+            break;
+          }
+        }
+        if (!rowsValid) {
+          new import_obsidian.Notice("Paper search index error: row references are out of range.");
+        } else {
+          try {
+            vectors = loadVectors(vecBuf, expectedRows, dims);
+          } catch (e) {
+            new import_obsidian.Notice(`Paper search index vector mismatch: ${e.message}`);
+          }
         }
       }
       this.bm25 = new BM25Index(papers, chunks);
@@ -815,7 +852,8 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
       let page;
       let isAbstract = true;
       let attKey;
-      if (match?.bestChunkIndex !== void 0) {
+      const chunkWon = (match?.bestChunkScore || 0) > (match?.metadataScore || 0) && match?.bestChunkIndex !== void 0;
+      if (chunkWon) {
         const c = this.plugin.indexData.chunks[match.bestChunkIndex];
         snippet = bestSnippet(c.text, queryTokens).text;
         page = c.page;
@@ -823,6 +861,9 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
         attKey = c.attachmentKey;
       } else if (paper.abstract) {
         snippet = bestSnippet(paper.abstract, queryTokens).text;
+        isAbstract = true;
+      } else {
+        snippet = bestSnippet(paper.title, queryTokens).text;
         isAbstract = true;
       }
       items.push({
@@ -844,7 +885,7 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
       clearTimeout(this.debounceTimer);
       this.debounceTimer = null;
     }
-    if (!shouldRunSemantic(query) || !this.plugin.indexData?.vectors) {
+    if (!shouldRunSemantic(query, this.plugin.settings.minCharsSemantic) || !this.plugin.indexData?.vectors) {
       return;
     }
     const { seq } = this.coordinator.newRequest();
@@ -897,23 +938,46 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
       ]);
       const queryTokens = tokenize(query).tokens;
       const newItems = [];
+      const keywordRes = this.plugin.bm25?.search(query) || [];
       for (const m of merged.slice(0, this.plugin.settings.limit)) {
         const paper = this.plugin.indexData.papers[m.paperIndex];
         const semInfo = semanticList.find((s) => s.paperIndex === m.paperIndex);
         let snippet = "";
         let page;
-        let isAbstract = semInfo?.isAbstract ?? true;
+        let isAbstract = true;
         let attKey;
-        if (semInfo?.winningRow !== void 0 && !isAbstract) {
-          const c = this.plugin.indexData.chunks.find((ch) => ch.row === semInfo.winningRow);
-          if (c) {
+        if (semInfo) {
+          if (!semInfo.isAbstract && semInfo.winningRow !== void 0) {
+            const c = this.plugin.indexData.chunks.find((ch) => ch.row === semInfo.winningRow);
+            if (c) {
+              snippet = bestSnippet(c.text, queryTokens).text;
+              page = c.page;
+              attKey = c.attachmentKey;
+              isAbstract = false;
+            }
+          } else if (paper.abstract) {
+            snippet = bestSnippet(paper.abstract, queryTokens).text;
+            isAbstract = true;
+          } else {
+            snippet = bestSnippet(paper.title, queryTokens).text;
+            isAbstract = true;
+          }
+        } else {
+          const kMatch = keywordRes.find((k) => k.paperIndex === m.paperIndex);
+          const chunkWon = (kMatch?.bestChunkScore || 0) > (kMatch?.metadataScore || 0) && kMatch?.bestChunkIndex !== void 0;
+          if (chunkWon) {
+            const c = this.plugin.indexData.chunks[kMatch.bestChunkIndex];
             snippet = bestSnippet(c.text, queryTokens).text;
             page = c.page;
+            isAbstract = false;
             attKey = c.attachmentKey;
+          } else if (paper.abstract) {
+            snippet = bestSnippet(paper.abstract, queryTokens).text;
+            isAbstract = true;
+          } else {
+            snippet = bestSnippet(paper.title, queryTokens).text;
+            isAbstract = true;
           }
-        } else if (paper.abstract) {
-          snippet = bestSnippet(paper.abstract, queryTokens).text;
-          isAbstract = true;
         }
         newItems.push({
           paperIndex: m.paperIndex,
@@ -925,7 +989,8 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
           winningAttachmentKey: attKey || paper.pdfs[0]?.attachmentKey
         });
       }
-      const prevPaperIdx = this.selectedPaperIdx;
+      const currentItem = this.getSelectedItem();
+      const prevPaperIdx = currentItem ? currentItem.paperIndex : null;
       this.currentItems = newItems;
       const newSel = maintainSelection(prevPaperIdx, newItems, this.plugin.settings.limit);
       this.chooser?.setSuggestions(newItems);
@@ -982,7 +1047,7 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
     const citekey = item.paper.citekey;
     if (!citekey) return;
     const textToInsert = `[[${citekey}]]`;
-    const activeView = this.app.workspace.getActiveViewOfType(window.tp?.obsidian?.MarkdownView || Object);
+    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian.MarkdownView);
     const editor = this.app.workspace.activeEditor?.editor || activeView?.editor;
     if (editor) {
       editor.replaceSelection(textToInsert);
@@ -995,9 +1060,9 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
     const citekey = item.paper.citekey;
     if (citekey) {
       const notePath = `${citekey}.md`;
-      const file = this.app.vault.getAbstractFileByPath(notePath);
+      const file = this.app.metadataCache?.getFirstLinkpathDest(citekey, "") || this.app.vault.getAbstractFileByPath(notePath);
       if (file) {
-        this.app.workspace.openLinkText(notePath, "", false);
+        this.app.workspace.openLinkText(file.path, "", false);
         return;
       }
     }
@@ -1026,9 +1091,21 @@ var PaperSearchSettingTab = class extends import_obsidian.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
+    new import_obsidian.Setting(containerEl).setName("Minimum Characters for Semantic Search").setDesc("Minimum characters typed before semantic search runs").addSlider(
+      (slider) => slider.setLimits(4, 30, 1).setValue(this.plugin.settings.minCharsSemantic).setDynamicTooltip().onChange(async (val) => {
+        this.plugin.settings.minCharsSemantic = val;
+        await this.plugin.saveSettings();
+      })
+    );
     new import_obsidian.Setting(containerEl).setName("Results Limit").setDesc("Maximum number of paper results to show in search modal").addSlider(
       (slider) => slider.setLimits(5, 30, 1).setValue(this.plugin.settings.limit).setDynamicTooltip().onChange(async (val) => {
         this.plugin.settings.limit = val;
+        await this.plugin.saveSettings();
+      })
+    );
+    new import_obsidian.Setting(containerEl).setName("Hotkey Hint").setDesc("Hotkey configured to open the paper search dialog").addText(
+      (text) => text.setPlaceholder("Cmd+Shift+F").setValue(this.plugin.settings.hotkeyHint).onChange(async (val) => {
+        this.plugin.settings.hotkeyHint = val.trim();
         await this.plugin.saveSettings();
       })
     );

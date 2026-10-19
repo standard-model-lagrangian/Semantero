@@ -63,6 +63,10 @@ def embed(
         parsed = json.loads(raw_resp)
         embeddings = parsed.get("embeddings", [])
         for vec in embeddings:
+            if len(vec) < dims:
+                raise ValueError(
+                    f"Model returned {len(vec)} dimensions, which is less than configured dims={dims}"
+                )
             # Truncate to dims (Matryoshka)
             if len(vec) > dims:
                 vec = vec[:dims]

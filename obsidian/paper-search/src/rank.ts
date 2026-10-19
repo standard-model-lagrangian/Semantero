@@ -12,9 +12,9 @@ export interface PaperRowRef {
   chunkRows: number[];
 }
 
-export function shouldRunSemantic(query: string): boolean {
+export function shouldRunSemantic(query: string, minChars: number = 12): boolean {
   const trimmed = query.trim();
-  if (trimmed.length >= 12) {
+  if (trimmed.length >= minChars) {
     return true;
   }
   const { tokens, lastIncomplete } = tokenize(query);

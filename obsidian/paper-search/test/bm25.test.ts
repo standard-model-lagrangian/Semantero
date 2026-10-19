@@ -108,3 +108,35 @@ test("citekey exact match ranks first", () => {
   assert.ok(results.length > 0);
   assert.strictEqual(results[0].paperIndex, 0);
 });
+
+test("zero-score chunk is not set as bestChunkIndex when only metadata matches", () => {
+  const papers: PaperMetadata[] = [
+    {
+      key: "K1",
+      citekey: "bauer2023",
+      title: "Work by Jane Bauer",
+      authors: ["Bauer"],
+      year: 2023,
+      journal: null,
+      doi: null,
+      tags: [],
+      collections: [],
+      abstract: "Abstract mentioning Bauer.",
+    },
+  ];
+  const chunks: ChunkDocument[] = [
+    {
+      paper: 0,
+      attachmentKey: "ATT1",
+      page: 1,
+      text: "Completely unrelated text without any matching words.",
+    },
+  ];
+  const index = new BM25Index(papers, chunks);
+  const results = index.search("Bauer");
+  assert.strictEqual(results.length, 1);
+  assert.strictEqual(results[0].paperIndex, 0);
+  assert.ok(results[0].metadataScore > 0);
+  assert.strictEqual(results[0].bestChunkScore, 0);
+  assert.strictEqual(results[0].bestChunkIndex, undefined);
+});

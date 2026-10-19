@@ -256,6 +256,7 @@ export class BM25Index {
     const bestChunkPerPaper = new Map<number, { score: number; chunkIdx: number }>();
     for (let cIdx = 0; cIdx < this.chunks.length; cIdx++) {
       const s = chunkScores[cIdx];
+      if (s <= 0) continue;
       const pIdx = this.chunks[cIdx].paper;
       const cur = bestChunkPerPaper.get(pIdx);
       if (!cur || s > cur.score) {
@@ -268,8 +269,8 @@ export class BM25Index {
 
     for (let pIdx = 0; pIdx < this.papers.length; pIdx++) {
       const mScore = paperScores[pIdx];
-      const bestChunk = bestChunkPerPaper.get(pIdx) || { score: 0, chunkIdx: -1 };
-      const cScore = bestChunk.score;
+      const bestChunk = bestChunkPerPaper.get(pIdx);
+      const cScore = bestChunk ? bestChunk.score : 0;
       const finalScore = Math.max(mScore, cScore);
 
       if (finalScore > 0) {
@@ -278,7 +279,7 @@ export class BM25Index {
           score: finalScore,
           metadataScore: mScore,
           bestChunkScore: cScore,
-          bestChunkIndex: bestChunk.chunkIdx >= 0 ? bestChunk.chunkIdx : undefined,
+          bestChunkIndex: bestChunk && cScore > 0 ? bestChunk.chunkIdx : undefined,
         });
       }
     }

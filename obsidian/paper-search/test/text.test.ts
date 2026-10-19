@@ -15,6 +15,10 @@ test("marks last token incomplete unless trailing space", () => {
   const complete = tokenize("stiff gel ");
   assert.deepStrictEqual(complete.tokens, ["stiff", "gel"]);
   assert.strictEqual(complete.lastIncomplete, false);
+
+  const completeWithStopword = tokenize("stiff in");
+  assert.deepStrictEqual(completeWithStopword.tokens, ["stiff"]);
+  assert.strictEqual(completeWithStopword.lastIncomplete, false);
 });
 
 test('splits sentences without breaking "et al." or "Fig. 2"', () => {

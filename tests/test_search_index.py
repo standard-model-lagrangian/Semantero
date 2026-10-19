@@ -82,6 +82,30 @@ class TestZotlib(unittest.TestCase):
             self.assertFalse((tmp_zotero / "zotero.sqlite-journal").exists())
             self.assertFalse((tmp_zotero / "zotero.sqlite-wal").exists())
 
+    def test_excludes_deleted_attachments(self):
+        import sqlite3
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_zotero = Path(tmp_dir)
+            db_path = tmp_zotero / "zotero.sqlite"
+            orig_db = FIXTURES_DIR / "zotero.sqlite"
+            db_path.write_bytes(orig_db.read_bytes())
+
+            # Mark ATT004A as deleted in deletedItems
+            conn = sqlite3.connect(db_path)
+            cur = conn.cursor()
+            cur.execute("SELECT itemID FROM items WHERE key = 'ATT004A'")
+            att_id = cur.fetchone()[0]
+            cur.execute("INSERT INTO deletedItems (itemID, dateDeleted) VALUES (?, '2026-10-18T10:00:00')", (att_id,))
+            conn.commit()
+            conn.close()
+
+            papers = zotlib.read_library(tmp_zotero)
+            by_key = {p.key: p for p in papers}
+            p4 = by_key["KEY0004"]
+            # Previously had 2 PDFs; now only 1 because ATT004A was trashed
+            self.assertEqual(len(p4.pdfs), 1)
+            self.assertEqual(p4.pdfs[0].attachmentKey, "ATT004B")
+
 
 class TestPdfText(unittest.TestCase):
     # 5. Pages split on formfeed one-based
@@ -125,6 +149,19 @@ class TestPdfText(unittest.TestCase):
         self.assertIn("discussion", page_dict[3])
         self.assertNotIn("Author et al.", page_dict[3])
         self.assertNotIn("Another paper citation", page_dict[3])
+
+    def test_short_page_before_stripped_references_stays_on_own_page(self):
+        raw = [
+            "Page one has plenty of words to avoid any merging issues here. " * 10,
+            "Page two is short conclusion text.",
+            "References\nSmith et al 2020\nJones et al 2021",
+        ]
+        res = pdftext.clean_document_pages(raw)
+        page_dict = dict(res)
+        self.assertIn(1, page_dict)
+        self.assertIn(2, page_dict)
+        self.assertNotIn(3, page_dict)
+        self.assertIn("short conclusion", page_dict[2])
 
     # 9. Chunks respect pages and overlap
     def test_chunks_respect_pages_and_overlap(self):
@@ -262,6 +299,19 @@ class TestEmbed(unittest.TestCase):
         # Compare with fixture expected values
         for a, b in zip(res[0], expected_vec):
             self.assertAlmostEqual(a, b, places=5)
+
+    @patch("urllib.request.urlopen")
+    def test_fewer_dimensions_raises_error(self, mock_urlopen):
+        import json
+        from planner import embed
+
+        resp_mock = MagicMock()
+        resp_mock.read.return_value = json.dumps({"embeddings": [[0.5] * 4]}).encode("utf-8")
+        resp_mock.__enter__.return_value = resp_mock
+        mock_urlopen.return_value = resp_mock
+
+        with self.assertRaises(ValueError):
+            embed.embed(["test text"], dims=8)
 
     # 16. Documents have no instruction
     @patch("urllib.request.urlopen")

@@ -30,7 +30,12 @@ export function tokenize(text: string): TokenizeResult {
       tokens.push(part);
     }
   }
-  const lastIncomplete = !/\s$/.test(text) && tokens.length > 0;
+  const hasTrailingSpace = /\s$/.test(text);
+  const lastRaw = rawParts.length > 0 ? rawParts[rawParts.length - 1] : "";
+  const lastIncomplete =
+    !hasTrailingSpace &&
+    tokens.length > 0 &&
+    tokens[tokens.length - 1] === lastRaw;
   return { tokens, lastIncomplete };
 }
 
@@ -118,6 +123,20 @@ export function bestSnippet(text: string, queryTokens: string[], maxLen: number 
   if (end > bestSent.length) {
     end = bestSent.length;
     start = Math.max(0, end - maxLen);
+  }
+
+  // Adjust start and end to avoid cutting words in half
+  if (start > 0) {
+    const nextSpace = bestSent.indexOf(" ", start);
+    if (nextSpace !== -1 && nextSpace < firstMatchIdx) {
+      start = nextSpace + 1;
+    }
+  }
+  if (end < bestSent.length) {
+    const prevSpace = bestSent.lastIndexOf(" ", end);
+    if (prevSpace !== -1 && prevSpace > start) {
+      end = prevSpace;
+    }
   }
 
   let snippet = bestSent.slice(start, end).trim();

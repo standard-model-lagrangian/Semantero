@@ -158,6 +158,7 @@ def read_library(zotero_dir: Path | str) -> list[Paper]:
             FROM itemAttachments a
             JOIN items i ON a.itemID = i.itemID
             WHERE a.contentType = 'application/pdf'
+              AND a.itemID NOT IN (SELECT itemID FROM deletedItems)
         """)
         pdfs_by_parent: dict[int, list[PdfAttachment]] = {}
         for att_id, att_key, parent_id, path_str in cur.fetchall():

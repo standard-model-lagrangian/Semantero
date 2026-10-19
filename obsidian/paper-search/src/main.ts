@@ -1,5 +1,6 @@
 import {
   App,
+  MarkdownView,
   Notice,
   Plugin,
   PluginSettingTab,
@@ -115,11 +116,33 @@ export default class PaperSearchPlugin extends Plugin {
       if (await adapter.exists(vectorsPath)) {
         const vecBuf = await adapter.readBinary(vectorsPath);
         const dims = manifest.dims;
-        const totalRows = Math.floor(vecBuf.byteLength / (dims * 4));
-        try {
-          vectors = loadVectors(vecBuf, totalRows, dims);
-        } catch (e: any) {
-          new Notice(`Paper search index vector mismatch: ${e.message}`);
+        const rowRefs = new Set<number>();
+        for (const p of papers) {
+          if (p.abstractRow !== null && p.abstractRow !== undefined) {
+            rowRefs.add(p.abstractRow);
+          }
+        }
+        for (const c of chunks) {
+          if (c.row !== null && c.row !== undefined) {
+            rowRefs.add(c.row);
+          }
+        }
+        const expectedRows = rowRefs.size;
+        let rowsValid = true;
+        for (const r of rowRefs) {
+          if (r < 0 || r >= expectedRows) {
+            rowsValid = false;
+            break;
+          }
+        }
+        if (!rowsValid) {
+          new Notice("Paper search index error: row references are out of range.");
+        } else {
+          try {
+            vectors = loadVectors(vecBuf, expectedRows, dims);
+          } catch (e: any) {
+            new Notice(`Paper search index vector mismatch: ${e.message}`);
+          }
         }
       }
 
@@ -246,14 +269,18 @@ class PaperSearchModal extends SuggestModal<SearchResultItem> {
       let isAbstract = true;
       let attKey: string | undefined;
 
-      if (match?.bestChunkIndex !== undefined) {
-        const c = this.plugin.indexData.chunks[match.bestChunkIndex];
+      const chunkWon = (match?.bestChunkScore || 0) > (match?.metadataScore || 0) && match?.bestChunkIndex !== undefined;
+      if (chunkWon) {
+        const c = this.plugin.indexData.chunks[match.bestChunkIndex!];
         snippet = bestSnippet(c.text, queryTokens).text;
         page = c.page;
         isAbstract = false;
         attKey = c.attachmentKey;
       } else if (paper.abstract) {
         snippet = bestSnippet(paper.abstract, queryTokens).text;
+        isAbstract = true;
+      } else {
+        snippet = bestSnippet(paper.title, queryTokens).text;
         isAbstract = true;
       }
 
@@ -282,7 +309,7 @@ class PaperSearchModal extends SuggestModal<SearchResultItem> {
       this.debounceTimer = null;
     }
 
-    if (!shouldRunSemantic(query) || !this.plugin.indexData?.vectors) {
+    if (!shouldRunSemantic(query, this.plugin.settings.minCharsSemantic) || !this.plugin.indexData?.vectors) {
       return;
     }
 
@@ -350,6 +377,7 @@ class PaperSearchModal extends SuggestModal<SearchResultItem> {
       // Build updated list
       const queryTokens = tokenize(query).tokens;
       const newItems: SearchResultItem[] = [];
+      const keywordRes = this.plugin.bm25?.search(query) || [];
 
       for (const m of merged.slice(0, this.plugin.settings.limit)) {
         const paper = this.plugin.indexData.papers[m.paperIndex];
@@ -357,19 +385,41 @@ class PaperSearchModal extends SuggestModal<SearchResultItem> {
 
         let snippet = "";
         let page: number | undefined;
-        let isAbstract = semInfo?.isAbstract ?? true;
+        let isAbstract = true;
         let attKey: string | undefined;
 
-        if (semInfo?.winningRow !== undefined && !isAbstract) {
-          const c = this.plugin.indexData.chunks.find((ch) => ch.row === semInfo.winningRow);
-          if (c) {
+        if (semInfo) {
+          if (!semInfo.isAbstract && semInfo.winningRow !== undefined) {
+            const c = this.plugin.indexData.chunks.find((ch) => ch.row === semInfo.winningRow);
+            if (c) {
+              snippet = bestSnippet(c.text, queryTokens).text;
+              page = c.page;
+              attKey = c.attachmentKey;
+              isAbstract = false;
+            }
+          } else if (paper.abstract) {
+            snippet = bestSnippet(paper.abstract, queryTokens).text;
+            isAbstract = true;
+          } else {
+            snippet = bestSnippet(paper.title, queryTokens).text;
+            isAbstract = true;
+          }
+        } else {
+          const kMatch = keywordRes.find((k) => k.paperIndex === m.paperIndex);
+          const chunkWon = (kMatch?.bestChunkScore || 0) > (kMatch?.metadataScore || 0) && kMatch?.bestChunkIndex !== undefined;
+          if (chunkWon) {
+            const c = this.plugin.indexData.chunks[kMatch.bestChunkIndex!];
             snippet = bestSnippet(c.text, queryTokens).text;
             page = c.page;
+            isAbstract = false;
             attKey = c.attachmentKey;
+          } else if (paper.abstract) {
+            snippet = bestSnippet(paper.abstract, queryTokens).text;
+            isAbstract = true;
+          } else {
+            snippet = bestSnippet(paper.title, queryTokens).text;
+            isAbstract = true;
           }
-        } else if (paper.abstract) {
-          snippet = bestSnippet(paper.abstract, queryTokens).text;
-          isAbstract = true;
         }
 
         newItems.push({
@@ -384,7 +434,8 @@ class PaperSearchModal extends SuggestModal<SearchResultItem> {
       }
 
       // Maintain selection
-      const prevPaperIdx = this.selectedPaperIdx;
+      const currentItem = this.getSelectedItem();
+      const prevPaperIdx = currentItem ? currentItem.paperIndex : null;
       this.currentItems = newItems;
 
       // Re-render suggestions without losing selection
@@ -456,7 +507,7 @@ class PaperSearchModal extends SuggestModal<SearchResultItem> {
     if (!citekey) return;
     const textToInsert = `[[${citekey}]]`;
 
-    const activeView = (this.app.workspace as any).getActiveViewOfType((window as any).tp?.obsidian?.MarkdownView || Object);
+    const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
     const editor = (this.app.workspace as any).activeEditor?.editor || activeView?.editor;
     if (editor) {
       editor.replaceSelection(textToInsert);
@@ -470,9 +521,10 @@ class PaperSearchModal extends SuggestModal<SearchResultItem> {
     const citekey = item.paper.citekey;
     if (citekey) {
       const notePath = `${citekey}.md`;
-      const file = this.app.vault.getAbstractFileByPath(notePath);
+      const file = this.app.metadataCache?.getFirstLinkpathDest(citekey, "") ||
+                   this.app.vault.getAbstractFileByPath(notePath);
       if (file) {
-        this.app.workspace.openLinkText(notePath, "", false);
+        this.app.workspace.openLinkText(file.path, "", false);
         return;
       }
     }
@@ -522,6 +574,20 @@ class PaperSearchSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName("Minimum Characters for Semantic Search")
+      .setDesc("Minimum characters typed before semantic search runs")
+      .addSlider((slider) =>
+        slider
+          .setLimits(4, 30, 1)
+          .setValue(this.plugin.settings.minCharsSemantic)
+          .setDynamicTooltip()
+          .onChange(async (val) => {
+            this.plugin.settings.minCharsSemantic = val;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
       .setName("Results Limit")
       .setDesc("Maximum number of paper results to show in search modal")
       .addSlider((slider) =>
@@ -531,6 +597,19 @@ class PaperSearchSettingTab extends PluginSettingTab {
           .setDynamicTooltip()
           .onChange(async (val) => {
             this.plugin.settings.limit = val;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Hotkey Hint")
+      .setDesc("Hotkey configured to open the paper search dialog")
+      .addText((text) =>
+        text
+          .setPlaceholder("Cmd+Shift+F")
+          .setValue(this.plugin.settings.hotkeyHint)
+          .onChange(async (val) => {
+            this.plugin.settings.hotkeyHint = val.trim();
             await this.plugin.saveSettings();
           })
       );
