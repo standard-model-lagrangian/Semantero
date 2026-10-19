@@ -112,7 +112,7 @@ async function main() {
   if (!keywordOnly && fs.existsSync(vectorsPath)) {
     const buf = fs.readFileSync(vectorsPath);
     const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
-    const totalRows = manifest.papers + manifest.chunks;
+    const totalRows = Math.floor(ab.byteLength / (dims * 4));
     vectors = loadVectors(ab, totalRows, dims);
 
     // Warm-up Ollama
@@ -176,7 +176,7 @@ async function main() {
           { url: ollamaUrl, model, instruction, query: q.text, dims }
         );
 
-        const totalRows = manifest.papers + manifest.chunks;
+        const totalRows = Math.floor(vectors.length / dims);
         const matches = topK(queryVec, vectors, totalRows, dims, 100);
         const rowScores = new Map<number, number>();
         for (const m of matches) {

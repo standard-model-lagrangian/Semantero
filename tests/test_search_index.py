@@ -600,6 +600,113 @@ class TestSearchIndex(unittest.TestCase):
         self.assertEqual(len(p5_chunks), 0)
 
 
+class TestCliAndDoctor(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.vault_dir = Path(self.tmp.name) / "vault"
+        self.vault_dir.mkdir(parents=True)
+        self.data_dir = self.vault_dir / ".planner"
+        self.data_dir.mkdir(parents=True)
+        self.template_path = self.vault_dir / "Templates" / "Daily.md"
+        self.template_path.parent.mkdir(parents=True)
+        self.template_path.write_text("Flow\n- \n\ntype A\n- \n\nstatus/done\n- \n")
+
+        from planner.config import Config
+        self.cfg = Config(
+            vault=self.vault_dir,
+            daily_dir=self.vault_dir,
+            data_dir=self.data_dir,
+            models={"extract": "mock:model"},
+            extract={"thread_window_days": 21},
+            brief={"slip_window_notes": 6, "slip_min": 3, "collapsed": True},
+            reviews_dir=self.vault_dir / "Reviews",
+            daily_template=self.template_path,
+            schedule={"day_starts_hour": 4},
+            threads={"file": "Threads.md", "active_days": 14, "quiet_days": 60, "lines_per_thread": 6},
+            search={"model": "qwen3-embedding:0.6b", "dims": 1024, "zotero_dir": str(FIXTURES_DIR)},
+        )
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    # 29. Morning search failure is a warning, not a crash
+    @patch("planner.searchindex.build_index", side_effect=RuntimeError("Search index builder failed"))
+    @patch("planner.__main__.online", return_value=True)
+    def test_morning_search_failure_is_a_warning_not_a_crash(self, mock_online, mock_build):
+        import argparse
+        from planner import __main__ as main_mod
+
+        today = (self.vault_dir / "2026-10-19.md")
+        today.write_text("Flow\n- task 1\n")
+
+        # Run cmd_morning
+        main_mod.cmd_morning(self.cfg, argparse.Namespace(force=True))
+
+        # Check brief was written
+        note_content = today.read_text()
+        self.assertIn("%% planner:start %%", note_content)
+        # Warning text appears in the note
+        self.assertIn("Search index couldn't be updated", note_content)
+
+    # 30. Doctor flags stale or mismatched index
+    def test_doctor_flags_stale_or_mismatched_index(self):
+        import json
+        from datetime import datetime, timedelta
+        from planner import health
+
+        search_dir = self.data_dir / "search"
+        search_dir.mkdir(parents=True, exist_ok=True)
+
+        # 1. Stale index: 4 days old
+        stale_date = (datetime.now() - timedelta(days=4)).strftime("%Y-%m-%dT%H:%M")
+        manifest = {
+            "format": 1,
+            "built_at": stale_date,
+            "model": "qwen3-embedding:0.6b",
+            "dims": 1024,
+            "papers": 10,
+            "chunks": 20,
+        }
+        (search_dir / "manifest.json").write_text(json.dumps(manifest))
+
+        res = health.check_search_index(self.cfg)
+        self.assertIsNotNone(res)
+        self.assertFalse(res.ok)
+        self.assertIn("planner search index", res.message)
+
+        # 2. Mismatched model/dims
+        manifest["built_at"] = datetime.now().strftime("%Y-%m-%dT%H:%M")
+        manifest["model"] = "other-model:latest"
+        (search_dir / "manifest.json").write_text(json.dumps(manifest))
+
+        res2 = health.check_search_index(self.cfg)
+        self.assertIsNotNone(res2)
+        self.assertFalse(res2.ok)
+        self.assertIn("planner search index --full", res2.message)
+
+    # 31. Doctor flags missing ollama model and pdftotext
+    @patch("shutil.which")
+    def test_doctor_flags_missing_ollama_model_and_pdftotext(self, mock_which):
+        from planner import health
+
+        # 1. Missing pdftotext
+        mock_which.return_value = None
+        res_pdf = health.check_search_tools(self.cfg)
+        self.assertIsNotNone(res_pdf)
+        self.assertFalse(res_pdf.ok)
+        self.assertIn("pdftotext", res_pdf.message)
+
+        # 2. Missing Ollama model
+        mock_which.return_value = "/opt/homebrew/bin/pdftotext"
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="NAME\nsome-other-model:latest\n")
+            res_ollama = health.check_search_tools(self.cfg)
+            self.assertIsNotNone(res_ollama)
+            self.assertFalse(res_ollama.ok)
+            self.assertIn("ollama pull", res_ollama.message)
+
+
 if __name__ == "__main__":
     unittest.main()
+
 

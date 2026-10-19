@@ -431,6 +431,25 @@ def cmd_morning(cfg, args):
         brief.write_atomic(threads_path, new_threads)
         print(f"wrote {threads_path.name}", flush=True)
 
+    # Update search index; failure becomes a warning and never blocks the brief
+    if getattr(cfg, "search", None):
+        try:
+            searchindex.build_index(cfg)
+            print("updated search index", flush=True)
+        except Exception as e:
+            print(f"search index failed: {e}", flush=True)
+            search_warning = f"Search index couldn't be updated ({str(e)[:140]})."
+            warnings.append(search_warning)
+            write_json(cfg.data_dir / "health.json", {
+                "checked": now.isoformat(timespec="minutes"),
+                "results": [r.__dict__ for r in results],
+                "warnings": warnings,
+            })
+            try:
+                cmd_brief(cfg, argparse.Namespace(date=day.isoformat(), write=True, warnings=warnings))
+            except Exception:
+                pass
+
     state = load_json(state_path, {"brief_inserted": []})  # cmd_brief updated it
     state["last_morning"] = day.isoformat()
     state.pop("offline_since", None)
@@ -460,7 +479,12 @@ def cmd_search(cfg, args):
     if args.search_cmd == "stats":
         searchindex.print_stats(cfg)
     elif args.search_cmd == "index":
-        searchindex.build_index(cfg, full=args.full, limit=args.limit)
+        res = searchindex.build_index(cfg, full=args.full, limit=args.limit)
+        print(f"Indexed {res['papers']} papers ({res['chunks']} chunks) in {res['elapsed']:.1f}s")
+        if res["no_text_pdfs"]:
+            print(f"PDFs with no text ({len(res['no_text_pdfs'])}):")
+            for item in res["no_text_pdfs"]:
+                print(f"  - {item}")
 
 
 def main():

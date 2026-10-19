@@ -10,7 +10,7 @@ import subprocess
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from .config import ROOT
@@ -177,6 +177,75 @@ def check_recent_fallbacks(cfg, sides: list[dict], today: date) -> Result | None
     return None
 
 
+def check_search_index(cfg) -> Result | None:
+    if not getattr(cfg, "search", None):
+        return None
+    search_dir = cfg.data_dir / "search"
+    manifest_path = search_dir / "manifest.json"
+    if not manifest_path.exists():
+        return Result("search index", False, "No search index found. Run: planner search index")
+
+    try:
+        manifest = json.loads(manifest_path.read_text())
+    except Exception as e:
+        return Result("search index", False, f"Failed to read search manifest: {e}. Run: planner search index --full")
+
+    # Check model & dims
+    cfg_model = cfg.search.get("model", "qwen3-embedding:0.6b")
+    cfg_dims = int(cfg.search.get("dims", 1024))
+    idx_model = manifest.get("model")
+    idx_dims = manifest.get("dims")
+
+    if idx_model != cfg_model or idx_dims != cfg_dims:
+        return Result(
+            "search index",
+            False,
+            f"Search index model/dims ({idx_model}/{idx_dims}) differs from config.toml ({cfg_model}/{cfg_dims}). Run: planner search index --full",
+        )
+
+    # Check age (< 3 days old)
+    built_at_str = manifest.get("built_at")
+    if built_at_str:
+        try:
+            built_dt = datetime.fromisoformat(built_at_str)
+            diff = datetime.now() - built_dt
+            if diff > timedelta(days=3):
+                return Result(
+                    "search index",
+                    False,
+                    f"Search index is {diff.days} days old (> 3 days). Run: planner search index",
+                )
+        except Exception:
+            pass
+
+    return None
+
+
+def check_search_tools(cfg) -> Result | None:
+    if not getattr(cfg, "search", None):
+        return None
+    import shutil
+    if not shutil.which("pdftotext"):
+        return Result("search tools", False, "pdftotext is not on PATH. Fix: brew install poppler")
+
+    model = cfg.search.get("model", "qwen3-embedding:0.6b")
+    try:
+        res = subprocess.run(["ollama", "list"], capture_output=True, text=True, timeout=5)
+        if res.returncode == 0:
+            lines = res.stdout.splitlines()[1:]  # skip header
+            names = [line.split()[0] for line in lines if line.strip()]
+            model_base = model.split(":")[0]
+            has_model = any(m == model or m.startswith(f"{model_base}:") or m == model_base for m in names)
+            if not has_model:
+                return Result("search tools", False, f"Ollama list does not include `{model}`. Run: ollama pull {model}")
+        else:
+            return Result("search tools", False, "Ollama command failed. Fix: brew services start ollama")
+    except Exception:
+        return Result("search tools", False, "Ollama check failed. Fix: brew services start ollama")
+
+    return None
+
+
 def run(cfg, sides: list[dict], online: bool, today: date | None = None) -> list[Result]:
     today = today or logical_today()
     checks = [
@@ -189,6 +258,11 @@ def run(cfg, sides: list[dict], online: bool, today: date | None = None) -> list
         ("local fallback", lambda: check_local_fallback(cfg)),
         ("recent extractions", lambda: check_recent_fallbacks(cfg, sides, today)),
     ]
+    if getattr(cfg, "search", None):
+        checks += [
+            ("search index", lambda: check_search_index(cfg)),
+            ("search tools", lambda: check_search_tools(cfg)),
+        ]
     if online:
         checks += [("extract model", lambda: check_hosted_extract(cfg)),
                    ("weekly model", lambda: check_weekly_model(cfg))]
