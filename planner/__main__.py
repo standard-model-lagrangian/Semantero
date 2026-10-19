@@ -8,7 +8,7 @@ import urllib.parse
 from collections import Counter
 from datetime import date, datetime, timedelta
 
-from . import brief, config, fixes, health, stats, threads, vault, weekly
+from . import brief, config, fixes, health, searchindex, stats, threads, vault, weekly
 from .extract import PROMPT, PROMPT_VERSION, extract, user_message
 from .llm import OPENAI_COMPAT, LLMError, chat_json, list_models
 
@@ -456,11 +456,24 @@ def cmd_prompt(cfg, args):
     print(f"# system ({PROMPT_VERSION})\n{PROMPT}\n# user\n{user_message(d, vault.note_text(path), [])}")
 
 
+def cmd_search(cfg, args):
+    if args.search_cmd == "stats":
+        searchindex.print_stats(cfg)
+    elif args.search_cmd == "index":
+        searchindex.build_index(cfg, full=args.full, limit=args.limit)
+
+
 def main():
     p = argparse.ArgumentParser(prog="planner")
     p.add_argument("--model", help='override the extraction model, e.g. "groq:qwen/qwen3-32b"')
     p.add_argument("--data", help="data folder inside the vault (default from config), e.g. .planner-groq")
     sub = p.add_subparsers(dest="cmd", required=True)
+    sc = sub.add_parser("search", help="paper search: stats or index")
+    sc_sub = sc.add_subparsers(dest="search_cmd", required=True)
+    sc_sub.add_parser("stats", help="papers, chunks, PDFs with no text, papers with no abstract, model, age")
+    sc_idx = sc_sub.add_parser("index", help="build or update search index")
+    sc_idx.add_argument("--full", action="store_true", help="force full rebuild")
+    sc_idx.add_argument("--limit", type=int, help="limit number of papers to index")
     b = sub.add_parser("backfill", help="extract all daily notes into .planner/")
     b.add_argument("--force", action="store_true", help="re-extract even cached notes")
     b.add_argument("--limit", type=int, help="only the most recent N notes")
@@ -503,7 +516,8 @@ def main():
         cfg.data_dir = cfg.vault / args.data
     cmds = {"backfill": cmd_backfill, "show": cmd_show, "prompt": cmd_prompt, "compare": cmd_compare, "models": cmd_models,
             "brief": cmd_brief, "nightly": cmd_nightly, "weekly": cmd_weekly,
-            "morning": cmd_morning, "doctor": cmd_doctor, "threads": cmd_threads, "remind": cmd_remind}
+            "morning": cmd_morning, "doctor": cmd_doctor, "threads": cmd_threads, "remind": cmd_remind,
+            "search": cmd_search}
     try:
         cmds[args.cmd](cfg, args)
     except LLMError as e:

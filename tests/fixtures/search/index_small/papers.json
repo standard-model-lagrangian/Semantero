@@ -1,0 +1,110 @@
+[
+  {
+    "key": "KEY0001",
+    "citekey": "roth2023tunable",
+    "title": "Tunable hydrogel viscoelasticity modulates human neural maturation",
+    "authors": [
+      "Roth",
+      "Bauer"
+    ],
+    "year": 2023,
+    "journal": "Science Advances",
+    "doi": "10.1126/sciadv.abq7529",
+    "tags": [
+      "hydrogels",
+      "neural"
+    ],
+    "collections": [
+      "Biomaterials"
+    ],
+    "abstract": "Faster stress relaxation accelerated neuronal maturation and neural network development.",
+    "pdfs": [
+      {
+        "attachmentKey": "ATT001",
+        "pages": 14,
+        "hasText": true
+      }
+    ],
+    "abstractRow": 0
+  },
+  {
+    "key": "KEY0002",
+    "citekey": "lesavage2022next",
+    "title": "Next-generation cancer organoids",
+    "authors": [
+      "LeSavage",
+      "Heilshorn"
+    ],
+    "year": 2022,
+    "journal": "Nature Materials",
+    "doi": "10.1038/s41563-022-01256-4",
+    "tags": [
+      "organoids"
+    ],
+    "collections": [
+      "Oncology"
+    ],
+    "abstract": "Matrix stiffness and viscoelasticity regulate organoid morphogenesis and drug response.",
+    "pdfs": [
+      {
+        "attachmentKey": "ATT002",
+        "pages": 10,
+        "hasText": true
+      }
+    ],
+    "abstractRow": 2
+  },
+  {
+    "key": "KEY0004",
+    "citekey": "wang2024engineered",
+    "title": "Engineered Matrices and Chemoresistance",
+    "authors": [
+      "Wang",
+      "Zhang"
+    ],
+    "year": 2024,
+    "journal": "Nature Biomedical Engineering",
+    "doi": "10.1038/s41551-024-01234-x",
+    "tags": [
+      "stiffness"
+    ],
+    "collections": [
+      "Biomaterials"
+    ],
+    "abstract": "Engineered matrices reveal stiffness-mediated chemoresistance in patient-derived pancreatic cancer organoids.",
+    "pdfs": [
+      {
+        "attachmentKey": "ATT004A",
+        "pages": 8,
+        "hasText": true
+      }
+    ],
+    "abstractRow": 4
+  },
+  {
+    "key": "KEY0005",
+    "citekey": "johnson2020theoretical",
+    "title": "Theoretical Models of Cellular Viscoelasticity",
+    "authors": [
+      "Johnson"
+    ],
+    "year": 2020,
+    "journal": "Biophysical Journal",
+    "doi": "10.1016/j.bpj.2020.01.001",
+    "tags": [
+      "theory"
+    ],
+    "collections": [
+      "Mechanics"
+    ],
+    "abstract": "A continuum mechanics approach to cell viscoelasticity without experiment.",
+    "pdfs": [
+      {
+        "attachmentKey": "ATT005",
+        "pages": 6,
+        "hasText": true
+      }
+    ],
+    "abstractRow": 6
+  }
+]

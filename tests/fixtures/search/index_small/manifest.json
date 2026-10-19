@@ -1,0 +1,10 @@
+{
+  "format": 1,
+  "built_at": "2026-10-20T04:06",
+  "model": "qwen3-embedding:0.6b",
+  "dims": 8,
+  "query_instruction": "Given a description of what a paper found or showed, retrieve that paper",
+  "chunker": "pages-v1",
+  "papers": 4,
+  "chunks": 4
+}

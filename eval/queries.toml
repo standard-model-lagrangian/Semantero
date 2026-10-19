@@ -1,0 +1,112 @@
+# Evaluation queries for paper search
+# Kinds: finding | method | topic | author-title
+
+[[q]]
+text = "faster stress relaxation made neurons mature quicker"
+expect = ["rothTunableHydrogelViscoelasticity2023"]
+kind = "finding"
+
+[[q]]
+text = "mitochondria moving from immune cells into tumour cells enables metastasis"
+expect = ["terasakiMitochondrialTransferImmune2026"]
+kind = "finding"
+
+[[q]]
+text = "stiff matrices cause chemoresistance in pancreatic cancer organoids"
+expect = ["lesavageEngineeredMatricesReveal2024"]
+kind = "finding"
+
+[[q]]
+text = "N-cadherin interactions maintain neural stem cell stemness in viscoelastic gels"
+expect = ["huangViscoelasticNcadherinlikeInteractions2025"]
+kind = "finding"
+
+[[q]]
+text = "membrane-bound nuclease cleaves phage DNA during genome injection"
+expect = ["saxtonMembraneboundNucleaseDirectly2026"]
+kind = "finding"
+
+[[q]]
+text = "synthetic hydrogels promote crypt formation in intestinal organoids"
+expect = ["hushkaFullySyntheticHydrogels2025a"]
+kind = "finding"
+
+[[q]]
+text = "native contact formation facilitates barrier crossing in protein folding"
+expect = ["fengCooperativeNativeContact2026"]
+kind = "finding"
+
+[[q]]
+text = "genetically encoded assembly recorder resolves cellular history over time"
+expect = ["yanGeneticallyEncodedAssembly2026"]
+kind = "finding"
+
+[[q]]
+text = "aldehyde pendant synthetic copolymers form strain-stiffening biocompatible hydrogels"
+expect = ["beerenWellDefinedSyntheticCopolymers2024"]
+kind = "finding"
+
+[[q]]
+text = "supramolecular fibrous hydrogels with benzene tricarboxamide enable tunable viscoelasticity"
+expect = ["hafeezMolecularTuningBenzene135Tricarboxamide2023"]
+kind = "finding"
+
+[[q]]
+text = "synthetic circuits achieve cell ratio control"
+expect = ["anSyntheticCircuitsCell2026"]
+kind = "finding"
+
+[[q]]
+text = "dynamic light scattering microrheology reveals multiscale viscoelasticity"
+expect = ["krajinaDynamicLightScattering2017"]
+kind = "finding"
+
+[[q]]
+text = "decellularized extracellular matrix hydrogels for organoid culture"
+expect = ["liEnhancingOrganoidCulture2024"]
+kind = "method"
+
+[[q]]
+text = "organoid bioprinting matrix microenvironment patterning"
+expect = ["zhangOrganoidBioprintingPattern2025"]
+kind = "method"
+
+[[q]]
+text = "time-aware prior-fitted networks for forecasting with exogenous variables"
+expect = ["potapczynskiTimeAwarePriorFitted2026"]
+kind = "method"
+
+[[q]]
+text = "next-generation cancer organoids and matrix stiffness"
+expect = ["lesavageNextgenerationCancerOrganoids2022"]
+kind = "topic"
+
+[[q]]
+text = "patient derived organoids precision medicine"
+expect = ["tongPatientderivedOrganoidsPrecision2024"]
+kind = "topic"
+
+[[q]]
+text = "reliable and responsible foundation models survey"
+expect = ["yangReliableResponsibleFoundation2026"]
+kind = "topic"
+
+[[q]]
+text = "cancer complexity hallmarks of systemic disease"
+expect = ["swantonEmbracingCancerComplexity2024"]
+kind = "topic"
+
+[[q]]
+text = "LeSavage cancer organoids"
+expect = ["lesavageNextgenerationCancerOrganoids2022", "lesavageEngineeredMatricesReveal2024"]
+kind = "author-title"
+
+[[q]]
+text = "Roth tunable hydrogel viscoelasticity"
+expect = ["rothTunableHydrogelViscoelasticity2023"]
+kind = "author-title"
+
+[[q]]
+text = "Terasaki mitochondrial transfer immune"
+expect = ["terasakiMitochondrialTransferImmune2026"]
+kind = "author-title"

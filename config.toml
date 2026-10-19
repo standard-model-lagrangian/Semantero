@@ -36,3 +36,15 @@ timeout_s = 420
 
 [extract]
 thread_window_days = 21  # threads seen this recently are offered for reuse
+
+[search]
+zotero_dir = "~/Zotero"
+model = "qwen3-embedding:0.6b"      # fixed once chosen by the evaluation; changing it rebuilds everything
+dims = 1024                         # Matryoshka-style truncation, then re-normalise
+query_instruction = "Given a description of what a paper found or showed, retrieve that paper"
+chunk_words = 300
+chunk_overlap_words = 50
+max_chunks_per_paper = 150          # stops a thesis or book from dominating results
+batch_size = 32
+keep_alive = "30m"
+

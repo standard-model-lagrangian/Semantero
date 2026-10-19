@@ -1,5 +1,5 @@
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -17,6 +17,7 @@ class Config:
     daily_template: Path
     schedule: dict
     threads: dict
+    search: dict = field(default_factory=dict)
 
 
 def load(path: Path = ROOT / "config.toml") -> Config:
@@ -33,4 +34,5 @@ def load(path: Path = ROOT / "config.toml") -> Config:
         daily_template=vault / raw.get("daily_template", "Templates/Daily.md"),
         schedule=raw.get("schedule", {}),
         threads=raw.get("threads", {}),
+        search=raw.get("search", {}),
     )

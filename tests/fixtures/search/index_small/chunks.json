@@ -1,0 +1,30 @@
+[
+  {
+    "paper": 0,
+    "attachmentKey": "ATT001",
+    "page": 6,
+    "text": "Faster stress relaxation accelerated neuronal maturation and synaptic formation.",
+    "row": 1
+  },
+  {
+    "paper": 1,
+    "attachmentKey": "ATT002",
+    "page": 3,
+    "text": "Organoid growth required permissive matrix degradation and stress relaxation.",
+    "row": 3
+  },
+  {
+    "paper": 2,
+    "attachmentKey": "ATT004A",
+    "page": 4,
+    "text": "Stiffer gels promoted chemoresistance through integrin beta 1 signaling.",
+    "row": 5
+  },
+  {
+    "paper": 3,
+    "attachmentKey": "ATT005",
+    "page": 2,
+    "text": "Constitutive equations predict frequency-dependent relaxation moduli in biopolymers.",
+    "row": 7
+  }
+]
