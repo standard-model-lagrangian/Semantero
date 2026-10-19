@@ -1,0 +1,24 @@
+{
+  "name": "daito-paper-search",
+  "version": "1.0.0",
+  "description": "Find papers in your Zotero library from inside Obsidian",
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "test": "node --test test/*.test.ts",
+    "build": "node esbuild.config.mjs production"
+  },
+  "keywords": [
+    "obsidian",
+    "zotero",
+    "search",
+    "semantic"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "obsidian": "^1.7.2",
+    "typescript": "^5.8.0"
+  }
+}

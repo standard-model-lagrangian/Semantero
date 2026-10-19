@@ -201,5 +201,405 @@ class TestPdfText(unittest.TestCase):
         self.assertNotIn("Author et al.", all_text)
 
 
+class TestEmbed(unittest.TestCase):
+    # 14. Batches inputs
+    @patch("urllib.request.urlopen")
+    def test_batches_inputs(self, mock_urlopen):
+        from planner import embed
+
+        def make_resp(req):
+            import io, json
+            body = json.loads(req.data.decode("utf-8"))
+            n = len(body["input"])
+            resp_data = {"embeddings": [[1.0] * 8 for _ in range(n)]}
+            resp_mock = MagicMock()
+            resp_mock.read.return_value = json.dumps(resp_data).encode("utf-8")
+            resp_mock.__enter__.return_value = resp_mock
+            return resp_mock
+
+        mock_urlopen.side_effect = make_resp
+
+        inputs = [f"text_{i}" for i in range(70)]
+        res = embed.embed(inputs, dims=8, batch_size=32)
+        self.assertEqual(len(res), 70)
+        self.assertEqual(mock_urlopen.call_count, 3)
+
+        # Verify batch sizes: 32, 32, 6
+        calls = mock_urlopen.call_args_list
+        import json
+        b1 = json.loads(calls[0][0][0].data.decode("utf-8"))["input"]
+        b2 = json.loads(calls[1][0][0].data.decode("utf-8"))["input"]
+        b3 = json.loads(calls[2][0][0].data.decode("utf-8"))["input"]
+        self.assertEqual(len(b1), 32)
+        self.assertEqual(len(b2), 32)
+        self.assertEqual(len(b3), 6)
+        self.assertEqual(b1[0], "text_0")
+        self.assertEqual(b3[-1], "text_69")
+
+    # 15. Truncates and normalises
+    @patch("urllib.request.urlopen")
+    def test_truncates_and_normalises(self, mock_urlopen):
+        import json, math
+        from planner import embed
+
+        trunc_data = json.loads((FIXTURES_DIR / "trunc.json").read_text())
+        input_vec = trunc_data["input"]
+        expected_vec = trunc_data["expected"]
+
+        resp_mock = MagicMock()
+        resp_mock.read.return_value = json.dumps({"embeddings": [input_vec]}).encode("utf-8")
+        resp_mock.__enter__.return_value = resp_mock
+        mock_urlopen.return_value = resp_mock
+
+        res = embed.embed(["dummy input"], dims=8)
+        self.assertEqual(len(res), 1)
+        self.assertEqual(len(res[0]), 8)
+
+        # Check unit length
+        norm = math.sqrt(sum(x * x for x in res[0]))
+        self.assertAlmostEqual(norm, 1.0, places=5)
+
+        # Compare with fixture expected values
+        for a, b in zip(res[0], expected_vec):
+            self.assertAlmostEqual(a, b, places=5)
+
+    # 16. Documents have no instruction
+    @patch("urllib.request.urlopen")
+    def test_documents_have_no_instruction(self, mock_urlopen):
+        import json
+        from planner import embed
+
+        resp_mock = MagicMock()
+        resp_mock.read.return_value = json.dumps({"embeddings": [[1.0] * 8]}).encode("utf-8")
+        resp_mock.__enter__.return_value = resp_mock
+        mock_urlopen.return_value = resp_mock
+
+        doc_text = "Just a raw document text about polymers."
+        embed.embed([doc_text], dims=8)
+
+        call_req = mock_urlopen.call_args[0][0]
+        body = json.loads(call_req.data.decode("utf-8"))
+        self.assertEqual(body["input"], [doc_text])
+        self.assertNotIn("Instruct:", body["input"][0])
+
+    # 17. Missing model error mentions pull
+    @patch("urllib.request.urlopen")
+    def test_missing_model_error_mentions_pull(self, mock_urlopen):
+        import urllib.error, io
+        from planner import embed
+
+        err = urllib.error.HTTPError(
+            url="http://localhost:11434/api/embed",
+            code=404,
+            msg="Not Found",
+            hdrs={},
+            fp=io.BytesIO(b'{"error":"model \'qwen3-embedding:0.6b\' not found"}')
+        )
+        mock_urlopen.side_effect = err
+
+        with self.assertRaises(RuntimeError) as ctx:
+            embed.embed(["test"], model="qwen3-embedding:0.6b", dims=8)
+        self.assertIn("ollama pull qwen3-embedding:0.6b", str(ctx.exception))
+
+    # 18. Retries connection errors then raises
+    @patch("time.sleep")
+    @patch("urllib.request.urlopen")
+    def test_retries_connection_errors_then_raises(self, mock_urlopen, mock_sleep):
+        import urllib.error
+        from planner import embed
+
+        mock_urlopen.side_effect = urllib.error.URLError("Connection refused")
+
+        with self.assertRaises(urllib.error.URLError):
+            embed.embed(["test"], dims=8, max_retries=3)
+
+        # Initial call + 3 retries = 4 calls total
+        self.assertEqual(mock_urlopen.call_count, 4)
+
+    # 19. Live test ollama roundtrip (DAITO_LIVE=1)
+    @unittest.skipUnless(os.environ.get("DAITO_LIVE") == "1", "Requires DAITO_LIVE=1")
+    def test_live_ollama_roundtrip(self):
+        import math
+        from planner import embed
+
+        texts = [
+            "Viscoelastic hydrogels promote human neural differentiation and maturation.",
+            "Faster stress relaxation in stiffness-matched matrices accelerates neuronal growth.",
+            "Completely unrelated topic regarding classical French literature and poetry."
+        ]
+        res = embed.embed(texts, dims=64)
+        self.assertEqual(len(res), 3)
+        self.assertEqual(len(res[0]), 64)
+
+        # Dot products
+        sim_0_1 = sum(a * b for a, b in zip(res[0], res[1]))
+        sim_0_2 = sum(a * b for a, b in zip(res[0], res[2]))
+        self.assertTrue(sim_0_1 > sim_0_2)
+
+
+class TestSearchIndex(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp_dir = Path(self.tmp.name)
+        self.vault_dir = self.tmp_dir / "vault"
+        self.vault_dir.mkdir(parents=True)
+        self.data_dir = self.vault_dir / ".planner"
+        self.data_dir.mkdir(parents=True)
+
+        # Create temporary zotero directory with sqlite and PDFs
+        self.zotero_dir = self.tmp_dir / "Zotero"
+        self.zotero_dir.mkdir(parents=True)
+        db_path = self.zotero_dir / "zotero.sqlite"
+        orig_db = FIXTURES_DIR / "zotero.sqlite"
+        db_path.write_bytes(orig_db.read_bytes())
+
+        # Copy sample.pdf to storage locations
+        for att_key, fname in [("ATT001", "sample.pdf"), ("ATT002", "sample2.pdf"),
+                                ("ATT004A", "main.pdf"), ("ATT004B", "supp.pdf")]:
+            sp = self.zotero_dir / "storage" / att_key
+            sp.mkdir(parents=True, exist_ok=True)
+            (sp / fname).write_bytes((FIXTURES_DIR / "sample.pdf").read_bytes())
+
+        from planner.config import Config
+        self.cfg = Config(
+            vault=self.vault_dir,
+            daily_dir=self.vault_dir,
+            data_dir=self.data_dir,
+            models={},
+            extract={},
+            brief={},
+            reviews_dir=self.vault_dir / "Reviews",
+            daily_template=self.vault_dir / "Daily.md",
+            schedule={},
+            threads={},
+            search={
+                "zotero_dir": str(self.zotero_dir),
+                "model": "qwen3-embedding:0.6b",
+                "dims": 8,
+                "batch_size": 32,
+                "chunk_words": 300,
+                "chunk_overlap_words": 50,
+                "max_chunks_per_paper": 150,
+            }
+        )
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def fake_embed(self, texts, **kwargs):
+        import hashlib, math
+        dims = kwargs.get("dims", 8)
+        vectors = []
+        for text in texts:
+            vec = [0.0] * dims
+            words = text.lower().split()
+            for w in words:
+                h = int(hashlib.md5(w.encode()).hexdigest(), 16)
+                vec[h % dims] += 1.0
+            if not any(vec):
+                vec[0] = 1.0
+            norm = math.sqrt(sum(x * x for x in vec))
+            vectors.append([x / norm for x in vec])
+        return vectors
+
+    # 20. Full build writes all files consistently
+    def test_full_build_writes_all_files_consistently(self):
+        import array, json, math
+        from planner import searchindex
+
+        res = searchindex.build_index(self.cfg, full=True, embed_fn=self.fake_embed)
+        search_dir = self.data_dir / "search"
+
+        manifest = json.loads((search_dir / "manifest.json").read_text())
+        papers = json.loads((search_dir / "papers.json").read_text())
+        chunks = json.loads((search_dir / "chunks.json").read_text())
+        vec_bytes = (search_dir / "vectors.f32").read_bytes()
+
+        self.assertEqual(manifest["format"], 1)
+        self.assertEqual(manifest["dims"], 8)
+        self.assertEqual(manifest["papers"], len(papers))
+        self.assertEqual(manifest["chunks"], len(chunks))
+
+        # Vector file length check: rows * dims * 4
+        total_rows = sum(1 for p in papers if p["abstractRow"] is not None) + len(chunks)
+        self.assertEqual(len(vec_bytes), total_rows * 8 * 4)
+
+        # Check all vectors are unit length
+        arr = array.array("f")
+        arr.frombytes(vec_bytes)
+        for i in range(total_rows):
+            row_vec = arr[i * 8 : (i + 1) * 8]
+            norm = math.sqrt(sum(x * x for x in row_vec))
+            self.assertAlmostEqual(norm, 1.0, places=5)
+
+        # Check rows in range
+        for p in papers:
+            if p["abstractRow"] is not None:
+                self.assertTrue(0 <= p["abstractRow"] < total_rows)
+        for c in chunks:
+            self.assertTrue(0 <= c["row"] < total_rows)
+
+    # 21. Incremental skips unchanged PDFs
+    def test_incremental_skips_unchanged_pdfs(self):
+        from planner import searchindex
+
+        mock_embed = MagicMock(side_effect=self.fake_embed)
+        # First build
+        searchindex.build_index(self.cfg, full=True, embed_fn=mock_embed)
+        first_calls = mock_embed.call_count
+        self.assertTrue(first_calls > 0)
+
+        # Second build (nothing changed)
+        mock_embed.reset_mock()
+        searchindex.build_index(self.cfg, full=False, embed_fn=mock_embed)
+        self.assertEqual(mock_embed.call_count, 0)
+
+    # 22. Changed PDF reembeds only that PDF
+    def test_changed_pdf_reembeds_only_that_pdf(self):
+        from planner import searchindex
+
+        searchindex.build_index(self.cfg, full=True, embed_fn=self.fake_embed)
+
+        # Modify sample2.pdf mtime & content
+        pdf_path = self.zotero_dir / "storage" / "ATT002" / "sample2.pdf"
+        pdf_path.write_bytes(pdf_path.read_bytes() + b"\n% added dummy content\n")
+
+        mock_embed = MagicMock(side_effect=self.fake_embed)
+        searchindex.build_index(self.cfg, full=False, embed_fn=mock_embed)
+
+        # Only sample2.pdf chunks should be embedded
+        self.assertEqual(mock_embed.call_count, 1)
+
+    # 23. Changed abstract reembeds only that row
+    def test_changed_abstract_reembeds_only_that_row(self):
+        import sqlite3
+        from planner import searchindex
+
+        searchindex.build_index(self.cfg, full=True, embed_fn=self.fake_embed)
+
+        # Modify abstract in sqlite
+        conn = sqlite3.connect(self.zotero_dir / "zotero.sqlite")
+        cur = conn.cursor()
+        cur.execute("UPDATE itemDataValues SET value = 'Brand new abstract about neural networks' WHERE value LIKE 'Faster stress relaxation%'")
+        conn.commit()
+        conn.close()
+
+        mock_embed = MagicMock(side_effect=self.fake_embed)
+        searchindex.build_index(self.cfg, full=False, embed_fn=mock_embed)
+
+        # Exactly 1 call with 1 text (the new abstract)
+        self.assertEqual(mock_embed.call_count, 1)
+        texts_embedded = mock_embed.call_args[0][0]
+        self.assertEqual(len(texts_embedded), 1)
+        self.assertIn("Brand new abstract", texts_embedded[0])
+
+    # 24. Removed paper disappears and rows are compact
+    def test_removed_paper_disappears_and_rows_are_compact(self):
+        import json, sqlite3
+        from planner import searchindex
+
+        searchindex.build_index(self.cfg, full=True, embed_fn=self.fake_embed)
+
+        # Delete paper KEY0005 from sqlite
+        conn = sqlite3.connect(self.zotero_dir / "zotero.sqlite")
+        cur = conn.cursor()
+        cur.execute("DELETE FROM items WHERE key = 'KEY0005'")
+        conn.commit()
+        conn.close()
+
+        searchindex.build_index(self.cfg, full=False, embed_fn=self.fake_embed)
+        search_dir = self.data_dir / "search"
+        papers = json.loads((search_dir / "papers.json").read_text())
+        chunks = json.loads((search_dir / "chunks.json").read_text())
+
+        keys = [p["key"] for p in papers]
+        self.assertNotIn("KEY0005", keys)
+
+        # Check rows are compact 0..N-1
+        all_rows = set()
+        for p in papers:
+            if p["abstractRow"] is not None:
+                all_rows.add(p["abstractRow"])
+        for c in chunks:
+            all_rows.add(c["row"])
+
+        total_rows = len(all_rows)
+        self.assertEqual(all_rows, set(range(total_rows)))
+
+    # 25. Model or dims change forces full rebuild
+    def test_model_or_dims_change_forces_full_rebuild(self):
+        from planner import searchindex
+
+        searchindex.build_index(self.cfg, full=True, embed_fn=self.fake_embed)
+
+        # Change dims to 16
+        self.cfg.search["dims"] = 16
+        mock_embed = MagicMock(side_effect=self.fake_embed)
+        searchindex.build_index(self.cfg, full=False, embed_fn=mock_embed)
+
+        # Full rebuild occurred: everything re-embedded
+        self.assertTrue(mock_embed.call_count > 0)
+
+    # 26. Atomic write never leaves partial index
+    def test_atomic_write_never_leaves_partial_index(self):
+        import json
+        from planner import searchindex
+
+        # Build initial valid index
+        searchindex.build_index(self.cfg, full=True, embed_fn=self.fake_embed)
+        search_dir = self.data_dir / "search"
+        manifest_before = (search_dir / "manifest.json").read_text()
+
+        # Build with failing embedder
+        failing_embed = MagicMock(side_effect=RuntimeError("Ollama crashed"))
+        with self.assertRaises(RuntimeError):
+            searchindex.build_index(self.cfg, full=True, embed_fn=failing_embed)
+
+        # Original search directory intact
+        self.assertTrue(search_dir.exists())
+        self.assertEqual((search_dir / "manifest.json").read_text(), manifest_before)
+        # Temp dir was cleaned up
+        self.assertFalse((self.data_dir / "search.tmp").exists())
+
+    # 27. Paper without abstract has null abstract row and chunks
+    def test_paper_without_abstract_has_null_abstract_row_and_chunks(self):
+        import json
+        from planner import searchindex
+
+        searchindex.build_index(self.cfg, full=True, embed_fn=self.fake_embed)
+        search_dir = self.data_dir / "search"
+        papers = json.loads((search_dir / "papers.json").read_text())
+        chunks = json.loads((search_dir / "chunks.json").read_text())
+
+        # KEY0002 has no abstract
+        p2 = next(p for p in papers if p["key"] == "KEY0002")
+        self.assertIsNone(p2["abstractRow"])
+
+        # But it has chunks
+        p2_idx = papers.index(p2)
+        p2_chunks = [c for c in chunks if c["paper"] == p2_idx]
+        self.assertTrue(len(p2_chunks) > 0)
+        self.assertTrue(all(isinstance(c["row"], int) for c in p2_chunks))
+
+    # 28. Paper without PDF has abstract row only
+    def test_paper_without_pdf_has_abstract_row_only(self):
+        import json
+        from planner import searchindex
+
+        searchindex.build_index(self.cfg, full=True, embed_fn=self.fake_embed)
+        search_dir = self.data_dir / "search"
+        papers = json.loads((search_dir / "papers.json").read_text())
+        chunks = json.loads((search_dir / "chunks.json").read_text())
+
+        # KEY0005 has no PDF
+        p5 = next(p for p in papers if p["key"] == "KEY0005")
+        self.assertIsNotNone(p5["abstractRow"])
+
+        p5_idx = papers.index(p5)
+        p5_chunks = [c for c in chunks if c["paper"] == p5_idx]
+        self.assertEqual(len(p5_chunks), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
+
