@@ -244,7 +244,7 @@ class TestEmbed(unittest.TestCase):
     def test_batches_inputs(self, mock_urlopen):
         from planner import embed
 
-        def make_resp(req):
+        def make_resp(req, *args, **kwargs):
             import io, json
             body = json.loads(req.data.decode("utf-8"))
             n = len(body["input"])
@@ -482,12 +482,23 @@ class TestSearchIndex(unittest.TestCase):
             norm = math.sqrt(sum(x * x for x in row_vec))
             self.assertAlmostEqual(norm, 1.0, places=5)
 
-        # Check rows in range
+        # Check rows in range and verify exact vector alignment for every abstract and chunk
         for p in papers:
             if p["abstractRow"] is not None:
-                self.assertTrue(0 <= p["abstractRow"] < total_rows)
+                r = p["abstractRow"]
+                self.assertTrue(0 <= r < total_rows)
+                abs_text = f"{p['title']}\n\n{p['abstract']}" if p["abstract"] else p["title"]
+                expected_vec = self.fake_embed([abs_text], dims=8)[0]
+                actual_vec = list(arr[r * 8 : (r + 1) * 8])
+                for a, b in zip(actual_vec, expected_vec):
+                    self.assertAlmostEqual(a, b, places=5)
         for c in chunks:
-            self.assertTrue(0 <= c["row"] < total_rows)
+            r = c["row"]
+            self.assertTrue(0 <= r < total_rows)
+            expected_vec = self.fake_embed([c["text"]], dims=8)[0]
+            actual_vec = list(arr[r * 8 : (r + 1) * 8])
+            for a, b in zip(actual_vec, expected_vec):
+                self.assertAlmostEqual(a, b, places=5)
 
     # 21. Incremental skips unchanged PDFs
     def test_incremental_skips_unchanged_pdfs(self):
@@ -611,21 +622,30 @@ class TestSearchIndex(unittest.TestCase):
         # Temp dir was cleaned up
         self.assertFalse((self.data_dir / "search.tmp").exists())
 
-    # 27. Paper without abstract has null abstract row and chunks
-    def test_paper_without_abstract_has_null_abstract_row_and_chunks(self):
-        import json
+    # 27. Paper without abstract embeds title as abstract row and keeps chunks
+    def test_paper_without_abstract_embeds_title_and_chunks(self):
+        import array, json
         from planner import searchindex
 
         searchindex.build_index(self.cfg, full=True, embed_fn=self.fake_embed)
         search_dir = self.data_dir / "search"
         papers = json.loads((search_dir / "papers.json").read_text())
         chunks = json.loads((search_dir / "chunks.json").read_text())
+        vec_bytes = (search_dir / "vectors.f32").read_bytes()
+        arr = array.array("f")
+        arr.frombytes(vec_bytes)
 
-        # KEY0002 has no abstract
+        # KEY0002 has no abstract; its title is embedded as abstractRow
         p2 = next(p for p in papers if p["key"] == "KEY0002")
-        self.assertIsNone(p2["abstractRow"])
+        self.assertIsNone(p2["abstract"])
+        self.assertIsNotNone(p2["abstractRow"])
+        r = p2["abstractRow"]
+        expected_vec = self.fake_embed([p2["title"]], dims=8)[0]
+        actual_vec = list(arr[r * 8 : (r + 1) * 8])
+        for a, b in zip(actual_vec, expected_vec):
+            self.assertAlmostEqual(a, b, places=5)
 
-        # But it has chunks
+        # And it has chunks
         p2_idx = papers.index(p2)
         p2_chunks = [c for c in chunks if c["paper"] == p2_idx]
         self.assertTrue(len(p2_chunks) > 0)
@@ -685,8 +705,10 @@ class TestCliAndDoctor(unittest.TestCase):
     def test_morning_search_failure_is_a_warning_not_a_crash(self, mock_online, mock_build):
         import argparse
         from planner import __main__ as main_mod
+        from planner import vault
 
-        today = (self.vault_dir / "2026-10-19.md")
+        today_date = vault.logical_today(self.cfg.schedule.get("day_starts_hour", 4))
+        today = (self.vault_dir / f"{today_date.isoformat()}.md")
         today.write_text("Flow\n- task 1\n")
 
         # Run cmd_morning

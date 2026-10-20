@@ -195,7 +195,7 @@ async function main() {
         );
 
         const totalRows = Math.floor(vectors.length / dims);
-        const matches = topK(queryVec, vectors, totalRows, dims, 100);
+        const matches = topK(queryVec, vectors, totalRows, dims, totalRows);
         const rowScores = new Map<number, number>();
         for (const m of matches) {
           rowScores.set(m.row, m.score);

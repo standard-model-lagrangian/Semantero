@@ -913,7 +913,7 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
       this.semanticAvailable = true;
       this.updateFooter("");
       const totalRows = Math.floor(this.plugin.indexData.vectors.length / dims);
-      const matches = topK(queryVec, this.plugin.indexData.vectors, totalRows, dims, 100);
+      const matches = topK(queryVec, this.plugin.indexData.vectors, totalRows, dims, totalRows);
       const rowScores = /* @__PURE__ */ new Map();
       for (const m of matches) {
         rowScores.set(m.row, m.score);

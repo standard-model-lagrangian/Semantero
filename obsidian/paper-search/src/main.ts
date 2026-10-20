@@ -346,7 +346,7 @@ class PaperSearchModal extends SuggestModal<SearchResultItem> {
 
       // Top-K vectors dot product
       const totalRows = Math.floor(this.plugin.indexData.vectors.length / dims);
-      const matches = topK(queryVec, this.plugin.indexData.vectors, totalRows, dims, 100);
+      const matches = topK(queryVec, this.plugin.indexData.vectors, totalRows, dims, totalRows);
       const rowScores = new Map<number, number>();
       for (const m of matches) {
         rowScores.set(m.row, m.score);

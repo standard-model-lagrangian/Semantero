@@ -13,6 +13,7 @@ def embed(
     keep_alive: str = "30m",
     ollama_url: str = "http://localhost:11434",
     max_retries: int = 3,
+    timeout: float = 120.0,
 ) -> list[list[float]]:
     """Embed texts using Ollama /api/embed endpoint with batching, truncation, and L2 normalization."""
     if not texts:
@@ -20,9 +21,15 @@ def embed(
 
     url = f"{ollama_url.rstrip('/')}/api/embed"
     results: list[list[float]] = []
+    total = len(texts)
+    total_batches = (total + batch_size - 1) // batch_size
 
-    for i in range(0, len(texts), batch_size):
+    for i in range(0, total, batch_size):
         batch = texts[i : i + batch_size]
+        batch_idx = (i // batch_size) + 1
+        if total_batches > 1:
+            print(f"  [embed] batch {batch_idx}/{total_batches} ({min(i + batch_size, total)}/{total} texts)...", flush=True)
+
         payload = {
             "model": model,
             "input": batch,
@@ -41,7 +48,7 @@ def embed(
         raw_resp = None
         while True:
             try:
-                with urllib.request.urlopen(req) as resp:
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
                     raw_resp = resp.read().decode("utf-8")
                 break
             except urllib.error.HTTPError as e:

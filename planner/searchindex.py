@@ -138,6 +138,8 @@ def build_index(cfg, full: bool = False, limit: int | None = None, embed_fn=None
     try:
         # Load previous state if not full rebuild
         prev_state = None
+        prev_vecs: array.array | None = None
+        prev_chunks_by_row: dict[int, dict] = {}
         if not full and search_dir.exists():
             state_data = load_json(search_dir / "state.json")
             if (
@@ -147,12 +149,57 @@ def build_index(cfg, full: bool = False, limit: int | None = None, embed_fn=None
                 and state_data.get("chunker") == chunker
             ):
                 prev_state = state_data
+                vec_file = search_dir / "vectors.f32"
+                if vec_file.exists():
+                    arr = array.array("f")
+                    arr.frombytes(vec_file.read_bytes())
+                    prev_vecs = arr
+                for c in load_json(search_dir / "chunks.json", []):
+                    if isinstance(c, dict) and "row" in c:
+                        prev_chunks_by_row[c["row"]] = c
 
         cached_abstracts: dict[str, list[float]] = {}
         cached_attachments: dict[str, dict] = {}
         if prev_state:
-            cached_abstracts = prev_state.get("abstracts", {})
-            cached_attachments = prev_state.get("attachments", {})
+            for sha, val in prev_state.get("abstracts", {}).items():
+                if isinstance(val, list):
+                    cached_abstracts[sha] = val
+                elif isinstance(val, int) and prev_vecs is not None:
+                    start = val * dims
+                    end = start + dims
+                    if end <= len(prev_vecs):
+                        cached_abstracts[sha] = list(prev_vecs[start:end])
+
+            for att_key, att_info in prev_state.get("attachments", {}).items():
+                resolved_chunks: list[dict] = []
+                valid_att = True
+                for c_item in att_info.get("chunks", []):
+                    if isinstance(c_item, dict) and "vec" in c_item:
+                        resolved_chunks.append(c_item)
+                    elif isinstance(c_item, int) and prev_vecs is not None and c_item in prev_chunks_by_row:
+                        start = c_item * dims
+                        end = start + dims
+                        if end <= len(prev_vecs):
+                            c_meta = prev_chunks_by_row[c_item]
+                            resolved_chunks.append({
+                                "page": c_meta["page"],
+                                "text": c_meta["text"],
+                                "vec": list(prev_vecs[start:end]),
+                            })
+                        else:
+                            valid_att = False
+                            break
+                    else:
+                        valid_att = False
+                        break
+                if valid_att:
+                    cached_attachments[att_key] = {
+                        "mtime": att_info.get("mtime", 0),
+                        "size": att_info.get("size", 0),
+                        "pages": att_info.get("pages", 0),
+                        "hasText": att_info.get("hasText", True),
+                        "chunks": resolved_chunks,
+                    }
 
         # Read library
         papers = zotlib.read_library(zotero_dir)
@@ -160,20 +207,21 @@ def build_index(cfg, full: bool = False, limit: int | None = None, embed_fn=None
             papers = papers[:limit]
 
         # Scan what needs embedding
-        pending_embed_texts: list[str] = []
+        pending_abs_texts: list[str] = []
         pending_abstract_shas: list[str] = []
+        pending_chunk_texts: list[str] = []
         pending_chunk_keys: list[tuple[str, int]] = []  # (attachmentKey, chunk_index)
 
         paper_abstract_info: list[tuple[str, str, str | None]] = []  # (paper_key, title, sha or None)
         paper_attachment_chunks: dict[str, list[dict]] = {}  # att_key -> list of {"page": ..., "text": ..., "vec": ...}
 
         for p in papers:
-            if p.abstract:
-                abstract_text = f"{p.title}\n\n{p.abstract}"
+            abstract_text = f"{p.title}\n\n{p.abstract}" if p.abstract else p.title
+            if abstract_text:
                 sha = hashlib.sha256(abstract_text.encode("utf-8")).hexdigest()
                 paper_abstract_info.append((p.key, p.title, sha))
                 if sha not in cached_abstracts and sha not in pending_abstract_shas:
-                    pending_embed_texts.append(abstract_text)
+                    pending_abs_texts.append(abstract_text)
                     pending_abstract_shas.append(sha)
             else:
                 paper_abstract_info.append((p.key, p.title, None))
@@ -207,30 +255,27 @@ def build_index(cfg, full: bool = False, limit: int | None = None, embed_fn=None
                     for ch in extracted:
                         chunk_idx = len(chunks_list)
                         chunks_list.append({"page": ch.page, "text": ch.text, "vec": None})
-                        pending_embed_texts.append(ch.text)
+                        pending_chunk_texts.append(ch.text)
                         pending_chunk_keys.append((pdf.attachmentKey, chunk_idx))
                     paper_attachment_chunks[pdf.attachmentKey] = chunks_list
 
-        # Run embeddings for any pending texts
-        if pending_embed_texts:
+        pending_texts = pending_abs_texts + pending_chunk_texts
+        if pending_texts:
             if embed_fn:
-                new_vecs = embed_fn(pending_embed_texts, dims=dims)
+                new_vecs = embed_fn(pending_texts, dims=dims)
             else:
                 new_vecs = embed.embed(
-                    pending_embed_texts,
+                    pending_texts,
                     model=model,
                     dims=dims,
                     batch_size=batch_size,
                     keep_alive=keep_alive,
                     ollama_url=ollama_url,
                 )
-
-            # Assign new vectors
             vec_idx = 0
             for sha in pending_abstract_shas:
                 cached_abstracts[sha] = new_vecs[vec_idx]
                 vec_idx += 1
-
             for att_key, chunk_idx in pending_chunk_keys:
                 paper_attachment_chunks[att_key][chunk_idx]["vec"] = new_vecs[vec_idx]
                 vec_idx += 1
@@ -241,17 +286,17 @@ def build_index(cfg, full: bool = False, limit: int | None = None, embed_fn=None
         all_vectors = array.array("f")
         current_row = 0
 
-        # Update cached_attachments with latest mtime/size
-        new_cached_attachments: dict[str, dict] = {}
+        state_abstracts: dict[str, int] = {}
+        state_attachments: dict[str, dict] = {}
         for p in papers:
             for pdf in p.pdfs:
                 stat = pdf.path.stat() if pdf.path.exists() else None
-                new_cached_attachments[pdf.attachmentKey] = {
+                state_attachments[pdf.attachmentKey] = {
                     "mtime": stat.st_mtime_ns if stat else 0,
                     "size": stat.st_size if stat else 0,
                     "pages": pdf.pages,
                     "hasText": pdf.hasText,
-                    "chunks": paper_attachment_chunks.get(pdf.attachmentKey, []),
+                    "chunks": [],
                 }
 
         for p_idx, p in enumerate(papers):
@@ -260,6 +305,7 @@ def build_index(cfg, full: bool = False, limit: int | None = None, embed_fn=None
                 abstract_row = current_row
                 abstract_vec = cached_abstracts[sha]
                 all_vectors.extend(abstract_vec)
+                state_abstracts[sha] = abstract_row
                 current_row += 1
             else:
                 abstract_row = None
@@ -277,6 +323,7 @@ def build_index(cfg, full: bool = False, limit: int | None = None, embed_fn=None
                         "text": chunk["text"],
                         "row": ch_row,
                     })
+                    state_attachments[pdf.attachmentKey]["chunks"].append(ch_row)
                     current_row += 1
 
         # Build manifest
@@ -291,13 +338,13 @@ def build_index(cfg, full: bool = False, limit: int | None = None, embed_fn=None
             "chunks": len(chunks_data),
         }
 
-        # Build new state.json
+        # Build compact state.json (row indices only, vectors live in vectors.f32)
         state_data = {
             "model": model,
             "dims": dims,
             "chunker": chunker,
-            "abstracts": cached_abstracts,
-            "attachments": new_cached_attachments,
+            "abstracts": state_abstracts,
+            "attachments": state_attachments,
         }
 
         # Write files to search.tmp

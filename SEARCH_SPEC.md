@@ -101,7 +101,7 @@ Written into `.planner/search.tmp/`, then renamed into place, so the plugin neve
   "abstractRow": 0
 }
 ```
-`abstractRow` is the vector row for title + abstract, or `null` if there's no abstract.
+`abstractRow` is the vector row for title + abstract (or the title alone if there's no abstract).
 
 **`chunks.json`**: `{ "paper": <index into papers>, "attachmentKey": "…", "page": 6, "text": "…", "row": 1 }`
 
@@ -156,7 +156,7 @@ keep_alive = "30m"
 **Embedding (`embed`)**
 - `POST {ollama_url}/api/embed` with `{"model", "input": [...], "keep_alive", "truncate": true}`.
 - Documents (abstracts, chunks) are sent **without** an instruction. The query side (in the plugin) uses `Instruct: {query_instruction}\nQuery: {q}`, which is the format Qwen3-Embedding expects.
-- Abstract row text: `"{title}\n\n{abstract}"`.
+- Abstract row text: `"{title}\n\n{abstract}"`, or `"{title}"` when the paper has no abstract.
 - Truncate each vector to `dims`, then L2-normalise.
 - On a connection error, retry 3 times with backoff. If the model is missing, the error says `ollama pull <model>`.
 
@@ -282,7 +282,7 @@ Python tests use `unittest` with temporary directories, as `tests/test_r1.py` do
 24. `test_removed_paper_disappears_and_rows_are_compact`
 25. `test_model_or_dims_change_forces_full_rebuild`
 26. `test_atomic_write_never_leaves_partial_index`: the embedder fails halfway → the previous `search/` is untouched and `search.tmp/` is cleaned up.
-27. `test_paper_without_abstract_has_null_abstract_row_and_chunks`
+27. `test_paper_without_abstract_embeds_title_and_chunks`
 28. `test_paper_without_pdf_has_abstract_row_only`
 
 **CLI, morning job and doctor**

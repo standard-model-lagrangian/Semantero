@@ -110,3 +110,86 @@ kind = "author-title"
 text = "Terasaki mitochondrial transfer immune"
 expect = ["terasakiMitochondrialTransferImmune2026"]
 kind = "author-title"
+
+# Paraphrased / memory queries (conceptual descriptions avoiding direct title phrasing)
+
+[[q]]
+text = "gels that relax stress faster help brain cells develop more quickly"
+expect = ["rothTunableHydrogelViscoelasticity2023"]
+kind = "finding"
+
+[[q]]
+text = "immune cells donating their powerhouses to cancer cells so they can spread to lymph nodes"
+expect = ["terasakiMitochondrialTransferImmune2026"]
+kind = "finding"
+
+[[q]]
+text = "bacterial defense enzyme sitting in the cell membrane that cuts up invading virus DNA as it enters"
+expect = ["saxtonMembraneboundNucleaseDirectly2026"]
+kind = "finding"
+
+[[q]]
+text = "rigid 3D tumor cultures making pancreatic cancer resistant to chemotherapy drugs"
+expect = ["lesavageEngineeredMatricesReveal2024"]
+kind = "finding"
+
+[[q]]
+text = "engineered feedback loops that keep two engineered cell types at a steady population balance"
+expect = ["anSyntheticCircuitsCell2026"]
+kind = "finding"
+
+[[q]]
+text = "crowding and mechanical pulling forces in the gut lining trigger cells to be squeezed out"
+expect = ["kruegerEpithelialTensionControls2025"]
+kind = "finding"
+
+[[q]]
+text = "making live mice see-through for imaging by applying light-absorbing dye molecules to the skin"
+expect = ["ouAchievingOpticalTransparency2024"]
+kind = "finding"
+
+[[q]]
+text = "training single-cell foundation models on tens of millions of cells barely improves performance"
+expect = ["ScalingTrainingDataset2026"]
+kind = "finding"
+
+[[q]]
+text = "false correlations make single-cell genetic knockout prediction benchmarks look better than they are"
+expect = ["nicolSpuriousCorrelationInflates"]
+kind = "finding"
+
+[[q]]
+text = "allowing language models to handle arbitrarily long inputs by calling themselves recursively at test time"
+expect = ["zhangRecursiveLanguageModels2026"]
+kind = "method"
+
+[[q]]
+text = "speeding up continuous directed evolution in bacteria with an orthogonal phi29 DNA polymerase"
+expect = ["rehmHighlyMutagenicContinuous2026"]
+kind = "method"
+
+[[q]]
+text = "designing proteins that actively speed up unbinding to control how long cytokine signals last"
+expect = ["broermanDesignFacilitatedDissociation2025"]
+kind = "finding"
+
+[[q]]
+text = "swapping PEG on lipid nanoparticles for polypeptides to deliver mRNA without triggering immune reactions"
+expect = ["zengPolypeptideengineeredLipidNanoparticles2026"]
+kind = "method"
+
+[[q]]
+text = "small-molecule glue that senses heme locally by bringing three proteins together"
+expect = ["heiderLocalizedHemeSensing2026"]
+kind = "finding"
+
+[[q]]
+text = "picking which drug combinations and dosing schedules to test on tumor arrays using active learning"
+expect = ["yakavetsMachineLearningassistedExploration2025", "toshBayesianActiveLearning2025"]
+kind = "method"
+
+[[q]]
+text = "replacing animal-derived Matrigel with fully defined synthetic gels to grow gut organoid crypts"
+expect = ["hushkaFullySyntheticHydrogels2025a"]
+kind = "finding"
+
