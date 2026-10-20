@@ -558,3 +558,22 @@ test("I11 rows render title cut at 80 chars, first author · year, and snippet w
   const snippetChild2 = container2.children.find((c: any) => c.className === "daito-suggest-snippet");
   assert.strictEqual(snippetChild2, undefined, "Snippet must not be rendered when inlineShowSnippet = false");
 });
+
+test("I-fresh each @@ query triggers a background index freshness check without waiting on it", async () => {
+  const vault = new FakeVault();
+  const indexStore = new FakeIndexStore() as FakeIndexStore & { ensureFresh(): Promise<boolean> };
+  let freshCalls = 0;
+  indexStore.ensureFresh = () => {
+    freshCalls++;
+    return new Promise<boolean>(() => {}); // never settles: suggestions must not wait for it
+  };
+  const controller = new InlineSuggestController({
+    indexStore,
+    vault,
+    settings: { citationFormat: "[[{{citekey}}]]", createLiteratureNotes: false },
+  });
+
+  const items = await controller.getSuggestions("");
+  assert.strictEqual(freshCalls, 1);
+  assert.strictEqual(items[0].type, "hint");
+});

@@ -1,4 +1,5 @@
 secrets.toml
+config.local.toml
 .venv/
 logs/
 __pycache__/

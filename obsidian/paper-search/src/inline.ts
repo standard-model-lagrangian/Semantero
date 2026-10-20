@@ -140,6 +140,8 @@ export interface IndexStoreLike {
   getRowToPaper(): Int32Array | null;
   getRowIsAbstract(): Uint8Array | null;
   getPaperChunkRows(): Int32Array[] | null;
+  /** Throttled check that swaps in a newer index from disk; optional so fakes can omit it. */
+  ensureFresh?(): Promise<boolean>;
 }
 
 /**
@@ -222,6 +224,10 @@ export class InlineSuggestController {
   ): Promise<SuggestionItem[]> {
     // Every new query supersedes earlier requests, whether or not it runs semantic search itself.
     this.cancel();
+
+    // Pick up a rebuilt index (e.g. a paper deleted in Zotero) without waiting for the modal.
+    // Runs in the background so typing never waits on disk; the query cache drops on swap.
+    this.indexStore.ensureFresh?.().catch(() => {});
 
     // 1. If index not ready yet
     if (!this.indexStore.isReady()) {
@@ -315,6 +321,11 @@ export class InlineSuggestController {
   ): Promise<void> {
     if (item.type !== "paper" || !item.paper) {
       // Loading, hint or footer row does nothing when selected (I8)
+      return;
+    }
+
+    if (!item.paper.citekey) {
+      this.showNotice?.("Paper search: paper has no citekey. Ensure Better BibTeX is installed in Zotero.");
       return;
     }
 

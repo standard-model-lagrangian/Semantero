@@ -412,3 +412,42 @@ test("P8 Ollama down -> needs Ollama state and at most one notice per session", 
   assert.strictEqual(notices.length, 1);
   assert.ok(notices[0].includes("Ollama is not running"));
 });
+
+test("P9 refresh checks index freshness first, so a paper removed from Zotero is not shown", async () => {
+  const vault = new FakeVault();
+  const indexStore = new FakeRelatedIndexStore() as FakeRelatedIndexStore & { ensureFresh(): Promise<boolean> };
+  let freshCalls = 0;
+  indexStore.ensureFresh = async () => {
+    freshCalls++;
+    // Simulates the watcher's rebuild after roth2023 was trashed in Zotero.
+    indexStore.papers = indexStore.papers.map((p) =>
+      p.citekey === "roth2023" ? createDummyPaper("gone2023", "Unrelated replacement title") : p
+    );
+    return true;
+  };
+  const embedder: RelatedEmbedderLike = {
+    async embedQuery() {
+      return new Float32Array(4).fill(1.0);
+    },
+  };
+  const controller = new RelatedPapersController({
+    indexStore,
+    embedder,
+    vault,
+    settings: { relatedLimit: 5, relatedMinScore: 0.1 },
+  });
+
+  const refresh = controller.refresh(
+    "A passage about viscoelastic hydrogels and stress relaxation in neural cultures.",
+    10,
+    "",
+    "notes/fresh.md"
+  );
+  assert.strictEqual(controller.state, "loading", "loading shows before the freshness check");
+  await refresh;
+
+  assert.strictEqual(freshCalls, 1);
+  assert.strictEqual(controller.state, "results");
+  controller.toggleShowHidden();
+  assert.ok(controller.getDisplayItems().items.every((it) => it.paper.citekey !== "roth2023"));
+});

@@ -458,9 +458,11 @@ def cmd_morning(cfg, args):
 
 def cmd_doctor(cfg, args):
     """Run every setup check now and print the result with its fix. No model calls."""
+    search_only = getattr(args, "search", False)
     is_online = online(cfg.models["extract"])
-    print(f"online: {'yes' if is_online else 'no (endpoint checks skipped)'}")
-    results = health.run(cfg, load_sides(cfg.data_dir), is_online)
+    if not search_only:
+        print(f"online: {'yes' if is_online else 'no (endpoint checks skipped)'}")
+    results = health.run(cfg, load_sides(cfg.data_dir), is_online, search_only=search_only)
     for r in results:
         print(f"{'✓' if r.ok else '✗'} {r.name}" + ("" if r.ok else f"\n    {r.message}"))
     bad = sum(not r.ok for r in results)
@@ -521,7 +523,8 @@ def main():
     br.add_argument("--date", help="brief for this date instead of today (YYYY-MM-DD)")
     br.add_argument("--write", action="store_true", help="actually write it into the daily note")
     sub.add_parser("nightly", help="extract new/edited notes, then write today's brief")
-    sub.add_parser("doctor", help="check permissions, the Python env and model endpoints (no model calls)")
+    dr = sub.add_parser("doctor", help="check permissions, the Python env and model endpoints (no model calls)")
+    dr.add_argument("--search", action="store_true", help="run only search & watcher checks (no LLM keys needed)")
     mo = sub.add_parser("morning", help="once a day, on first wake while online: extract, catch up review, write brief")
     mo.add_argument("--force", action="store_true", help="run even if today's run already happened")
     wk = sub.add_parser("weekly", help="write the weekly review for the week ending last Sunday")

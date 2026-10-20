@@ -282,8 +282,21 @@ def check_zotero_watch(cfg) -> Result | None:
     return None
 
 
-def run(cfg, sides: list[dict], online: bool, today: date | None = None) -> list[Result]:
+def run(cfg, sides: list[dict], online: bool, today: date | None = None, search_only: bool = False) -> list[Result]:
     today = today or logical_today()
+    if search_only:
+        checks = [
+            ("vault access", lambda: check_vault_access(cfg)),
+            ("python env", lambda: check_python(cfg)),
+        ]
+        if getattr(cfg, "search", None):
+            checks += [
+                ("search index", lambda: check_search_index(cfg)),
+                ("search tools", lambda: check_search_tools(cfg)),
+                ("zotero watch", lambda: check_zotero_watch(cfg)),
+            ]
+        return [_check(name, fn) for name, fn in checks]
+
     checks = [
         ("vault access", lambda: check_vault_access(cfg)),
         ("future notes", lambda: check_future_notes(cfg, today)),

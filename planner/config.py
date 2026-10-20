@@ -22,6 +22,17 @@ class Config:
 
 def load(path: Path = ROOT / "config.toml") -> Config:
     raw = tomllib.loads(path.read_text())
+    local_path = path.parent / "config.local.toml"
+    if local_path.exists():
+        try:
+            local_raw = tomllib.loads(local_path.read_text())
+            for k, v in local_raw.items():
+                if isinstance(v, dict) and isinstance(raw.get(k), dict):
+                    raw[k].update(v)
+                else:
+                    raw[k] = v
+        except Exception:
+            pass
     vault = Path(raw["vault"]).expanduser()
     return Config(
         vault=vault,

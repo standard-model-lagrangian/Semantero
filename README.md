@@ -49,9 +49,10 @@ You never have to manually re-index or run terminal commands when reading and co
 
 ### Prerequisites
 Make sure you have installed on your Mac:
-1. **[Zotero](https://www.zotero.org/)** (with papers in your library).
+1. **[Zotero](https://www.zotero.org/)** with the **[Better BibTeX](https://retorque.re/zotero-better-bibtex/)** plugin installed (*Required*: Better BibTeX generates the `citekey` field used for Obsidian wikilinks `[[citekey]]`, inline `@@` autocomplete, and literature notes).
 2. **[Obsidian](https://obsidian.md/)** (with an existing vault).
-3. **[Homebrew](https://brew.sh/)** (recommended for installing poppler and ollama).
+3. **[Homebrew](https://brew.sh/)** (recommended for installing poppler, Ollama, and Python 3.11+).
+4. **[Ollama](https://ollama.com)** (*Recommended*): Powers local semantic vector search via `qwen3-embedding:0.6b`. If Ollama is offline or not installed, Daito seamlessly falls back to BM25 keyword search without crashing, and automatically activates semantic search once Ollama is running.
 
 ### 1. Clone & Run the Setup Script
 Open Terminal and run:
@@ -62,17 +63,18 @@ cd daito
 ./setup-search.sh
 ```
 
-*(If your Obsidian vault is not at `~/Documents/Obsidian Vault`, specify its path with `--vault`:)*
+*(If your Obsidian vault or Zotero folder is not in the default location, specify them with flags:)*
 ```bash
-./setup-search.sh --vault "/path/to/your/Obsidian Vault"
+./setup-search.sh --vault "/path/to/your/Obsidian Vault" --zotero "/path/to/Zotero"
 ```
+> Custom paths are saved to a git-ignored `config.local.toml`, so future `git pull` updates will never conflict with your personal directory structure.
 
 ### What the script handles automatically:
-1. Creates a Python virtual environment (`.venv`) using Python 3.11+.
+1. Creates a Python virtual environment (`.venv`) using Python 3.11+ (installs via Homebrew if needed).
 2. Checks for `pdftotext` (`poppler`) and offers to install it via Homebrew.
 3. Checks for Ollama, starts the daemon, and downloads the local `qwen3-embedding:0.6b` model.
 4. Copies the `daito-paper-search` plugin into your vault (`.obsidian/plugins/daito-paper-search/`).
-5. Extracts and indexes your Zotero library into `.planner/search/` in your vault.
+5. Validates Better BibTeX citekeys in your Zotero library and builds your initial search index into `.planner/search/` in your vault.
 6. Installs and registers the automatic background watcher daemon (`com.planner.zotero-watch`) in `launchd`.
 
 ### 2. Enable the Plugin in Obsidian
@@ -120,7 +122,11 @@ The setup script includes convenient management commands:
 
 You can also run health diagnostics at any time with:
 ```bash
-.venv/bin/python -m planner doctor
+# Check overall status and background watcher
+./setup-search.sh status
+
+# Or run search-specific health checks
+.venv/bin/python -m planner doctor --search
 ```
 
 ---

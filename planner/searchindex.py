@@ -166,7 +166,16 @@ def print_stats(cfg):
     print(f"  Index age:            {st['age']}")
 
 
-def build_index(cfg, full: bool = False, limit: int | None = None, embed_fn=None, lock_timeout: float = 60.0) -> dict:
+def build_index(
+    cfg,
+    full: bool = False,
+    limit: int | None = None,
+    embed_fn=None,
+    lock_timeout: float = 60.0,
+    allow_fallback: bool | None = None,
+) -> dict:
+    if allow_fallback is None:
+        allow_fallback = (embed_fn is None)
     """Build or incrementally update search index."""
     t0 = time.time()
 
@@ -326,25 +335,46 @@ def build_index(cfg, full: bool = False, limit: int | None = None, embed_fn=None
                         paper_attachment_chunks[pdf.attachmentKey] = chunks_list
 
             pending_texts = pending_abs_texts + pending_chunk_texts
+            embed_succeeded = True
             if pending_texts:
-                if embed_fn:
-                    new_vecs = embed_fn(pending_texts, dims=dims)
+                if allow_fallback:
+                    try:
+                        if embed_fn:
+                            new_vecs = embed_fn(pending_texts, dims=dims)
+                        else:
+                            new_vecs = embed.embed(
+                                pending_texts,
+                                model=model,
+                                dims=dims,
+                                batch_size=batch_size,
+                                keep_alive=keep_alive,
+                                ollama_url=ollama_url,
+                            )
+                    except Exception as e:
+                        print(f"search index: Ollama embedding unavailable ({e}); falling back to keyword-only index", flush=True)
+                        embed_succeeded = False
+                        new_vecs = None
                 else:
-                    new_vecs = embed.embed(
-                        pending_texts,
-                        model=model,
-                        dims=dims,
-                        batch_size=batch_size,
-                        keep_alive=keep_alive,
-                        ollama_url=ollama_url,
-                    )
-                vec_idx = 0
-                for sha in pending_abstract_shas:
-                    cached_abstracts[sha] = new_vecs[vec_idx]
-                    vec_idx += 1
-                for att_key, chunk_idx in pending_chunk_keys:
-                    paper_attachment_chunks[att_key][chunk_idx]["vec"] = new_vecs[vec_idx]
-                    vec_idx += 1
+                    if embed_fn:
+                        new_vecs = embed_fn(pending_texts, dims=dims)
+                    else:
+                        new_vecs = embed.embed(
+                            pending_texts,
+                            model=model,
+                            dims=dims,
+                            batch_size=batch_size,
+                            keep_alive=keep_alive,
+                            ollama_url=ollama_url,
+                        )
+
+                if embed_succeeded and new_vecs is not None:
+                    vec_idx = 0
+                    for sha in pending_abstract_shas:
+                        cached_abstracts[sha] = new_vecs[vec_idx]
+                        vec_idx += 1
+                    for att_key, chunk_idx in pending_chunk_keys:
+                        paper_attachment_chunks[att_key][chunk_idx]["vec"] = new_vecs[vec_idx]
+                        vec_idx += 1
 
             # Now assign compact rows and build papers_data, chunks_data, all_vectors
             papers_data: list[dict] = []
@@ -359,6 +389,10 @@ def build_index(cfg, full: bool = False, limit: int | None = None, embed_fn=None
                     if not pdf.path.exists():
                         # Do not cache missing PDFs in state_attachments so next run retries
                         continue
+                    chunks = paper_attachment_chunks.get(pdf.attachmentKey, [])
+                    # If this PDF has text, only cache in state_attachments if all chunks were embedded
+                    if pdf.hasText and chunks and not all(c.get("vec") is not None for c in chunks):
+                        continue
                     stat = pdf.path.stat()
                     state_attachments[pdf.attachmentKey] = {
                         "mtime": stat.st_mtime_ns,
@@ -370,7 +404,7 @@ def build_index(cfg, full: bool = False, limit: int | None = None, embed_fn=None
 
             for p_idx, p in enumerate(papers):
                 _, _, sha = paper_abstract_info[p_idx]
-                if sha is not None:
+                if sha is not None and sha in cached_abstracts and cached_abstracts[sha] is not None:
                     abstract_row = current_row
                     abstract_vec = cached_abstracts[sha]
                     all_vectors.extend(abstract_vec)
@@ -385,8 +419,14 @@ def build_index(cfg, full: bool = False, limit: int | None = None, embed_fn=None
                     if not pdf.path.exists():
                         continue
                     for chunk in paper_attachment_chunks.get(pdf.attachmentKey, []):
-                        ch_row = current_row
-                        all_vectors.extend(chunk["vec"])
+                        if chunk.get("vec") is not None:
+                            ch_row = current_row
+                            all_vectors.extend(chunk["vec"])
+                            if pdf.attachmentKey in state_attachments:
+                                state_attachments[pdf.attachmentKey]["chunks"].append(ch_row)
+                            current_row += 1
+                        else:
+                            ch_row = None
                         chunks_data.append({
                             "paper": p_idx,
                             "attachmentKey": pdf.attachmentKey,
@@ -394,8 +434,6 @@ def build_index(cfg, full: bool = False, limit: int | None = None, embed_fn=None
                             "text": chunk["text"],
                             "row": ch_row,
                         })
-                        state_attachments[pdf.attachmentKey]["chunks"].append(ch_row)
-                        current_row += 1
 
             # Compute content_hash
             vec_bytes = all_vectors.tobytes()

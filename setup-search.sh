@@ -77,11 +77,10 @@ import json, os, sys
 try:
     with open(sys.argv[1]) as f:
         d = json.load(f)
-    for v in d.get("vaults", {}).values():
-        p = v.get("path")
-        if p and os.path.isdir(p):
-            print(p)
-            break
+    vaults = [v for v in d.get("vaults", {}).values() if v.get("path") and os.path.isdir(v.get("path"))]
+    vaults.sort(key=lambda v: (not v.get("open", False)))
+    if vaults:
+        print(vaults[0]["path"])
 except Exception:
     pass
 ' "$obs_json" 2>/dev/null || true)
@@ -120,46 +119,49 @@ for p in glob.glob(os.path.expanduser("~/Library/Application Support/Zotero/Prof
     echo "$HOME/Zotero"
 }
 
-# Read vault path from config.toml if present and existing, else auto-detect
+# Read vault path from config.local.toml, config.toml, or auto-detect
 get_config_vault() {
-    if [[ -f "$SCRIPT_DIR/config.toml" ]]; then
-        local raw
-        raw=$(grep -E '^[[:space:]]*vault[[:space:]]*=' "$SCRIPT_DIR/config.toml" | head -n1 | sed -E 's/^[[:space:]]*vault[[:space:]]*=[[:space:]]*["'\'']?([^"'\'']+)["'\'']?/\1/' | tr -d '\r')
-        if [[ -n "$raw" ]]; then
-            local exp
-            exp="$(expand_path "$raw")"
-            if [[ -d "$exp" ]]; then
-                echo "$exp"
-                return
+    for f in "$SCRIPT_DIR/config.local.toml" "$SCRIPT_DIR/config.toml"; do
+        if [[ -f "$f" ]]; then
+            local raw
+            raw=$(grep -E '^[[:space:]]*vault[[:space:]]*=' "$f" | head -n1 | sed -E 's/^[[:space:]]*vault[[:space:]]*=[[:space:]]*["'\'']?([^"'\'']+)["'\'']?/\1/' | tr -d '\r')
+            if [[ -n "$raw" ]]; then
+                local exp
+                exp="$(expand_path "$raw")"
+                if [[ -d "$exp" ]]; then
+                    echo "$exp"
+                    return
+                fi
             fi
         fi
-    fi
+    done
     auto_detect_vault
 }
 
-# Read zotero directory from config.toml if present and existing, else auto-detect
+# Read zotero directory from config.local.toml, config.toml, or auto-detect
 get_config_zotero() {
-    if [[ -f "$SCRIPT_DIR/config.toml" ]]; then
-        local raw
-        raw=$(grep -E '^[[:space:]]*zotero_dir[[:space:]]*=' "$SCRIPT_DIR/config.toml" | head -n1 | sed -E 's/^[[:space:]]*zotero_dir[[:space:]]*=[[:space:]]*["'\'']?([^"'\'']+)["'\'']?/\1/' | tr -d '\r')
-        if [[ -n "$raw" ]]; then
-            local exp
-            exp="$(expand_path "$raw")"
-            if [[ -f "$exp/zotero.sqlite" ]]; then
-                echo "$exp"
-                return
+    for f in "$SCRIPT_DIR/config.local.toml" "$SCRIPT_DIR/config.toml"; do
+        if [[ -f "$f" ]]; then
+            local raw
+            raw=$(grep -E '^[[:space:]]*zotero_dir[[:space:]]*=' "$f" | head -n1 | sed -E 's/^[[:space:]]*zotero_dir[[:space:]]*=[[:space:]]*["'\'']?([^"'\'']+)["'\'']?/\1/' | tr -d '\r')
+            if [[ -n "$raw" ]]; then
+                local exp
+                exp="$(expand_path "$raw")"
+                if [[ -f "$exp/zotero.sqlite" ]]; then
+                    echo "$exp"
+                    return
+                fi
             fi
         fi
-    fi
+    done
     auto_detect_zotero
 }
 
-# Persistently update vault and zotero_dir paths in config.toml
+# Persistently update custom vault and zotero_dir paths in config.local.toml (git-ignored)
 update_config_paths() {
     local v="$1"
     local z="$2"
-    if [[ -f "$SCRIPT_DIR/config.toml" ]]; then
-        python3 -c '
+    python3 -c '
 import os, re, sys
 home = os.path.expanduser("~")
 def compact(p):
@@ -170,16 +172,33 @@ def compact(p):
 vault = compact(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1] else None
 zotero = compact(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2] else None
 
-with open("config.toml", "r") as f:
-    text = f.read()
-if vault:
-    text = re.sub(r"^[ \t]*vault[ \t]*=.*$", f"vault = \"{vault}\"", text, flags=re.M)
-if zotero:
-    text = re.sub(r"^[ \t]*zotero_dir[ \t]*=.*$", f"zotero_dir = \"{zotero}\"", text, flags=re.M)
-with open("config.toml", "w") as f:
-    f.write(text)
+is_custom_vault = vault and vault != "~/Documents/Obsidian Vault"
+is_custom_zotero = zotero and zotero != "~/Zotero"
+
+path = "config.local.toml"
+content = ""
+if os.path.exists(path):
+    with open(path) as f:
+        content = f.read()
+
+if is_custom_vault:
+    if re.search(r"^[ \t]*vault[ \t]*=", content, flags=re.M):
+        content = re.sub(r"^[ \t]*vault[ \t]*=.*$", f"vault = \"{vault}\"", content, flags=re.M)
+    else:
+        content = f"vault = \"{vault}\"\n" + content
+
+if is_custom_zotero:
+    if re.search(r"^[ \t]*zotero_dir[ \t]*=", content, flags=re.M):
+        content = re.sub(r"^[ \t]*zotero_dir[ \t]*=.*$", f"zotero_dir = \"{zotero}\"", content, flags=re.M)
+    elif "[search]" in content:
+        content = content.replace("[search]", f"[search]\nzotero_dir = \"{zotero}\"")
+    else:
+        content += f"\n[search]\nzotero_dir = \"{zotero}\"\n"
+
+if is_custom_vault or is_custom_zotero:
+    with open(path, "w") as f:
+        f.write(content.strip() + "\n")
 ' "$v" "$z" 2>/dev/null || true
-    fi
 }
 
 # ------------------------------------------------------------------------------
@@ -472,6 +491,31 @@ cmd_setup() {
         warn "If your Zotero is located elsewhere, run: ./setup-search.sh --zotero /path/to/Zotero"
     else
         success "Zotero database found at $zotero_dir/zotero.sqlite"
+        # Check for Better BibTeX citekeys
+        local citekey_count
+        citekey_count=$(python3 -c '
+import sqlite3, sys
+try:
+    conn = sqlite3.connect(f"file:{sys.argv[1]}?immutable=1", uri=True)
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT COUNT(*) FROM itemDataValues idv
+        JOIN itemData id ON idv.valueID = id.valueID
+        JOIN fields f ON id.fieldID = f.fieldID
+        WHERE f.fieldName = "citationKey" AND idv.value IS NOT NULL AND idv.value != ""
+    """)
+    print(cur.fetchone()[0])
+    conn.close()
+except Exception:
+    print(-1)
+' "$zotero_dir/zotero.sqlite" 2>/dev/null || echo -1)
+        if [[ "$citekey_count" -eq 0 ]]; then
+            warn "No citation keys (citekeys) found in your Zotero database."
+            warn "Better BibTeX is required for Obsidian citations: https://retorque.re/zotero-better-bibtex/"
+            warn "Without Better BibTeX, citation wikilinks ([[]]) and literature notes cannot be created."
+        elif [[ "$citekey_count" -gt 0 ]]; then
+            success "Found Better BibTeX citation keys ($citekey_count keys)"
+        fi
     fi
 
     local vault_dir
@@ -479,6 +523,25 @@ cmd_setup() {
         vault_dir="$(expand_path "$custom_vault")"
     else
         vault_dir="$(get_config_vault)"
+    fi
+
+    local obs_json="$HOME/Library/Application Support/obsidian/obsidian.json"
+    if [[ -z "$custom_vault" && -f "$obs_json" ]]; then
+        local vault_count
+        vault_count=$(python3 -c '
+import json, os, sys
+try:
+    with open(sys.argv[1]) as f:
+        d = json.load(f)
+    vaults = [v["path"] for v in d.get("vaults", {}).values() if v.get("path") and os.path.isdir(v["path"])]
+    print(len(vaults))
+except Exception:
+    print(0)
+' "$obs_json" 2>/dev/null || echo 0)
+        if [[ "$vault_count" -gt 1 ]]; then
+            info "Detected $vault_count Obsidian vaults. Selected active vault: $vault_dir"
+            info "(To use a different vault, run: ./setup-search.sh --vault /path/to/vault)"
+        fi
     fi
 
     if [[ ! -d "$vault_dir" ]]; then
@@ -506,9 +569,13 @@ cmd_setup() {
         success "Obsidian Vault found at $vault_dir"
     fi
 
-    # Persist paths in config.toml
+    # Persist custom paths in config.local.toml if different from defaults
     update_config_paths "$vault_dir" "$zotero_dir"
-    success "Synchronized paths in config.toml"
+    if [[ -f "$SCRIPT_DIR/config.local.toml" ]]; then
+        success "Saved local overrides to config.local.toml (git-ignored)"
+    else
+        success "Using default vault and Zotero paths from config.toml"
+    fi
 
     # 6. Install Obsidian Plugin
     info "Step 5/6: Installing Obsidian plugin into vault..."

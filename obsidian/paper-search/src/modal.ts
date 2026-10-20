@@ -259,6 +259,12 @@ export class PaperSearchModal extends SuggestModal<SearchModalItem> {
     const ix = this.plugin.indexStore.getIndex();
     if (!ix) return;
     const paper = ix.papers[paperIndex];
+    if (!paper) return;
+
+    if (!paper.citekey) {
+      new Notice("Paper search: paper has no citekey. Ensure Better BibTeX is installed in Zotero.");
+      return;
+    }
 
     const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
     if (activeView) {

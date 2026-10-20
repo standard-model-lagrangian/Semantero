@@ -640,6 +640,37 @@ class TestSearchIndex(unittest.TestCase):
         # Temp dir was cleaned up
         self.assertFalse((self.data_dir / "search.tmp").exists())
 
+    def test_ollama_unavailable_falls_back_to_keyword_only(self):
+        """When Ollama cannot be reached, indexing builds a keyword-only index without crashing."""
+        from planner import searchindex
+
+        failing_embed = MagicMock(side_effect=RuntimeError("Connection refused"))
+        res = searchindex.build_index(self.cfg, full=True, allow_fallback=True, embed_fn=failing_embed)
+        self.assertGreater(res["papers"], 0)
+        self.assertGreater(res["chunks"], 0)
+
+        search_dir = self.data_dir / "search"
+        self.assertTrue((search_dir / "manifest.json").exists())
+        self.assertTrue((search_dir / "papers.json").exists())
+        self.assertTrue((search_dir / "chunks.json").exists())
+
+        # Vectors file is 0 bytes when no vectors could be embedded
+        vec_bytes = (search_dir / "vectors.f32").read_bytes()
+        self.assertEqual(len(vec_bytes), 0)
+
+        papers = json.loads((search_dir / "papers.json").read_text())
+        chunks = json.loads((search_dir / "chunks.json").read_text())
+        for p in papers:
+            self.assertIsNone(p["abstractRow"])
+        for c in chunks:
+            self.assertIsNone(c["row"])
+
+        # When Ollama becomes available again, next build populates vectors
+        res2 = searchindex.build_index(self.cfg, full=False, embed_fn=self.fake_embed)
+        self.assertGreater(res2["papers"], 0)
+        vec_bytes2 = (search_dir / "vectors.f32").read_bytes()
+        self.assertGreater(len(vec_bytes2), 0)
+
     # 27. Paper without abstract embeds title as abstract row and keeps chunks
     def test_paper_without_abstract_embeds_title_and_chunks(self):
         import array, json
@@ -979,6 +1010,46 @@ class TestCliAndDoctor(unittest.TestCase):
             self.assertIsNotNone(res_ollama)
             self.assertFalse(res_ollama.ok)
             self.assertIn("ollama pull", res_ollama.message)
+
+    # 32. config.local.toml overrides config.toml
+    def test_config_local_override(self):
+        import shutil, tempfile
+        from planner import config
+        tmp_dir = Path(tempfile.mkdtemp())
+        try:
+            cfg_path = tmp_dir / "config.toml"
+            cfg_path.write_text('vault = "~/BaseVault"\nmodels = {}\n[search]\nzotero_dir = "~/BaseZotero"\n')
+
+            # Without local override
+            c1 = config.load(cfg_path)
+            self.assertEqual(c1.vault, Path("~/BaseVault").expanduser())
+            self.assertEqual(c1.search["zotero_dir"], "~/BaseZotero")
+
+            # With local override
+            local_path = tmp_dir / "config.local.toml"
+            local_path.write_text('vault = "~/OverrideVault"\n[search]\nzotero_dir = "~/OverrideZotero"\n')
+            c2 = config.load(cfg_path)
+            self.assertEqual(c2.vault, Path("~/OverrideVault").expanduser())
+            self.assertEqual(c2.search["zotero_dir"], "~/OverrideZotero")
+        finally:
+            shutil.rmtree(tmp_dir)
+
+    # 33. Doctor search_only runs only search-relevant checks
+    def test_doctor_search_only(self):
+        from planner import health
+        with patch("subprocess.run") as mock_run, patch("shutil.which") as mock_which:
+            mock_which.return_value = "/opt/homebrew/bin/pdftotext"
+            mock_run.return_value = MagicMock(returncode=0, stdout="NAME\nqwen3-embedding:0.6b\n")
+            results = health.run(self.cfg, [], online=False, search_only=True)
+            names = [r.name for r in results]
+            # Should have vault access, python env, search index, search tools, zotero watch
+            self.assertIn("vault access", names)
+            self.assertIn("search tools", names)
+            self.assertIn("zotero watch", names)
+            # Should NOT have LLM endpoint or planner job checks
+            self.assertNotIn("launchd jobs", names)
+            self.assertNotIn("anthropic SDK", names)
+            self.assertNotIn("extract model", names)
 
 
 if __name__ == "__main__":

@@ -21,6 +21,8 @@ export interface RelatedEmbedderLike {
 export interface RelatedIndexStoreLike {
   isReady(): boolean;
   getIndex(): LoadedIndex | null;
+  /** Throttled check that swaps in a newer index from disk; optional so fakes can omit it. */
+  ensureFresh?(): Promise<boolean>;
 }
 
 export interface ClipboardLike {
@@ -182,6 +184,17 @@ export class RelatedPapersController {
       return;
     }
     this.setState("loading");
+
+    // Pick up a rebuilt index first so a refresh never shows papers already removed from Zotero.
+    // Reads only manifest.json unless the index changed; at most once per 10 s.
+    if (this.indexStore.ensureFresh) {
+      await this.indexStore.ensureFresh().catch(() => false);
+      if (seq !== this.currentSeq) return;
+      if (this.activeFilePath !== pathAtStart) {
+        this.resetToEmpty();
+        return;
+      }
+    }
 
     try {
       const instruction = this.settings.relatedInstruction;

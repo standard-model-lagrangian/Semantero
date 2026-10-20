@@ -1508,6 +1508,11 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
     const ix = this.plugin.indexStore.getIndex();
     if (!ix) return;
     const paper = ix.papers[paperIndex];
+    if (!paper) return;
+    if (!paper.citekey) {
+      new import_obsidian.Notice("Paper search: paper has no citekey. Ensure Better BibTeX is installed in Zotero.");
+      return;
+    }
     const activeView = this.app.workspace.getActiveViewOfType(import_obsidian.MarkdownView);
     if (activeView) {
       const editor = activeView.editor;
@@ -1808,6 +1813,8 @@ var InlineSuggestController = class {
   }
   async getSuggestions(query, suggestInstance) {
     this.cancel();
+    this.indexStore.ensureFresh?.().catch(() => {
+    });
     if (!this.indexStore.isReady()) {
       return [{ type: "loading", message: "Loading paper index\u2026" }];
     }
@@ -1874,6 +1881,10 @@ var InlineSuggestController = class {
   }
   async selectSuggestion(item, editor, context) {
     if (item.type !== "paper" || !item.paper) {
+      return;
+    }
+    if (!item.paper.citekey) {
+      this.showNotice?.("Paper search: paper has no citekey. Ensure Better BibTeX is installed in Zotero.");
       return;
     }
     const citation = formatCitation2(
@@ -2222,6 +2233,14 @@ var RelatedPapersController = class {
       return;
     }
     this.setState("loading");
+    if (this.indexStore.ensureFresh) {
+      await this.indexStore.ensureFresh().catch(() => false);
+      if (seq !== this.currentSeq) return;
+      if (this.activeFilePath !== pathAtStart) {
+        this.resetToEmpty();
+        return;
+      }
+    }
     try {
       const instruction = this.settings.relatedInstruction;
       const qVec = await this.embedder.embedQuery(passage, instruction);
