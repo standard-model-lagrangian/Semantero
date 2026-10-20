@@ -1,3 +1,4 @@
+import sys
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -31,8 +32,8 @@ def load(path: Path = ROOT / "config.toml") -> Config:
                     raw[k].update(v)
                 else:
                     raw[k] = v
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"config.local.toml ignored ({e}); using config.toml paths", file=sys.stderr)
     vault = Path(raw["vault"]).expanduser()
     return Config(
         vault=vault,

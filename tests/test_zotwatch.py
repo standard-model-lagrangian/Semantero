@@ -291,6 +291,44 @@ class TestZotwatch(unittest.TestCase):
         self.assertIn("logs/zotero-watch.log", pl["StandardOutPath"])
         self.assertNotIn("KeepAlive", pl)
         self.assertFalse(pl.get("RunAtLoad", True))
+        # Hourly retry for a keyword-only index; no tighter, to keep wake-ups rare
+        self.assertGreaterEqual(pl["StartInterval"], 3600)
+
+    # W10 keyword-only index: unchanged library retries only when Ollama answers
+    def test_w10_degraded_index_retries_once_ollama_is_back(self):
+        failing_embed = MagicMock(side_effect=RuntimeError("Connection refused"))
+        searchindex.build_index(self.cfg, full=True, allow_fallback=True, embed_fn=failing_embed)
+        state_file = self.data_dir / "search" / "state.json"
+        state = json.loads(state_file.read_text())
+        state["fingerprint"] = zotwatch.compute_fingerprint(self.zotero_dir)
+        state_file.write_text(json.dumps(state))
+        self.assertTrue(state["degraded"])
+
+        # Ollama still down: one probe, no build
+        with patch("planner.zotwatch.ollama_up", return_value=False), \
+                patch("planner.searchindex.build_index") as mock_build:
+            stdout = io.StringIO()
+            with patch("sys.stdout", stdout):
+                self.assertEqual(zotwatch.watch_run(self.cfg, quiet_s=0.01), 0)
+            mock_build.assert_not_called()
+            self.assertIn("Ollama still unavailable", stdout.getvalue())
+
+        # Ollama back: rebuild embeds the missing texts and clears the mark
+        real_build = searchindex.build_index
+        with patch("planner.zotwatch.ollama_up", return_value=True), \
+                patch("planner.searchindex.build_index",
+                      side_effect=lambda cfg, full=False: real_build(cfg, full=full, embed_fn=self.fake_embed)):
+            with patch("sys.stdout", io.StringIO()):
+                self.assertEqual(zotwatch.watch_run(self.cfg, quiet_s=0.01), 0)
+        state_after = json.loads(state_file.read_text())
+        self.assertNotIn("degraded", state_after)
+        manifest = json.loads((self.data_dir / "search" / "manifest.json").read_text())
+        self.assertEqual(manifest["missing_vectors"], 0)
+
+        # Healthy and unchanged: back to the plain no-change exit, no Ollama probe
+        with patch("planner.zotwatch.ollama_up") as mock_up, patch("sys.stdout", io.StringIO()):
+            zotwatch.watch_run(self.cfg, quiet_s=0.01)
+            mock_up.assert_not_called()
 
     # W9 doctor checks
     def test_w9_doctor_checks(self):

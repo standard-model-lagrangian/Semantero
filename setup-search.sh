@@ -267,11 +267,17 @@ try:
     p = m.get("papers", "?")
     c = m.get("chunks", "?")
     b = m.get("built_at", "unknown")
-    print(f"{p} papers ({c} chunks), built {b}")
+    miss = m.get("missing_vectors", 0)
+    note = f" - KEYWORD-ONLY for {miss} texts until Ollama runs" if miss else ""
+    print(f"{p} papers ({c} chunks), built {b}{note}")
 except Exception:
     print("present")
 ' "$manifest" 2>/dev/null || echo "present")
-            success "Search Index: $info_str"
+            if [[ "$info_str" == *KEYWORD-ONLY* ]]; then
+                warn "Search Index: $info_str"
+            else
+                success "Search Index: $info_str"
+            fi
         else
             warn "Search Index: No index found in $vault_dir/.planner/search"
         fi
@@ -649,6 +655,9 @@ except Exception:
     </array>
     <key>ThrottleInterval</key>
     <integer>30</integer>
+    <!-- Hourly retry for a keyword-only index; exits after a fingerprint check otherwise. -->
+    <key>StartInterval</key>
+    <integer>3600</integer>
     <key>RunAtLoad</key>
     <false/>
     <key>EnvironmentVariables</key>

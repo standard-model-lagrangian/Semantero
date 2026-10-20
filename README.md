@@ -52,7 +52,7 @@ Make sure you have installed on your Mac:
 1. **[Zotero](https://www.zotero.org/)** with the **[Better BibTeX](https://retorque.re/zotero-better-bibtex/)** plugin installed (*Required*: Better BibTeX generates the `citekey` field used for Obsidian wikilinks `[[citekey]]`, inline `@@` autocomplete, and literature notes).
 2. **[Obsidian](https://obsidian.md/)** (with an existing vault).
 3. **[Homebrew](https://brew.sh/)** (recommended for installing poppler, Ollama, and Python 3.11+).
-4. **[Ollama](https://ollama.com)** (*Recommended*): Powers local semantic vector search via `qwen3-embedding:0.6b`. If Ollama is offline or not installed, Daito seamlessly falls back to BM25 keyword search without crashing, and automatically activates semantic search once Ollama is running.
+4. **[Ollama](https://ollama.com)** (*Recommended*): Powers local semantic vector search via `qwen3-embedding:0.6b`. If Ollama is offline or not installed, indexing falls back to BM25 keyword search instead of failing. Once Ollama is running, the watcher fills in the missing embeddings within the hour (or immediately with `./setup-search.sh index`); `./setup-search.sh status` shows when the index is keyword-only.
 
 ### 1. Clone & Run the Setup Script
 Open Terminal and run:

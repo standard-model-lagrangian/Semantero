@@ -174,9 +174,13 @@ def build_index(
     lock_timeout: float = 60.0,
     allow_fallback: bool | None = None,
 ) -> dict:
+    """Build or incrementally update search index.
+
+    If Ollama is unreachable (and allow_fallback), texts without a cached vector are written with no
+    row: keyword search still finds them, and the index is marked degraded until a later build embeds them.
+    """
     if allow_fallback is None:
         allow_fallback = (embed_fn is None)
-    """Build or incrementally update search index."""
     t0 = time.time()
 
     search_dir = cfg.data_dir / "search"
@@ -446,9 +450,13 @@ def build_index(
                 if orig_pdf.path.exists() and not pdf["hasText"]
             ]
 
-            # 0.2: Check if this is a no-op run
+            # Texts still without a vector: everything pending when embedding failed (cached ones are reused).
+            missing_vectors = 0 if embed_succeeded else len(pending_texts)
+
+            # 0.2: Check if this is a no-op run (a failed retry that reproduces the same keyword-only index is one too)
             old_content_hash = prev_manifest.get("content_hash") if prev_manifest else None
-            if not full and len(pending_texts) == 0 and old_content_hash is not None and content_hash == old_content_hash:
+            nothing_new = len(pending_texts) == 0 or not embed_succeeded
+            if not full and nothing_new and old_content_hash is not None and content_hash == old_content_hash:
                 elapsed = time.time() - t0
                 print(f"search index: no changes ({elapsed:.1f}s)")
                 return {
@@ -458,6 +466,7 @@ def build_index(
                     "no_text_pdfs": no_text_pdfs,
                     "changed": False,
                     "content_hash": content_hash,
+                    "missing_vectors": missing_vectors,
                 }
 
             # Build manifest
@@ -471,6 +480,7 @@ def build_index(
                 "papers": len(papers_data),
                 "chunks": len(chunks_data),
                 "content_hash": content_hash,
+                "missing_vectors": missing_vectors,
             }
 
             # Build compact state.json (row indices only, vectors live in vectors.f32)
@@ -483,6 +493,9 @@ def build_index(
             }
             if watcher_fingerprint is not None:
                 state_data["fingerprint"] = watcher_fingerprint
+            if missing_vectors:
+                # Tells the watcher to retry once Ollama is back, even if Zotero hasn't changed.
+                state_data["degraded"] = True
 
             # Write files to search.tmp
             tmp_dir.mkdir(parents=True, exist_ok=True)
@@ -519,6 +532,7 @@ def build_index(
                 "no_text_pdfs": no_text_pdfs,
                 "changed": True,
                 "content_hash": content_hash,
+                "missing_vectors": missing_vectors,
             }
 
         except Exception:

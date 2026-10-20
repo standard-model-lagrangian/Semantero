@@ -671,6 +671,37 @@ class TestSearchIndex(unittest.TestCase):
         vec_bytes2 = (search_dir / "vectors.f32").read_bytes()
         self.assertGreater(len(vec_bytes2), 0)
 
+    def test_keyword_only_index_is_marked_and_flagged_until_embedded(self):
+        """A fallback build records how many texts lack vectors; a failed retry writes nothing; doctor warns."""
+        from planner import health, searchindex
+
+        failing_embed = MagicMock(side_effect=RuntimeError("Connection refused"))
+        res = searchindex.build_index(self.cfg, full=True, allow_fallback=True, embed_fn=failing_embed)
+        self.assertGreater(res["missing_vectors"], 0)
+
+        search_dir = self.data_dir / "search"
+        manifest = json.loads((search_dir / "manifest.json").read_text())
+        self.assertEqual(manifest["missing_vectors"], res["missing_vectors"])
+        self.assertTrue(json.loads((search_dir / "state.json").read_text())["degraded"])
+
+        bad = health.check_search_index(self.cfg)
+        self.assertIsNotNone(bad)
+        self.assertFalse(bad.ok)
+        self.assertIn("Semantic search is off", bad.message)
+
+        # Ollama still down: same keyword-only index, so nothing is rewritten
+        mtime = (search_dir / "manifest.json").stat().st_mtime_ns
+        res_retry = searchindex.build_index(self.cfg, allow_fallback=True, embed_fn=failing_embed)
+        self.assertFalse(res_retry["changed"])
+        self.assertEqual((search_dir / "manifest.json").stat().st_mtime_ns, mtime)
+
+        # Ollama back: vectors filled in, degraded mark and doctor warning gone
+        res_ok = searchindex.build_index(self.cfg, embed_fn=self.fake_embed)
+        self.assertEqual(res_ok["missing_vectors"], 0)
+        self.assertEqual(json.loads((search_dir / "manifest.json").read_text())["missing_vectors"], 0)
+        self.assertNotIn("degraded", json.loads((search_dir / "state.json").read_text()))
+        self.assertIsNone(health.check_search_index(self.cfg))
+
     # 27. Paper without abstract embeds title as abstract row and keeps chunks
     def test_paper_without_abstract_embeds_title_and_chunks(self):
         import array, json

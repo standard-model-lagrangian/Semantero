@@ -1,6 +1,7 @@
 import hashlib
 import sqlite3
 import time
+import urllib.request
 from pathlib import Path
 
 from . import searchindex
@@ -86,6 +87,14 @@ def compute_fingerprint(zotero_dir: Path | str) -> str | None:
         return None
 
 
+def ollama_up(ollama_url: str, timeout: float = 2.0) -> bool:
+    try:
+        with urllib.request.urlopen(f"{ollama_url.rstrip('/')}/api/tags", timeout=timeout):
+            return True
+    except Exception:
+        return False
+
+
 def wait_for_quiet(
     db_path: Path,
     quiet_s: float = 20.0,
@@ -155,8 +164,15 @@ def watch_run(
                 old_fp = state.get("fingerprint")
 
                 if fp == old_fp:
-                    print("zotero watch: no changes", flush=True)
-                    return 0
+                    if not state.get("degraded"):
+                        print("zotero watch: no changes", flush=True)
+                        return 0
+                    # Keyword-only index: retry embedding, but only once Ollama answers, so an hourly
+                    # check with Ollama still down costs one HTTP probe, not a pdftotext pass.
+                    if not ollama_up(cfg.search.get("ollama_url", "http://localhost:11434")):
+                        print("zotero watch: keyword-only index, Ollama still unavailable", flush=True)
+                        return 0
+                    print("zotero watch: Ollama is back, embedding the keyword-only texts", flush=True)
 
                 # 4. Build index
                 try:
@@ -165,6 +181,9 @@ def watch_run(
                         f"zotero watch: build completed ({res['papers']} papers, {res['chunks']} chunks)",
                         flush=True,
                     )
+                    if res.get("missing_vectors"):
+                        print(f"zotero watch: {res['missing_vectors']} texts keyword-only (Ollama unavailable); "
+                              "retrying hourly", flush=True)
                 except Exception as e:
                     print(f"zotero watch: build failed ({e})", flush=True)
                     return 0

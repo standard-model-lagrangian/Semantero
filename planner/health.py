@@ -203,6 +203,15 @@ def check_search_index(cfg) -> Result | None:
             f"Search index model/dims ({idx_model}/{idx_dims}) differs from config.toml ({cfg_model}/{cfg_dims}). Run: planner search index --full",
         )
 
+    missing = manifest.get("missing_vectors", 0)
+    if missing:
+        return Result(
+            "search index",
+            False,
+            f"Semantic search is off for {missing} texts (Ollama was unavailable when they were indexed); "
+            "keyword search still works. Start Ollama: the watcher retries hourly, or run: planner search index",
+        )
+
     # Check age (< 3 days old)
     built_at_str = manifest.get("built_at")
     if built_at_str:

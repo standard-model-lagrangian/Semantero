@@ -485,6 +485,9 @@ def cmd_search(cfg, args):
             res = searchindex.build_index(cfg, full=args.full, limit=args.limit)
             if res.get("changed", True):
                 print(f"Indexed {res['papers']} papers ({res['chunks']} chunks) in {res['elapsed']:.1f}s")
+            if res.get("missing_vectors"):
+                print(f"Keyword-only for {res['missing_vectors']} texts: Ollama was unavailable. "
+                      "The watcher embeds them within the hour once Ollama is running.")
                 if res["no_text_pdfs"]:
                     print(f"PDFs with no text ({len(res['no_text_pdfs'])}):")
                     for item in res["no_text_pdfs"]:
