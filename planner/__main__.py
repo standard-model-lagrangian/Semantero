@@ -490,6 +490,9 @@ def cmd_search(cfg, args):
         except TimeoutError as e:
             print(f"search index: {e}", file=sys.stderr)
             sys.exit(1)
+    elif args.search_cmd == "watch-run":
+        from . import zotwatch
+        zotwatch.watch_run(cfg)
 
 
 def main():
@@ -497,12 +500,13 @@ def main():
     p.add_argument("--model", help='override the extraction model, e.g. "groq:qwen/qwen3-32b"')
     p.add_argument("--data", help="data folder inside the vault (default from config), e.g. .planner-groq")
     sub = p.add_subparsers(dest="cmd", required=True)
-    sc = sub.add_parser("search", help="paper search: stats or index")
+    sc = sub.add_parser("search", help="paper search: stats, index, or watch-run")
     sc_sub = sc.add_subparsers(dest="search_cmd", required=True)
     sc_sub.add_parser("stats", help="papers, chunks, PDFs with no text, papers with no abstract, model, age")
     sc_idx = sc_sub.add_parser("index", help="build or update search index")
     sc_idx.add_argument("--full", action="store_true", help="force full rebuild")
     sc_idx.add_argument("--limit", type=int, help="limit number of papers to index")
+    sc_sub.add_parser("watch-run", help="run watcher incremental sync on Zotero changes")
     b = sub.add_parser("backfill", help="extract all daily notes into .planner/")
     b.add_argument("--force", action="store_true", help="re-extract even cached notes")
     b.add_argument("--limit", type=int, help="only the most recent N notes")

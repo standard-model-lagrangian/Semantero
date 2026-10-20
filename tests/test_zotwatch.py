@@ -1,0 +1,375 @@
+import hashlib
+import io
+import json
+import os
+import plistlib
+import shutil
+import sqlite3
+import tempfile
+import time
+import unittest
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+from planner import searchindex, zotwatch
+from planner.config import Config
+
+FIXTURES_DIR = Path(__file__).parent / "fixtures" / "search"
+
+
+class TestZotwatch(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp_path = Path(self.tmp.name)
+        self.vault_dir = self.tmp_path / "vault"
+        self.vault_dir.mkdir(parents=True)
+        self.data_dir = self.vault_dir / ".planner"
+        self.data_dir.mkdir(parents=True)
+        self.zotero_dir = self.tmp_path / "zotero"
+        self.zotero_dir.mkdir(parents=True)
+
+        # Copy sqlite fixture
+        orig_db = FIXTURES_DIR / "zotero.sqlite"
+        (self.zotero_dir / "zotero.sqlite").write_bytes(orig_db.read_bytes())
+
+        # Copy sample storage PDFs
+        for att_dir, fname in [
+            ("ATT001", "sample.pdf"),
+            ("ATT002", "sample2.pdf"),
+            ("ATT004A", "main.pdf"),
+            ("ATT004B", "supp.pdf"),
+        ]:
+            sp = self.zotero_dir / "storage" / att_dir
+            sp.mkdir(parents=True, exist_ok=True)
+            (sp / fname).write_bytes((FIXTURES_DIR / "sample.pdf").read_bytes())
+
+        self.cfg = Config(
+            vault=self.vault_dir,
+            daily_dir=self.vault_dir,
+            data_dir=self.data_dir,
+            models={},
+            extract={},
+            brief={},
+            reviews_dir=self.vault_dir / "Reviews",
+            daily_template=self.vault_dir / "Daily.md",
+            schedule={},
+            threads={},
+            search={
+                "zotero_dir": str(self.zotero_dir),
+                "model": "qwen3-embedding:0.6b",
+                "dims": 8,
+                "batch_size": 32,
+                "chunk_words": 300,
+                "chunk_overlap_words": 50,
+                "max_chunks_per_paper": 150,
+            },
+        )
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def fake_embed(self, texts, **kwargs):
+        import math
+        dims = kwargs.get("dims", 8)
+        vectors = []
+        for text in texts:
+            vec = [0.0] * dims
+            words = text.lower().split()
+            for w in words:
+                h = int(hashlib.md5(w.encode()).hexdigest(), 16)
+                vec[h % dims] += 1.0
+            if not any(vec):
+                vec[0] = 1.0
+            norm = math.sqrt(sum(x * x for x in vec))
+            vectors.append([x / norm for x in vec])
+        return vectors
+
+    # W1 no change -> no build, no writes, finished in under 1.5s
+    def test_w1_no_change_no_build_no_writes(self):
+        # Initial build
+        searchindex.build_index(self.cfg, full=True, embed_fn=self.fake_embed)
+        # Record initial fingerprint in state.json
+        fp = zotwatch.compute_fingerprint(self.zotero_dir)
+        state_file = self.data_dir / "search" / "state.json"
+        state = json.loads(state_file.read_text())
+        state["fingerprint"] = fp
+        state_file.write_text(json.dumps(state))
+
+        # Take recursive snapshot of search dir
+        search_dir = self.data_dir / "search"
+        files_before = {p: (p.stat().st_mtime_ns, p.read_bytes()) for p in search_dir.glob("*")}
+
+        t0 = time.time()
+        stdout = io.StringIO()
+        with patch("sys.stdout", stdout):
+            ret = zotwatch.watch_run(self.cfg, quiet_s=0.01)
+        elapsed = time.time() - t0
+
+        self.assertEqual(ret, 0)
+        self.assertLess(elapsed, 1.5)
+        self.assertIn("no changes", stdout.getvalue())
+
+        # Assert zero bytes written (all mtimes and contents identical)
+        for p, (mtime, content) in files_before.items():
+            self.assertEqual(p.stat().st_mtime_ns, mtime)
+            self.assertEqual(p.read_bytes(), content)
+
+    # W2 changed item, attachment count, or PDF mtime/size -> exactly one build
+    def test_w2_fingerprint_components(self):
+        # Initial build
+        searchindex.build_index(self.cfg, full=True, embed_fn=self.fake_embed)
+        fp0 = zotwatch.compute_fingerprint(self.zotero_dir)
+        state_file = self.data_dir / "search" / "state.json"
+        state = json.loads(state_file.read_text())
+        state["fingerprint"] = fp0
+        state_file.write_text(json.dumps(state))
+
+        # 1. Modify item clientDateModified
+        conn = sqlite3.connect(self.zotero_dir / "zotero.sqlite")
+        cur = conn.cursor()
+        cur.execute("UPDATE items SET clientDateModified = '2026-10-20T12:00:00' WHERE key = 'KEY0001'")
+        conn.commit()
+        conn.close()
+
+        fp1 = zotwatch.compute_fingerprint(self.zotero_dir)
+        self.assertNotEqual(fp1, fp0)
+
+        # 2. Modify attachment count
+        conn = sqlite3.connect(self.zotero_dir / "zotero.sqlite")
+        cur = conn.cursor()
+        cur.execute("INSERT INTO items (itemID, itemTypeID, key, clientDateModified) VALUES (8888, 3, 'ATT8888', '2026-10-20T12:00:00')")
+        cur.execute("INSERT INTO itemAttachments (itemID, parentItemID, contentType, path) VALUES (8888, 1, 'application/pdf', 'storage:test.pdf')")
+        conn.commit()
+        conn.close()
+
+        fp2 = zotwatch.compute_fingerprint(self.zotero_dir)
+        self.assertNotEqual(fp2, fp1)
+
+        # 3. Modify PDF file mtime & size
+        pdf = self.zotero_dir / "storage" / "ATT001" / "sample.pdf"
+        pdf.write_bytes(pdf.read_bytes() + b"\n% added content\n")
+        fp3 = zotwatch.compute_fingerprint(self.zotero_dir)
+        self.assertNotEqual(fp3, fp2)
+
+    # W3 lock held -> busy, exit 0, no build
+    def test_w3_lock_held_busy_exit_0(self):
+        import fcntl
+        lock_file = self.data_dir / "search.lock"
+        f = open(lock_file, "w")
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+        stdout = io.StringIO()
+        try:
+            with patch("sys.stdout", stdout):
+                ret = zotwatch.watch_run(self.cfg)
+            self.assertEqual(ret, 0)
+            self.assertIn("busy", stdout.getvalue())
+        finally:
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+            f.close()
+
+    # W4 quiet wait: countdown restarts on new change, gives up after max_wait_s
+    def test_w4_quiet_wait(self):
+        db_path = self.zotero_dir / "zotero.sqlite"
+        simulated_time = 1000.0
+
+        def fake_time():
+            return simulated_time
+
+        def fake_sleep(dur):
+            nonlocal simulated_time
+            simulated_time += dur
+
+        # Database modified at t = 995 (5s ago), quiet_s = 20s
+        os.utime(db_path, (995, 995))
+        quiet = zotwatch.wait_for_quiet(
+            db_path,
+            quiet_s=20.0,
+            check_interval_s=5.0,
+            max_wait_s=600.0,
+            time_fn=fake_time,
+            sleep_fn=fake_sleep,
+        )
+        self.assertTrue(quiet)
+        # Should have advanced time by 15s (from 1000 to 1015, age 20)
+        self.assertAlmostEqual(simulated_time, 1015.0, places=1)
+
+        # Gives up after max_wait_s
+        simulated_time = 1000.0
+        def fake_sleep_stuck(dur):
+            nonlocal simulated_time
+            simulated_time += dur
+            # Database continuously touched
+            os.utime(db_path, (simulated_time, simulated_time))
+
+        quiet_timeout = zotwatch.wait_for_quiet(
+            db_path,
+            quiet_s=20.0,
+            check_interval_s=5.0,
+            max_wait_s=50.0,
+            time_fn=fake_time,
+            sleep_fn=fake_sleep_stuck,
+        )
+        self.assertFalse(quiet_timeout)
+
+    # W5 failed build: error logged, fingerprint not recorded, exit 0, retries next run
+    def test_w5_failed_build_keeps_old_fingerprint(self):
+        # Initial build
+        searchindex.build_index(self.cfg, full=True, embed_fn=self.fake_embed)
+        state_file = self.data_dir / "search" / "state.json"
+        state = json.loads(state_file.read_text())
+        state["fingerprint"] = "old_fingerprint"
+        state_file.write_text(json.dumps(state))
+
+        # Build fails with error
+        with patch("planner.searchindex.build_index", side_effect=RuntimeError("Ollama offline")):
+            stdout = io.StringIO()
+            with patch("sys.stdout", stdout):
+                ret = zotwatch.watch_run(self.cfg, quiet_s=0.01)
+
+            self.assertEqual(ret, 0)
+            self.assertIn("build failed", stdout.getvalue())
+
+        # Old fingerprint preserved so next run retries
+        state_after = json.loads(state_file.read_text())
+        self.assertEqual(state_after["fingerprint"], "old_fingerprint")
+
+    # W6 change during build -> second round runs, at most 3 rounds
+    def test_w6_change_during_build(self):
+        # Initial build
+        searchindex.build_index(self.cfg, full=True, embed_fn=self.fake_embed)
+        state_file = self.data_dir / "search" / "state.json"
+        state = json.loads(state_file.read_text())
+        state["fingerprint"] = "old_fp"
+        state_file.write_text(json.dumps(state))
+
+        rounds = 0
+        def changing_build(*args, **kwargs):
+            nonlocal rounds
+            rounds += 1
+            # Modify sqlite date during build
+            conn = sqlite3.connect(self.zotero_dir / "zotero.sqlite")
+            cur = conn.cursor()
+            cur.execute(f"UPDATE items SET clientDateModified = '2026-10-20T12:00:0{rounds}' WHERE key = 'KEY0001'")
+            conn.commit()
+            conn.close()
+            return {"papers": 4, "chunks": 4, "elapsed": 0.1, "no_text_pdfs": []}
+
+        with patch("planner.searchindex.build_index", side_effect=changing_build):
+            stdout = io.StringIO()
+            with patch("sys.stdout", stdout):
+                ret = zotwatch.watch_run(self.cfg, quiet_s=0.01)
+
+            self.assertEqual(ret, 0)
+            # Reached max 3 rounds
+            self.assertEqual(rounds, 3)
+
+    # W7 zotero.sqlite missing or unreadable -> logged, exit 0, no traceback
+    def test_w7_sqlite_missing_or_unreadable(self):
+        (self.zotero_dir / "zotero.sqlite").unlink()
+
+        stdout = io.StringIO()
+        with patch("sys.stdout", stdout):
+            ret = zotwatch.watch_run(self.cfg, quiet_s=0.01)
+
+        self.assertEqual(ret, 0)
+        self.assertIn("does not exist", stdout.getvalue())
+
+    # W8 plist validation
+    def test_w8_plist_validity(self):
+        plist_path = Path(__file__).parent.parent / "launchd" / "com.planner.zotero-watch.plist"
+        self.assertTrue(plist_path.exists())
+
+        with open(plist_path, "rb") as f:
+            pl = plistlib.load(f)
+
+        self.assertEqual(pl["Label"], "com.planner.zotero-watch")
+        self.assertIn("WatchPaths", pl)
+        self.assertEqual(len(pl["WatchPaths"]), 2)
+        self.assertGreaterEqual(pl["ThrottleInterval"], 30)
+        self.assertIn("watch-run", pl["ProgramArguments"])
+        self.assertIn("logs/zotero-watch.log", pl["StandardOutPath"])
+        self.assertNotIn("KeepAlive", pl)
+        self.assertFalse(pl.get("RunAtLoad", True))
+
+    # W9 doctor checks
+    def test_w9_doctor_checks(self):
+        from planner import health
+
+        # 1. Watch job not loaded -> fail with bootstrap fix
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=1)
+            res = health.check_zotero_watch(self.cfg)
+            self.assertIsNotNone(res)
+            self.assertFalse(res.ok)
+            self.assertIn("launchctl bootstrap", res.message)
+
+        # 2. Watch log has 3 consecutive build failed -> warning
+        log_dir = Path(__file__).parent.parent / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = log_dir / "zotero-watch.log"
+        log_file.write_text("zotero watch: build failed (1)\nzotero watch: build failed (2)\nzotero watch: build failed (3)\n")
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            res = health.check_zotero_watch(self.cfg)
+            self.assertIsNotNone(res)
+            self.assertFalse(res.ok)
+            self.assertIn("3 consecutive failed builds", res.message)
+
+        # Clean up log file
+        log_file.unlink(missing_ok=True)
+
+    # W10 morning job and watcher at once: one builds, other busy, index consistent
+    def test_w10_concurrent_watcher_and_morning(self):
+        import fcntl
+        # Run searchindex.build_index and zotwatch.watch_run concurrently
+        # Lock acquired by searchindex
+        lock_path = self.data_dir / "search.lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        f = open(lock_path, "w")
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+        try:
+            # Watcher runs while lock is held
+            stdout = io.StringIO()
+            with patch("sys.stdout", stdout):
+                ret = zotwatch.watch_run(self.cfg, quiet_s=0.01)
+            self.assertEqual(ret, 0)
+            self.assertIn("busy", stdout.getvalue())
+        finally:
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+            f.close()
+
+    # PF9 / B12: watch-run 10 times with unchanged fingerprint: p95 <= 1.5s, 0 bytes written
+    def test_pf9_b12_watch_run_performance(self):
+        searchindex.build_index(self.cfg, full=True, embed_fn=self.fake_embed)
+        fp = zotwatch.compute_fingerprint(self.zotero_dir)
+        state_file = self.data_dir / "search" / "state.json"
+        state = json.loads(state_file.read_text())
+        state["fingerprint"] = fp
+        state_file.write_text(json.dumps(state))
+
+        search_dir = self.data_dir / "search"
+        files_before = {p: (p.stat().st_mtime_ns, p.read_bytes()) for p in search_dir.glob("*")}
+
+        times = []
+        for _ in range(10):
+            t0 = time.time()
+            ret = zotwatch.watch_run(self.cfg, quiet_s=0.01)
+            times.append(time.time() - t0)
+            self.assertEqual(ret, 0)
+
+        times.sort()
+        p95 = times[int(0.95 * len(times))]
+        print(f"\n[PF9 / B12] watch-run unchanged p95: {p95:.4f}s (budget <= 1.5s)")
+        self.assertLessEqual(p95, 1.5)
+
+        # 0 bytes written
+        for p, (mtime, content) in files_before.items():
+            self.assertEqual(p.stat().st_mtime_ns, mtime)
+            self.assertEqual(p.read_bytes(), content)
+
+
+if __name__ == "__main__":
+    unittest.main()

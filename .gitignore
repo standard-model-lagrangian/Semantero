@@ -6,3 +6,4 @@ __pycache__/
 .DS_Store
 node_modules/
 obsidian/paper-search/test/fixtures/synthetic_index/
+obsidian/paper-search/data.json

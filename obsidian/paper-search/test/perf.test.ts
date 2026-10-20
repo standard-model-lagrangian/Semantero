@@ -262,3 +262,44 @@ test("PF5 B7: ensureFresh throttled read latency", { skip: !process.env.DAITO_PE
   // Budget B7: p99 <= 2 ms
   assert.ok(p99 <= 2.0, `B7 breach: ensureFresh p99 was ${p99.toFixed(2)} ms (budget <= 2.0 ms)`);
 });
+
+test("PF_B11: ensureLiteratureNote (find + render + create) latency", { skip: !process.env.DAITO_PERF }, async () => {
+  const { FakeVault, FakeMetadataCache } = await import("./fakes.ts");
+  const { ensureLiteratureNote, BUILTIN_TEMPLATE } = await import("../src/litnote.ts");
+
+  const vault = new FakeVault();
+  const cache = new FakeMetadataCache(vault);
+  vault.addFile("Zotero Template.md", BUILTIN_TEMPLATE);
+
+  const paper: PaperMetadata = {
+    key: "KEY_PERF",
+    citekey: "perf2024",
+    title: "Performance of Literature Note Creation",
+    authors: ["Author", "Coauthor"],
+    year: 2024,
+    journal: "Journal of Testing",
+    doi: "10.1000/1234",
+    tags: ["perf"],
+    collections: ["Tests"],
+    abstract: "This abstract tests the speed of template rendering and file creation.",
+  };
+
+  const times: number[] = [];
+  for (let i = 0; i < 100; i++) {
+    const p = { ...paper, citekey: `perf_${i}` };
+    const t0 = performance.now();
+    await ensureLiteratureNote(vault, cache, p, {
+      createLiteratureNotes: true,
+      literatureNoteFolder: "Literature",
+      literatureNoteTemplate: "Zotero Template.md",
+    });
+    times.push(performance.now() - t0);
+  }
+
+  const p50 = percentile(times, 50);
+  const p95 = percentile(times, 95);
+  const max = Math.max(...times);
+
+  console.log(`\n[PF_B11 / B11] ensureLiteratureNote p50: ${p50.toFixed(2)} ms, p95: ${p95.toFixed(2)} ms, max: ${max.toFixed(2)} ms (budget <= 30 ms)`);
+  assert.ok(max <= 30.0, `B11 breach: max was ${max.toFixed(2)} ms (budget <= 30 ms)`);
+});

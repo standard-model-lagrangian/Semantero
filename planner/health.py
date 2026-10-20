@@ -246,6 +246,42 @@ def check_search_tools(cfg) -> Result | None:
     return None
 
 
+def check_zotero_watch(cfg) -> Result | None:
+    if not getattr(cfg, "search", None):
+        return None
+
+    # 1. Check com.planner.zotero-watch loaded in launchctl
+    proc = subprocess.run(["launchctl", "print", f"gui/{os.getuid()}/com.planner.zotero-watch"], capture_output=True)
+    if proc.returncode != 0:
+        return Result(
+            "zotero watch",
+            False,
+            "Not scheduled: com.planner.zotero-watch. Reload with: launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.planner.zotero-watch.plist"
+        )
+
+    # 2. Check 3 consecutive failed builds in logs/zotero-watch.log
+    log_file = ROOT / "logs" / "zotero-watch.log"
+    if log_file.exists():
+        try:
+            lines = log_file.read_text().splitlines()
+            consecutive_fails = 0
+            for line in lines:
+                if "build failed" in line:
+                    consecutive_fails += 1
+                    if consecutive_fails >= 3:
+                        return Result(
+                            "zotero watch",
+                            False,
+                            "Zotero watch log has 3 consecutive failed builds. Check logs/zotero-watch.log"
+                        )
+                elif "build completed" in line or "no changes" in line:
+                    consecutive_fails = 0
+        except Exception:
+            pass
+
+    return None
+
+
 def run(cfg, sides: list[dict], online: bool, today: date | None = None) -> list[Result]:
     today = today or logical_today()
     checks = [
@@ -262,6 +298,7 @@ def run(cfg, sides: list[dict], online: bool, today: date | None = None) -> list
         checks += [
             ("search index", lambda: check_search_index(cfg)),
             ("search tools", lambda: check_search_tools(cfg)),
+            ("zotero watch", lambda: check_zotero_watch(cfg)),
         ]
     if online:
         checks += [("extract model", lambda: check_hosted_extract(cfg)),
