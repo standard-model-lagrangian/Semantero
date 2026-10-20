@@ -67,30 +67,119 @@ expand_path() {
     fi
 }
 
-# Read vault path from config.toml if present
+# Auto-detect Obsidian Vault on macOS
+auto_detect_vault() {
+    local detected=""
+    local obs_json="$HOME/Library/Application Support/obsidian/obsidian.json"
+    if [[ -f "$obs_json" ]]; then
+        detected=$(python3 -c '
+import json, os, sys
+try:
+    with open(sys.argv[1]) as f:
+        d = json.load(f)
+    for v in d.get("vaults", {}).values():
+        p = v.get("path")
+        if p and os.path.isdir(p):
+            print(p)
+            break
+except Exception:
+    pass
+' "$obs_json" 2>/dev/null || true)
+    fi
+    if [[ -n "$detected" && -d "$detected" ]]; then
+        echo "$detected"
+        return
+    fi
+    echo "$HOME/Documents/Obsidian Vault"
+}
+
+# Auto-detect Zotero data directory on macOS
+auto_detect_zotero() {
+    if [[ -f "$HOME/Zotero/zotero.sqlite" ]]; then
+        echo "$HOME/Zotero"
+        return
+    fi
+    local zotero_prefs
+    zotero_prefs=$(python3 -c '
+import glob, os, re
+for p in glob.glob(os.path.expanduser("~/Library/Application Support/Zotero/Profiles/*/prefs.js")):
+    try:
+        with open(p) as f:
+            for line in f:
+                m = re.search(r"extensions\.zotero\.dataDir\",\s*\"([^\"]+)\"", line)
+                if m and os.path.isdir(m.group(1)) and os.path.exists(os.path.join(m.group(1), "zotero.sqlite")):
+                    print(m.group(1))
+                    exit(0)
+    except Exception:
+        pass
+' 2>/dev/null || true)
+    if [[ -n "$zotero_prefs" && -f "$zotero_prefs/zotero.sqlite" ]]; then
+        echo "$zotero_prefs"
+        return
+    fi
+    echo "$HOME/Zotero"
+}
+
+# Read vault path from config.toml if present and existing, else auto-detect
 get_config_vault() {
     if [[ -f "$SCRIPT_DIR/config.toml" ]]; then
         local raw
         raw=$(grep -E '^[[:space:]]*vault[[:space:]]*=' "$SCRIPT_DIR/config.toml" | head -n1 | sed -E 's/^[[:space:]]*vault[[:space:]]*=[[:space:]]*["'\'']?([^"'\'']+)["'\'']?/\1/' | tr -d '\r')
         if [[ -n "$raw" ]]; then
-            expand_path "$raw"
-            return
+            local exp
+            exp="$(expand_path "$raw")"
+            if [[ -d "$exp" ]]; then
+                echo "$exp"
+                return
+            fi
         fi
     fi
-    echo "$HOME/Documents/Obsidian Vault"
+    auto_detect_vault
 }
 
-# Read zotero directory from config.toml if present
+# Read zotero directory from config.toml if present and existing, else auto-detect
 get_config_zotero() {
     if [[ -f "$SCRIPT_DIR/config.toml" ]]; then
         local raw
         raw=$(grep -E '^[[:space:]]*zotero_dir[[:space:]]*=' "$SCRIPT_DIR/config.toml" | head -n1 | sed -E 's/^[[:space:]]*zotero_dir[[:space:]]*=[[:space:]]*["'\'']?([^"'\'']+)["'\'']?/\1/' | tr -d '\r')
         if [[ -n "$raw" ]]; then
-            expand_path "$raw"
-            return
+            local exp
+            exp="$(expand_path "$raw")"
+            if [[ -f "$exp/zotero.sqlite" ]]; then
+                echo "$exp"
+                return
+            fi
         fi
     fi
-    echo "$HOME/Zotero"
+    auto_detect_zotero
+}
+
+# Persistently update vault and zotero_dir paths in config.toml
+update_config_paths() {
+    local v="$1"
+    local z="$2"
+    if [[ -f "$SCRIPT_DIR/config.toml" ]]; then
+        python3 -c '
+import os, re, sys
+home = os.path.expanduser("~")
+def compact(p):
+    if p and p.startswith(home):
+        return "~" + p[len(home):]
+    return p
+
+vault = compact(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1] else None
+zotero = compact(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2] else None
+
+with open("config.toml", "r") as f:
+    text = f.read()
+if vault:
+    text = re.sub(r"^[ \t]*vault[ \t]*=.*$", f"vault = \"{vault}\"", text, flags=re.M)
+if zotero:
+    text = re.sub(r"^[ \t]*zotero_dir[ \t]*=.*$", f"zotero_dir = \"{zotero}\"", text, flags=re.M)
+with open("config.toml", "w") as f:
+    f.write(text)
+' "$v" "$z" 2>/dev/null || true
+    fi
 }
 
 # ------------------------------------------------------------------------------
@@ -287,7 +376,7 @@ cmd_setup() {
     # 2. Python Environment (>= 3.11)
     info "Step 1/6: Checking Python environment..."
     local py_candidate=""
-    for py in "$SCRIPT_DIR/.venv/bin/python" python3.11 python3.12 python3.13 python3.15 /opt/homebrew/bin/python3 /usr/local/bin/python3 python3; do
+    for py in "$SCRIPT_DIR/.venv/bin/python" python3.11 python3.12 python3.13 python3.15 /opt/homebrew/bin/python3.11 /opt/homebrew/bin/python3.12 /opt/homebrew/bin/python3.13 /opt/homebrew/bin/python3 /usr/local/bin/python3.11 /usr/local/bin/python3 python3; do
         if command -v "$py" >/dev/null 2>&1; then
             if "$py" -c 'import sys; assert sys.version_info >= (3, 11)' 2>/dev/null; then
                 py_candidate="$py"
@@ -297,7 +386,14 @@ cmd_setup() {
     done
 
     if [[ -z "$py_candidate" ]]; then
-        die "Python 3.11+ is required. Please install it (e.g. 'brew install python@3.11')."
+        if command -v brew >/dev/null 2>&1; then
+            info "Python 3.11+ not found. Installing python@3.11 via Homebrew..."
+            brew install python@3.11
+            export PATH="/opt/homebrew/opt/python@3.11/bin:/usr/local/opt/python@3.11/bin:$PATH"
+            py_candidate="$(command -v python3.11 || echo "/opt/homebrew/bin/python3.11")"
+        else
+            die "Python 3.11+ is required. Please install Python 3.11+."
+        fi
     fi
 
     if [[ ! -x "$SCRIPT_DIR/.venv/bin/python" ]]; then
@@ -381,12 +477,6 @@ cmd_setup() {
     local vault_dir
     if [[ -n "$custom_vault" ]]; then
         vault_dir="$(expand_path "$custom_vault")"
-        info "Updating config.toml vault path to $vault_dir..."
-        if [[ -f "$SCRIPT_DIR/config.toml" ]]; then
-            # Replace vault line in config.toml
-            awk -v v="$vault_dir" 'BEGIN{done=0} /^vault[[:space:]]*=/{print "vault = \"" v "\""; done=1; next} {print} END{}' "$SCRIPT_DIR/config.toml" > "$SCRIPT_DIR/config.toml.tmp"
-            mv "$SCRIPT_DIR/config.toml.tmp" "$SCRIPT_DIR/config.toml"
-        fi
     else
         vault_dir="$(get_config_vault)"
     fi
@@ -406,10 +496,6 @@ cmd_setup() {
                 if [[ -n "$custom_input" ]]; then
                     vault_dir="$(expand_path "$custom_input")"
                     mkdir -p "$vault_dir"
-                    # Update config.toml
-                    awk -v v="$vault_dir" 'BEGIN{done=0} /^vault[[:space:]]*=/{print "vault = \"" v "\""; done=1; next} {print} END{}' "$SCRIPT_DIR/config.toml" > "$SCRIPT_DIR/config.toml.tmp"
-                    mv "$SCRIPT_DIR/config.toml.tmp" "$SCRIPT_DIR/config.toml"
-                    success "Updated vault path to $vault_dir"
                 fi
                 ;;
             *)
@@ -419,6 +505,10 @@ cmd_setup() {
     else
         success "Obsidian Vault found at $vault_dir"
     fi
+
+    # Persist paths in config.toml
+    update_config_paths "$vault_dir" "$zotero_dir"
+    success "Synchronized paths in config.toml"
 
     # 6. Install Obsidian Plugin
     info "Step 5/6: Installing Obsidian plugin into vault..."
@@ -466,7 +556,7 @@ cmd_setup() {
     # 8. Setup launchd background watcher (macOS)
     if [[ "$os_name" == "Darwin" ]]; then
         info "Configuring macOS background watcher daemon..."
-        mkdir -p "$HOME/Library/LaunchAgents"
+        mkdir -p "$HOME/Library/LaunchAgents" "$SCRIPT_DIR/logs" "$zotero_dir/storage"
         local plist_target="$HOME/Library/LaunchAgents/com.planner.zotero-watch.plist"
 
         cat <<EOF > "$plist_target"
