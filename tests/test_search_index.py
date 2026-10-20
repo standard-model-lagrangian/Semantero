@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 import tempfile
@@ -668,6 +669,191 @@ class TestSearchIndex(unittest.TestCase):
         p5_idx = papers.index(p5)
         p5_chunks = [c for c in chunks if c["paper"] == p5_idx]
         self.assertEqual(len(p5_chunks), 0)
+
+    # --- Phase 0c: Tests N1–N5 ---
+
+    def test_n1_noop_run_writes_nothing(self):
+        import io
+        from unittest.mock import patch
+        from planner import searchindex
+
+        # Initial build
+        res1 = searchindex.build_index(self.cfg, full=True, embed_fn=self.fake_embed)
+        self.assertTrue(res1["changed"])
+        search_dir = self.data_dir / "search"
+
+        files = ["manifest.json", "papers.json", "chunks.json", "state.json", "vectors.f32"]
+        mtimes_before = {fn: (search_dir / fn).stat().st_mtime_ns for fn in files}
+        bytes_before = {fn: (search_dir / fn).read_bytes() for fn in files}
+        manifest_before = json.loads((search_dir / "manifest.json").read_text())
+
+        # Second build (no-op)
+        mock_embed = MagicMock(side_effect=self.fake_embed)
+        stdout_capture = io.StringIO()
+        with patch("sys.stdout", stdout_capture):
+            res2 = searchindex.build_index(self.cfg, full=False, embed_fn=mock_embed)
+
+        self.assertFalse(res2["changed"])
+        self.assertEqual(mock_embed.call_count, 0)
+        self.assertIn("search index: no changes", stdout_capture.getvalue())
+
+        # Check mtimes and bytes of all 5 files are identical
+        for fn in files:
+            self.assertEqual((search_dir / fn).stat().st_mtime_ns, mtimes_before[fn], f"{fn} mtime changed")
+            self.assertEqual((search_dir / fn).read_bytes(), bytes_before[fn], f"{fn} bytes changed")
+
+        manifest_after = json.loads((search_dir / "manifest.json").read_text())
+        self.assertEqual(manifest_after["built_at"], manifest_before["built_at"])
+        self.assertEqual(manifest_after["content_hash"], manifest_before["content_hash"])
+
+    def test_n2_only_title_changed(self):
+        import sqlite3
+        from planner import searchindex
+
+        # Initial build
+        searchindex.build_index(self.cfg, full=True, embed_fn=self.fake_embed)
+        search_dir = self.data_dir / "search"
+        manifest1 = json.loads((search_dir / "manifest.json").read_text())
+        hash1 = manifest1["content_hash"]
+        chunks1 = json.loads((search_dir / "chunks.json").read_text())
+        vecs1 = (search_dir / "vectors.f32").read_bytes()
+
+        # Extract chunk vector bytes from vecs1
+        chunk_rows = [c["row"] for c in chunks1]
+        dims = 8
+        chunk_bytes_map = {}
+        for r in chunk_rows:
+            chunk_bytes_map[r] = vecs1[r * dims * 4 : (r + 1) * dims * 4]
+
+        # Change title in sqlite
+        conn = sqlite3.connect(self.zotero_dir / "zotero.sqlite")
+        cur = conn.cursor()
+        cur.execute("UPDATE itemDataValues SET value = 'Brand New Title for Viscoelasticity Paper' WHERE value LIKE 'Tunable hydrogel viscoelasticity%'")
+        conn.commit()
+        conn.close()
+
+        mock_embed = MagicMock(side_effect=self.fake_embed)
+        res = searchindex.build_index(self.cfg, full=False, embed_fn=mock_embed)
+        self.assertTrue(res["changed"])
+
+        # Exactly 1 abstract re-embedded
+        self.assertEqual(mock_embed.call_count, 1)
+        embedded_texts = mock_embed.call_args[0][0]
+        self.assertEqual(len(embedded_texts), 1)
+        self.assertIn("Brand New Title", embedded_texts[0])
+
+        manifest2 = json.loads((search_dir / "manifest.json").read_text())
+        self.assertNotEqual(manifest2["content_hash"], hash1)
+
+        # Chunk vectors should remain identical
+        vecs2 = (search_dir / "vectors.f32").read_bytes()
+        chunks2 = json.loads((search_dir / "chunks.json").read_text())
+        for c in chunks2:
+            r = c["row"]
+            self.assertEqual(vecs2[r * dims * 4 : (r + 1) * dims * 4], chunk_bytes_map[r])
+
+    def test_n3_content_hash_stability_and_sensitivity(self):
+        from planner.searchindex import compute_content_hash
+
+        papers = [{"title": "Paper 1", "abstractRow": 0}]
+        chunks = [{"paper": 0, "row": 1, "text": "Chunk text"}]
+        vecs = b"\x00" * 64
+
+        h1 = compute_content_hash(papers, chunks, vecs)
+        h2 = compute_content_hash(papers, chunks, vecs)
+        self.assertEqual(h1, h2)
+
+        # Changing paper changes hash
+        h_paper = compute_content_hash([{"title": "Paper 2", "abstractRow": 0}], chunks, vecs)
+        self.assertNotEqual(h_paper, h1)
+
+        # Changing chunks changes hash
+        h_chunk = compute_content_hash(papers, [{"paper": 0, "row": 1, "text": "Modified"}], vecs)
+        self.assertNotEqual(h_chunk, h1)
+
+        # Changing row order changes hash
+        h_row = compute_content_hash(papers, [{"paper": 0, "row": 2, "text": "Chunk text"}], vecs)
+        self.assertNotEqual(h_row, h1)
+
+        # Changing vector bytes changes hash
+        h_vec = compute_content_hash(papers, chunks, b"\x01" * 64)
+        self.assertNotEqual(h_vec, h1)
+
+    def test_n4_missing_pdf_is_retried(self):
+        import sqlite3
+        from planner import searchindex
+
+        # Add item with a non-existent PDF file
+        conn = sqlite3.connect(self.zotero_dir / "zotero.sqlite")
+        cur = conn.cursor()
+        cur.execute("INSERT INTO items (itemID, itemTypeID, key, clientDateModified) VALUES (9999, 2, 'KEY9999', '2026-10-18T10:00:00')")
+        cur.execute("INSERT INTO itemDataValues (valueID, value) VALUES (9991, 'Missing PDF Paper'), (9992, 'rothMissing2024')")
+        cur.execute("INSERT INTO itemData (itemID, fieldID, valueID) VALUES (9999, 1, 9991), (9999, 110, 9992)")
+        # Attachment pointing to missing file
+        cur.execute("INSERT INTO items (itemID, itemTypeID, key, clientDateModified) VALUES (9998, 3, 'ATT9999', '2026-10-18T10:00:00')")
+        cur.execute("INSERT INTO itemAttachments (itemID, parentItemID, contentType, path) VALUES (9998, 9999, 'application/pdf', 'storage:missing.pdf')")
+        conn.commit()
+        conn.close()
+
+        # First build: file is missing
+        res1 = searchindex.build_index(self.cfg, full=True, embed_fn=self.fake_embed)
+        search_dir = self.data_dir / "search"
+        state1 = json.loads((search_dir / "state.json").read_text())
+
+        # Missing PDF should not be in state_attachments (not cached as no-text)
+        self.assertNotIn("ATT9999", state1["attachments"])
+        # And not in no_text_pdfs
+        self.assertNotIn("rothMissing2024:ATT9999", res1["no_text_pdfs"])
+
+        papers1 = json.loads((search_dir / "papers.json").read_text())
+        p9999 = next(p for p in papers1 if p["key"] == "KEY9999")
+        chunks1 = json.loads((search_dir / "chunks.json").read_text())
+        p9999_chunks = [c for c in chunks1 if c["paper"] == papers1.index(p9999)]
+        self.assertEqual(len(p9999_chunks), 0)
+
+        # Now create the PDF file
+        att_dir = self.zotero_dir / "storage" / "ATT9999"
+        att_dir.mkdir(parents=True, exist_ok=True)
+        (att_dir / "missing.pdf").write_bytes((FIXTURES_DIR / "sample.pdf").read_bytes())
+
+        # Second build: now file exists, should extract chunks and embed them
+        mock_embed = MagicMock(side_effect=self.fake_embed)
+        res2 = searchindex.build_index(self.cfg, full=False, embed_fn=mock_embed)
+        self.assertTrue(res2["changed"])
+        self.assertTrue(mock_embed.call_count > 0)
+
+        chunks2 = json.loads((search_dir / "chunks.json").read_text())
+        p9999_chunks_after = [c for c in chunks2 if c["attachmentKey"] == "ATT9999"]
+        self.assertTrue(len(p9999_chunks_after) > 0)
+
+    def test_n5_shared_lock(self):
+        import fcntl
+        from planner import searchindex
+
+        lock_path = self.data_dir / "search.lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        f = open(lock_path, "w")
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+        try:
+            # build_index with timeout should fail with TimeoutError
+            with self.assertRaises(TimeoutError) as ctx:
+                searchindex.build_index(self.cfg, lock_timeout=0.1, embed_fn=self.fake_embed)
+            self.assertIn("search.lock", str(ctx.exception))
+
+            # Non-blocking search_lock should raise BlockingIOError
+            with self.assertRaises(BlockingIOError) as ctx_nb:
+                with searchindex.search_lock(self.cfg, blocking=False):
+                    pass
+            self.assertIn("busy", str(ctx_nb.exception))
+        finally:
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+            f.close()
+
+        # After releasing lock, build_index should succeed
+        res = searchindex.build_index(self.cfg, lock_timeout=1.0, embed_fn=self.fake_embed)
+        self.assertTrue(res["changed"])
+
 
 
 class TestCliAndDoctor(unittest.TestCase):

@@ -479,12 +479,17 @@ def cmd_search(cfg, args):
     if args.search_cmd == "stats":
         searchindex.print_stats(cfg)
     elif args.search_cmd == "index":
-        res = searchindex.build_index(cfg, full=args.full, limit=args.limit)
-        print(f"Indexed {res['papers']} papers ({res['chunks']} chunks) in {res['elapsed']:.1f}s")
-        if res["no_text_pdfs"]:
-            print(f"PDFs with no text ({len(res['no_text_pdfs'])}):")
-            for item in res["no_text_pdfs"]:
-                print(f"  - {item}")
+        try:
+            res = searchindex.build_index(cfg, full=args.full, limit=args.limit)
+            if res.get("changed", True):
+                print(f"Indexed {res['papers']} papers ({res['chunks']} chunks) in {res['elapsed']:.1f}s")
+                if res["no_text_pdfs"]:
+                    print(f"PDFs with no text ({len(res['no_text_pdfs'])}):")
+                    for item in res["no_text_pdfs"]:
+                        print(f"  - {item}")
+        except TimeoutError as e:
+            print(f"search index: {e}", file=sys.stderr)
+            sys.exit(1)
 
 
 def main():
