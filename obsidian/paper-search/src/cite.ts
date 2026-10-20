@@ -115,58 +115,72 @@ export function isExcludedContext(
 
   const textBeforeCursor = lineText.slice(0, ch);
 
-  // 2. Inline code: odd number of backticks before cursor on the line
-  let backtickCount = 0;
-  for (let i = 0; i < textBeforeCursor.length; i++) {
-    if (textBeforeCursor[i] === "`") {
-      backtickCount++;
-    }
+  const hasBacktick = textBeforeCursor.includes("`");
+  const hasDollar = textBeforeCursor.includes("$");
+  const hasBracket = textBeforeCursor.includes("[[");
+
+  if (!hasBacktick && !hasDollar && !hasBracket) {
+    return false;
   }
-  if (backtickCount % 2 === 1) {
-    return true;
+
+  // 2. Inline code: odd number of backticks before cursor on the line
+  if (hasBacktick) {
+    let backtickCount = 0;
+    for (let i = 0; i < textBeforeCursor.length; i++) {
+      if (textBeforeCursor[i] === "`") {
+        backtickCount++;
+      }
+    }
+    if (backtickCount % 2 === 1) {
+      return true;
+    }
   }
 
   // 3. Inline math / display math: single unescaped $ or display $$
-  let inSingleMath = false;
-  let inDoubleMath = false;
-  for (let i = 0; i < textBeforeCursor.length; i++) {
-    if (textBeforeCursor[i] === "$") {
-      // Check if preceded by an odd number of backslashes (escaped \$)
-      let backslashCount = 0;
-      let j = i - 1;
-      while (j >= 0 && textBeforeCursor[j] === "\\") {
-        backslashCount++;
-        j--;
-      }
-      if (backslashCount % 2 === 1) {
-        // Escaped: ignore
-        continue;
-      }
+  if (hasDollar) {
+    let inSingleMath = false;
+    let inDoubleMath = false;
+    for (let i = 0; i < textBeforeCursor.length; i++) {
+      if (textBeforeCursor[i] === "$") {
+        // Check if preceded by an odd number of backslashes (escaped \$)
+        let backslashCount = 0;
+        let j = i - 1;
+        while (j >= 0 && textBeforeCursor[j] === "\\") {
+          backslashCount++;
+          j--;
+        }
+        if (backslashCount % 2 === 1) {
+          // Escaped: ignore
+          continue;
+        }
 
-      // Check if double $$
-      if (
-        i + 1 < textBeforeCursor.length &&
-        textBeforeCursor[i + 1] === "$"
-      ) {
-        inDoubleMath = !inDoubleMath;
-        i++; // skip second $
-        continue;
-      }
+        // Check if double $$
+        if (
+          i + 1 < textBeforeCursor.length &&
+          textBeforeCursor[i + 1] === "$"
+        ) {
+          inDoubleMath = !inDoubleMath;
+          i++; // skip second $
+          continue;
+        }
 
-      // Single unescaped $
-      inSingleMath = !inSingleMath;
+        // Single unescaped $
+        inSingleMath = !inSingleMath;
+      }
     }
-  }
-  if (inSingleMath || inDoubleMath) {
-    return true;
+    if (inSingleMath || inDoubleMath) {
+      return true;
+    }
   }
 
   // 4. Unclosed [[ or ![[
-  const lastBracketOpen = textBeforeCursor.lastIndexOf("[[");
-  if (lastBracketOpen !== -1) {
-    const lastBracketClose = textBeforeCursor.lastIndexOf("]]");
-    if (lastBracketClose === -1 || lastBracketClose < lastBracketOpen) {
-      return true;
+  if (hasBracket) {
+    const lastBracketOpen = textBeforeCursor.lastIndexOf("[[");
+    if (lastBracketOpen !== -1) {
+      const lastBracketClose = textBeforeCursor.lastIndexOf("]]");
+      if (lastBracketClose === -1 || lastBracketClose < lastBracketOpen) {
+        return true;
+      }
     }
   }
 

@@ -1,0 +1,56 @@
+# Evaluation dataset for Related Papers panel
+
+[[n]]
+note = "Mitochondrial transfer from immune to tumor cells enables lymph node metastasis.md"
+section = ""
+expect = ["terasakiMitochondrialTransferImmune2026"]
+
+[[n]]
+note = "LeSavage 2022 Next generation cancer organoids.md"
+section = ""
+expect = ["lesavageNextgenerationCancerOrganoids2022"]
+
+[[n]]
+note = "Organoid bottlenecks.md"
+section = ""
+expect = ["lesavageNextgenerationCancerOrganoids2022", "tongPatientderivedOrganoidsPrecision2024"]
+
+[[n]]
+note = "BO for hydrogels.md"
+section = ""
+expect = ["talluriDiscoveryUnconventionalNonintuitive2025", "cinquinWHATACTUALLYMATTERS2025", "WhatActuallyMatters"]
+
+[[n]]
+note = "Active learning for viscoelastic materials JC.md"
+section = ""
+expect = ["chenActiveLearningAcceleratedDiscovery2026"]
+
+[[n]]
+note = "Data-driven de novo design of super-adhesive hydrogels.md"
+section = ""
+expect = ["liaoDatadrivenNovoDesign2025"]
+
+[[n]]
+note = "Imaging bioeng seminar Dr. Guosong Hong 13.05.26.md"
+section = ""
+expect = ["ouAchievingOpticalTransparency2024"]
+
+[[n]]
+note = "Viscoelastic properties in hydrogels.md"
+section = ""
+expect = ["hsiaoReconfigurableMicroenvironmentsUncover2025", "kirkpatrickUltrafastrelaxingPhotopolymerizablePEG2026"]
+
+[[n]]
+note = "Engineering drug delivery Kevin McHugh 12.06.md"
+section = ""
+expect = ["watkinsPeptomerLinkersEnable2026", "ligorioSyntheticExtracellularMatrices2023"]
+
+[[n]]
+note = "AI for scientific discovery Mihaela van der schaar.md"
+section = ""
+expect = ["chaudhryPracticalBayesianOptimization2026"]
+
+[[n]]
+note = "Tempo control during cell decisions 23.02.26 R. Perez-Carrasco.md"
+section = ""
+expect = ["olsmanMappingSyntheticCircuit2026", "pomereuSymbolicRegressionEnables2026"]

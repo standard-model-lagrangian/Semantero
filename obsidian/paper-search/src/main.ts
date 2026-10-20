@@ -1,10 +1,12 @@
 import {
   App,
   EditorSuggest,
+  ItemView,
   Notice,
   Plugin,
   PluginSettingTab,
   Setting,
+  WorkspaceLeaf,
   requestUrl,
 } from "obsidian";
 import { IndexStore } from "./indexstore.ts";
@@ -13,6 +15,7 @@ import { checkHotkeyConflict } from "./hotkey.ts";
 import { formatCitation } from "./litnote.ts";
 import { embedQuery } from "./ollama.ts";
 import { createPaperSearchSuggestClass, InlineSuggestController } from "./inline.ts";
+import { createRelatedPapersViewClass, RelatedPapersController } from "./related.ts";
 
 export interface PaperSearchSettings {
   ollamaUrl: string;
@@ -45,7 +48,7 @@ export const DEFAULT_SETTINGS: PaperSearchSettings = {
   inlineLimit: 8,
   inlineShowSnippet: true,
   relatedLimit: 5,
-  relatedMinScore: 0.25,
+  relatedMinScore: 0.5,
   relatedAutoRefresh: false,
   relatedInstruction:
     "Given a passage from my research notes, retrieve papers that report the findings or methods it discusses",
@@ -113,7 +116,92 @@ export default class PaperSearchPlugin extends Plugin {
     const PaperSearchSuggest = createPaperSearchSuggestClass(EditorSuggest);
     this.registerEditorSuggest(new PaperSearchSuggest(this.app, suggestController));
 
+    // 3. Register Related Papers panel
+    const relatedEmbedder = {
+      embedQuery: async (text: string, instruction?: string) => {
+        const ix = this.indexStore.getIndex();
+        if (!ix) return null;
+        return embedQuery(requestUrl, {
+          url: this.settings.ollamaUrl,
+          model: ix.manifest?.model || "qwen3-embedding:0.6b",
+          instruction: instruction ?? this.settings.relatedInstruction,
+          query: text,
+          dims: ix.dims,
+        });
+      },
+    };
+
+    const relatedController = new RelatedPapersController({
+      indexStore: this.indexStore,
+      embedder: relatedEmbedder,
+      vault: this.app.vault,
+      metadataCache: this.app.metadataCache,
+      settings: this.settings,
+      showNotice: (msg: string) => new Notice(msg),
+    });
+
+    const RelatedPapersView = createRelatedPapersViewClass(ItemView);
+    this.registerView("daito-related-papers", (leaf) => new RelatedPapersView(leaf, relatedController));
+
+    // File open listener for auto-refresh
+    this.registerEvent(
+      this.app.workspace.on("file-open", (file) => {
+        relatedController.onFileOpen(
+          file ? { path: file.path } : null,
+          () => {
+            const activeView = (this.app.workspace as any).getActiveViewOfType?.("markdown");
+            return activeView?.editor?.getValue() || "";
+          }
+        );
+      })
+    );
+
+    // Commands
+    this.addCommand({
+      id: "show-related-papers",
+      name: "Show related papers",
+      callback: () => {
+        this.activateRelatedView();
+      },
+    });
+
+    this.addCommand({
+      id: "find-related-papers",
+      name: "Find papers related to this note",
+      callback: async () => {
+        await this.activateRelatedView();
+        const activeView = (this.app.workspace as any).getActiveViewOfType?.("markdown");
+        if (activeView?.editor) {
+          const editor = activeView.editor;
+          const text = editor.getValue();
+          const sel = editor.getSelection();
+          const cursor = editor.posToOffset(editor.getCursor());
+          await relatedController.refresh(text, cursor, sel, activeView.file?.path || "");
+        }
+      },
+    });
+
     this.addSettingTab(new PaperSearchSettingTab(this.app, this));
+  }
+
+  async activateRelatedView() {
+    const { workspace } = this.app;
+    let leaf: WorkspaceLeaf | null = null;
+    const leaves = workspace.getLeavesOfType("daito-related-papers");
+    if (leaves.length > 0) {
+      leaf = leaves[0];
+    } else {
+      leaf = workspace.getRightLeaf(false);
+      if (leaf) {
+        await leaf.setViewState({
+          type: "daito-related-papers",
+          active: true,
+        });
+      }
+    }
+    if (leaf) {
+      workspace.revealLeaf(leaf);
+    }
   }
 
   checkHotkeyConflicts() {
@@ -259,6 +347,63 @@ class PaperSearchSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.inlineShowSnippet)
           .onChange(async (value) => {
             this.plugin.settings.inlineShowSnippet = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Related Papers Limit")
+      .setDesc("Maximum number of related papers shown in the right sidebar (default 5)")
+      .addText((text) =>
+        text
+          .setPlaceholder("5")
+          .setValue(String(this.plugin.settings.relatedLimit || 5))
+          .onChange(async (value) => {
+            const parsed = parseInt(value.trim(), 10);
+            if (!isNaN(parsed) && parsed > 0) {
+              this.plugin.settings.relatedLimit = parsed;
+              await this.plugin.saveSettings();
+            }
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Related Minimum Score")
+      .setDesc("Minimum cosine similarity threshold to display related papers (default 0.50)")
+      .addText((text) =>
+        text
+          .setPlaceholder("0.50")
+          .setValue(String(this.plugin.settings.relatedMinScore ?? 0.5))
+          .onChange(async (value) => {
+            const parsed = parseFloat(value.trim());
+            if (!isNaN(parsed) && parsed >= 0) {
+              this.plugin.settings.relatedMinScore = parsed;
+              await this.plugin.saveSettings();
+            }
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Related Auto-Refresh")
+      .setDesc("Automatically refresh related papers 1s after switching active note")
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.relatedAutoRefresh)
+          .onChange(async (value) => {
+            this.plugin.settings.relatedAutoRefresh = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Related Retrieval Instruction")
+      .setDesc("Embedding instruction prefix used to query related papers")
+      .addTextArea((text) =>
+        text
+          .setPlaceholder(DEFAULT_SETTINGS.relatedInstruction)
+          .setValue(this.plugin.settings.relatedInstruction)
+          .onChange(async (value) => {
+            this.plugin.settings.relatedInstruction = value.trim() || DEFAULT_SETTINGS.relatedInstruction;
             await this.plugin.saveSettings();
           })
       );

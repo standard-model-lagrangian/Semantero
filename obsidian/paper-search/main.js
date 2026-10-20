@@ -1568,44 +1568,56 @@ function isExcludedContext(sections, line, lineText, ch) {
     }
   }
   const textBeforeCursor = lineText.slice(0, ch);
-  let backtickCount = 0;
-  for (let i = 0; i < textBeforeCursor.length; i++) {
-    if (textBeforeCursor[i] === "`") {
-      backtickCount++;
+  const hasBacktick = textBeforeCursor.includes("`");
+  const hasDollar = textBeforeCursor.includes("$");
+  const hasBracket = textBeforeCursor.includes("[[");
+  if (!hasBacktick && !hasDollar && !hasBracket) {
+    return false;
+  }
+  if (hasBacktick) {
+    let backtickCount = 0;
+    for (let i = 0; i < textBeforeCursor.length; i++) {
+      if (textBeforeCursor[i] === "`") {
+        backtickCount++;
+      }
     }
-  }
-  if (backtickCount % 2 === 1) {
-    return true;
-  }
-  let inSingleMath = false;
-  let inDoubleMath = false;
-  for (let i = 0; i < textBeforeCursor.length; i++) {
-    if (textBeforeCursor[i] === "$") {
-      let backslashCount = 0;
-      let j = i - 1;
-      while (j >= 0 && textBeforeCursor[j] === "\\") {
-        backslashCount++;
-        j--;
-      }
-      if (backslashCount % 2 === 1) {
-        continue;
-      }
-      if (i + 1 < textBeforeCursor.length && textBeforeCursor[i + 1] === "$") {
-        inDoubleMath = !inDoubleMath;
-        i++;
-        continue;
-      }
-      inSingleMath = !inSingleMath;
-    }
-  }
-  if (inSingleMath || inDoubleMath) {
-    return true;
-  }
-  const lastBracketOpen = textBeforeCursor.lastIndexOf("[[");
-  if (lastBracketOpen !== -1) {
-    const lastBracketClose = textBeforeCursor.lastIndexOf("]]");
-    if (lastBracketClose === -1 || lastBracketClose < lastBracketOpen) {
+    if (backtickCount % 2 === 1) {
       return true;
+    }
+  }
+  if (hasDollar) {
+    let inSingleMath = false;
+    let inDoubleMath = false;
+    for (let i = 0; i < textBeforeCursor.length; i++) {
+      if (textBeforeCursor[i] === "$") {
+        let backslashCount = 0;
+        let j = i - 1;
+        while (j >= 0 && textBeforeCursor[j] === "\\") {
+          backslashCount++;
+          j--;
+        }
+        if (backslashCount % 2 === 1) {
+          continue;
+        }
+        if (i + 1 < textBeforeCursor.length && textBeforeCursor[i + 1] === "$") {
+          inDoubleMath = !inDoubleMath;
+          i++;
+          continue;
+        }
+        inSingleMath = !inSingleMath;
+      }
+    }
+    if (inSingleMath || inDoubleMath) {
+      return true;
+    }
+  }
+  if (hasBracket) {
+    const lastBracketOpen = textBeforeCursor.lastIndexOf("[[");
+    if (lastBracketOpen !== -1) {
+      const lastBracketClose = textBeforeCursor.lastIndexOf("]]");
+      if (lastBracketClose === -1 || lastBracketClose < lastBracketOpen) {
+        return true;
+      }
     }
   }
   return false;
@@ -1615,6 +1627,39 @@ function formatCitation2(format = "[[{{citekey}}]]", citekey) {
     throw new Error('Citation format must contain "{{citekey}}"');
   }
   return format.replace(/\{\{\s*citekey\s*\}\}/g, citekey);
+}
+function citedKeys(noteText) {
+  const result = /* @__PURE__ */ new Set();
+  if (!noteText) return result;
+  let stripped = noteText.replace(/```[\s\S]*?```/g, " ");
+  stripped = stripped.replace(/`[^`\n]*`/g, " ");
+  const fmMatch = stripped.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (fmMatch) {
+    const fm = fmMatch[1];
+    const citekeyMatch = fm.match(/^citekey:\s*["']?([^\s"'\r\n]+)["']?/m);
+    if (citekeyMatch && citekeyMatch[1]) {
+      result.add(citekeyMatch[1].trim());
+    }
+  }
+  const wikiRegex = /\[\[([a-zA-Z0-9_.-]+)(?:\|[^\]\n]*)?\]\]/g;
+  let match;
+  while ((match = wikiRegex.exec(stripped)) !== null) {
+    if (match[1]) {
+      result.add(match[1].trim());
+    }
+  }
+  const bracketRegex = /\[([^\]\n]*@[a-zA-Z0-9_.-]+[^\]\n]*)\]/g;
+  while ((match = bracketRegex.exec(stripped)) !== null) {
+    const bracketContent = match[1];
+    const keyRegex = /@([a-zA-Z0-9_.-]+)/g;
+    let keyMatch;
+    while ((keyMatch = keyRegex.exec(bracketContent)) !== null) {
+      if (keyMatch[1]) {
+        result.add(keyMatch[1].trim());
+      }
+    }
+  }
+  return result;
 }
 
 // src/inline.ts
@@ -1872,6 +1917,440 @@ function createPaperSearchSuggestClass(BaseClass) {
   };
 }
 
+// src/passage.ts
+function cleanMarkdown(text) {
+  if (!text) return "";
+  let s = text;
+  s = s.replace(/^---\r?\n[\s\S]*?\r?\n---/g, " ");
+  s = s.replace(/%%\s*planner:start\s*%%[\s\S]*?%%\s*planner:end\s*%%/gi, " ");
+  s = s.replace(/%%[\s\S]*?%%/g, " ");
+  s = s.replace(/```[\s\S]*?```/g, " ");
+  s = s.replace(/\$\$[\s\S]*?\$\$/g, " ");
+  s = s.replace(/!\[\[[^\]\n]*\]\]/g, " ");
+  s = s.replace(/!\[[^\]\n]*\]\([^\)\n]*\)/g, " ");
+  s = s.replace(/https?:\/\/[^\s\)]+/g, " ");
+  s = s.replace(/\[\[([^|\]\n]+)\|([^\]\n]+)\]\]/g, "$2");
+  s = s.replace(/\[\[([^\]\n]+)\]\]/g, "$1");
+  s = s.replace(/[#>\-*_`]/g, " ");
+  s = s.replace(/\s+/g, " ").trim();
+  return s;
+}
+function shortenSentences(sentences, cursorIdx, maxChars = 2e3) {
+  if (sentences.length === 0) return "";
+  const safeCursorIdx = Math.max(0, Math.min(sentences.length - 1, cursorIdx));
+  let chosen = [safeCursorIdx];
+  let curLen = sentences[safeCursorIdx].length;
+  let left = safeCursorIdx - 1;
+  let right = safeCursorIdx + 1;
+  while (left >= 0 || right < sentences.length) {
+    let added = false;
+    if (left >= 0) {
+      const addedLen = sentences[left].length + 1;
+      if (curLen + addedLen <= maxChars) {
+        chosen.unshift(left);
+        curLen += addedLen;
+        left--;
+        added = true;
+      } else {
+        left = -1;
+      }
+    }
+    if (right < sentences.length) {
+      const addedLen = sentences[right].length + 1;
+      if (curLen + addedLen <= maxChars) {
+        chosen.push(right);
+        curLen += addedLen;
+        right++;
+        added = true;
+      } else {
+        right = sentences.length;
+      }
+    }
+    if (!added) break;
+  }
+  chosen.sort((a, b) => a - b);
+  return chosen.map((idx) => sentences[idx]).join(" ");
+}
+function extractPassage(noteText, cursorOffset, selection = "", maxChars = 2e3) {
+  if (selection) {
+    const cleanSel = cleanMarkdown(selection);
+    if (cleanSel.length >= 20) {
+      const sentences2 = splitSentences(cleanSel);
+      if (sentences2.length === 0) return cleanSel.slice(0, maxChars);
+      return shortenSentences(sentences2, 0, maxChars);
+    }
+  }
+  const headingRegex = /^#{1,6}\s+.+$/gm;
+  let prevHeadingEnd = 0;
+  let nextHeadingStart = noteText.length;
+  let match;
+  while ((match = headingRegex.exec(noteText)) !== null) {
+    const headingStart = match.index;
+    const headingEnd = headingStart + match[0].length;
+    if (headingEnd <= cursorOffset) {
+      prevHeadingEnd = headingEnd;
+    } else if (headingStart > cursorOffset) {
+      nextHeadingStart = headingStart;
+      break;
+    }
+  }
+  const sectionRaw = noteText.slice(prevHeadingEnd, nextHeadingStart);
+  const cleanSec = cleanMarkdown(sectionRaw);
+  if (cleanSec.length >= 200) {
+    const sentences2 = splitSentences(cleanSec);
+    if (sentences2.length === 0) return cleanSec.slice(0, maxChars);
+    const relOffset = Math.max(0, cursorOffset - prevHeadingEnd);
+    const ratio2 = sectionRaw.length > 0 ? relOffset / sectionRaw.length : 0.5;
+    const approxCleanOffset2 = Math.floor(ratio2 * cleanSec.length);
+    let cursorSentenceIdx2 = 0;
+    let accumulated2 = 0;
+    for (let i = 0; i < sentences2.length; i++) {
+      accumulated2 += sentences2[i].length + 1;
+      if (accumulated2 >= approxCleanOffset2) {
+        cursorSentenceIdx2 = i;
+        break;
+      }
+    }
+    return shortenSentences(sentences2, cursorSentenceIdx2, maxChars);
+  }
+  const cleanWhole = cleanMarkdown(noteText);
+  if (cleanWhole.length < 30) {
+    return null;
+  }
+  const sentences = splitSentences(cleanWhole);
+  if (sentences.length === 0) return cleanWhole.slice(0, maxChars);
+  const ratio = noteText.length > 0 ? cursorOffset / noteText.length : 0.5;
+  const approxCleanOffset = Math.floor(ratio * cleanWhole.length);
+  let cursorSentenceIdx = 0;
+  let accumulated = 0;
+  for (let i = 0; i < sentences.length; i++) {
+    accumulated += sentences[i].length + 1;
+    if (accumulated >= approxCleanOffset) {
+      cursorSentenceIdx = i;
+      break;
+    }
+  }
+  return shortenSentences(sentences, cursorSentenceIdx, maxChars);
+}
+
+// src/related.ts
+var RelatedPapersController = class {
+  indexStore;
+  embedder;
+  vault;
+  metadataCache;
+  settings;
+  showNotice;
+  setTimeoutFn;
+  clearTimeoutFn;
+  state = "empty";
+  allHits = [];
+  citedKeysSet = /* @__PURE__ */ new Set();
+  showHiddenCited = false;
+  activeFilePath = "";
+  lastRefreshedPath = "";
+  lastRefreshedPassage = "";
+  currentSeq = 0;
+  autoRefreshTimer = null;
+  ollamaDownNotified = false;
+  sessionNotices = /* @__PURE__ */ new Set();
+  onStateChange;
+  constructor(options) {
+    this.indexStore = options.indexStore;
+    this.embedder = options.embedder;
+    this.vault = options.vault;
+    this.metadataCache = options.metadataCache;
+    this.settings = options.settings || {};
+    this.showNotice = options.showNotice;
+    this.setTimeoutFn = options.setTimeoutFn || ((fn, ms) => setTimeout(fn, ms));
+    this.clearTimeoutFn = options.clearTimeoutFn || ((id) => clearTimeout(id));
+  }
+  setState(newState) {
+    this.state = newState;
+    this.onStateChange?.(newState);
+  }
+  onFileOpen(file, getTextFn, cursorOffset = 0, selection = "") {
+    const filePath = file?.path || "";
+    this.activeFilePath = filePath;
+    if (this.autoRefreshTimer) {
+      this.clearTimeoutFn(this.autoRefreshTimer);
+      this.autoRefreshTimer = null;
+    }
+    if (!file) {
+      this.setState("empty");
+      return;
+    }
+    if (!this.settings.relatedAutoRefresh) {
+      return;
+    }
+    this.autoRefreshTimer = this.setTimeoutFn(() => {
+      if (getTextFn && this.activeFilePath === filePath) {
+        const text = getTextFn();
+        this.refresh(text, cursorOffset, selection, filePath, true);
+      }
+    }, 1e3);
+  }
+  async refresh(noteText, cursorOffset = 0, selection = "", filePath = this.activeFilePath, isAuto = false) {
+    if (filePath) {
+      this.activeFilePath = filePath;
+    }
+    const passage = extractPassage(noteText, cursorOffset, selection, 2e3);
+    if (!passage) {
+      this.setState("too-short");
+      return;
+    }
+    if (isAuto && filePath === this.lastRefreshedPath && passage === this.lastRefreshedPassage) {
+      return;
+    }
+    const seq = ++this.currentSeq;
+    const pathAtStart = filePath;
+    this.setState("loading");
+    try {
+      const instruction = this.settings.relatedInstruction;
+      const qVec = await this.embedder.embedQuery(passage, instruction);
+      if (seq !== this.currentSeq || this.activeFilePath !== pathAtStart) {
+        return;
+      }
+      if (!qVec) {
+        this.handleOllamaDown();
+        return;
+      }
+      const ix = this.indexStore.getIndex();
+      if (!ix) {
+        this.setState("empty");
+        return;
+      }
+      const minScore = this.settings.relatedMinScore ?? 0.25;
+      const candidates = semantic(ix, qVec, passage, {
+        limit: 50,
+        minScore
+      });
+      if (candidates.length === 0) {
+        this.setState("nothing-close");
+        return;
+      }
+      this.citedKeysSet = citedKeys(noteText);
+      this.allHits = candidates;
+      this.lastRefreshedPath = pathAtStart;
+      this.lastRefreshedPassage = passage;
+      this.setState("results");
+    } catch {
+      if (seq === this.currentSeq && this.activeFilePath === pathAtStart) {
+        this.handleOllamaDown();
+      }
+    }
+  }
+  handleOllamaDown() {
+    if (!this.ollamaDownNotified) {
+      this.ollamaDownNotified = true;
+      this.showNotice?.("Paper search: Ollama is not running for related papers.");
+    }
+    this.setState("needs-ollama");
+  }
+  getDisplayItems() {
+    const ix = this.indexStore.getIndex();
+    if (!ix) return { items: [], hiddenCount: 0, showHidden: false };
+    const limit = this.settings.relatedLimit || 5;
+    const uncitedItems = [];
+    const citedItems = [];
+    for (const h of this.allHits) {
+      const paper = ix.papers[h.paper];
+      const isCited = this.citedKeysSet.has(paper.citekey) || paper.citekey && this.citedKeysSet.has(paper.citekey.toLowerCase());
+      const item = { hit: h, paper, isCited };
+      if (isCited) {
+        citedItems.push(item);
+      } else {
+        uncitedItems.push(item);
+      }
+    }
+    const hiddenCount = citedItems.length;
+    let items;
+    if (this.showHiddenCited) {
+      items = [...uncitedItems.slice(0, limit), ...citedItems];
+    } else {
+      items = uncitedItems.slice(0, limit);
+    }
+    return {
+      items,
+      hiddenCount,
+      showHidden: this.showHiddenCited
+    };
+  }
+  toggleShowHidden() {
+    this.showHiddenCited = !this.showHiddenCited;
+    this.setState(this.state);
+  }
+  async handleCiteAction(paper, activeEditor, clipboard) {
+    const format = this.settings.citationFormat || "[[{{citekey}}]]";
+    const citation = formatCitation2(format, paper.citekey);
+    if (activeEditor) {
+      const cursor = activeEditor.getCursor ? activeEditor.getCursor() : { line: 0, ch: 0 };
+      activeEditor.replaceRange(citation, cursor);
+    } else if (clipboard) {
+      await clipboard.writeText(citation);
+      this.showNotice?.("Copied citation to clipboard");
+    }
+    if (this.settings.createLiteratureNotes !== false) {
+      try {
+        await ensureLiteratureNote(
+          this.vault,
+          this.metadataCache,
+          paper,
+          this.settings,
+          {
+            showNotice: this.showNotice,
+            sessionNotices: this.sessionNotices
+          }
+        );
+      } catch {
+      }
+    }
+  }
+  async handleNoteAction(paper, workspace) {
+    const res = await ensureLiteratureNote(
+      this.vault,
+      this.metadataCache,
+      paper,
+      this.settings,
+      {
+        showNotice: this.showNotice,
+        sessionNotices: this.sessionNotices
+      }
+    );
+    if (res.file && workspace?.openFile) {
+      await workspace.openFile(res.file);
+    }
+  }
+  getPdfUrl(paper, hit) {
+    const key = paper.key || paper.citekey;
+    const page = hit.page || 1;
+    return `zotero://open-pdf/0_${key}/${page}`;
+  }
+};
+function createRelatedPapersViewClass(ItemViewBase) {
+  return class RelatedPapersView extends ItemViewBase {
+    controller;
+    constructor(leaf, controller) {
+      super(leaf);
+      this.controller = controller;
+      this.controller.onStateChange = () => this.render();
+    }
+    getViewType() {
+      return "daito-related-papers";
+    }
+    getDisplayText() {
+      return "Related papers";
+    }
+    getIcon() {
+      return "documents";
+    }
+    async onOpen() {
+      this.render();
+    }
+    render() {
+      const container = this.containerEl.children[1] || this.containerEl;
+      container.empty?.();
+      const header = container.createDiv?.({ cls: "daito-related-header" }) || container;
+      const titleEl = header.createEl?.("h4", { text: "Related papers" });
+      const refreshBtn = header.createEl?.("button", { text: "Refresh" });
+      refreshBtn?.addEventListener?.("click", () => {
+        const activeView = this.app.workspace.getActiveViewOfType?.("markdown");
+        if (activeView?.editor) {
+          const editor = activeView.editor;
+          const text = editor.getValue();
+          const sel = editor.getSelection();
+          const cursor = editor.posToOffset(editor.getCursor());
+          this.controller.refresh(text, cursor, sel, activeView.file?.path || "");
+        }
+      });
+      const body = container.createDiv?.({ cls: "daito-related-body" }) || container;
+      if (this.controller.state === "empty") {
+        body.createEl?.("div", {
+          cls: "daito-related-empty",
+          text: "Open a note and press Refresh to find related papers."
+        });
+        return;
+      }
+      if (this.controller.state === "loading") {
+        body.createEl?.("div", {
+          cls: "daito-related-loading",
+          text: "Searching for related papers\u2026"
+        });
+        return;
+      }
+      if (this.controller.state === "too-short") {
+        body.createEl?.("div", {
+          cls: "daito-related-empty",
+          text: "Write a bit more first"
+        });
+        return;
+      }
+      if (this.controller.state === "needs-ollama") {
+        body.createEl?.("div", {
+          cls: "daito-related-warning",
+          text: "Related papers needs Ollama running"
+        });
+        return;
+      }
+      if (this.controller.state === "nothing-close") {
+        body.createEl?.("div", {
+          cls: "daito-related-empty",
+          text: "Nothing close in your library"
+        });
+        return;
+      }
+      if (this.controller.state === "results") {
+        const { items, hiddenCount, showHidden } = this.controller.getDisplayItems();
+        for (const item of items) {
+          const row = body.createDiv?.({ cls: "daito-related-row" });
+          const rowTitle = row?.createDiv?.({
+            cls: "daito-related-title",
+            text: item.paper.title || "Untitled"
+          });
+          rowTitle?.addEventListener?.("click", () => {
+            const url = this.controller.getPdfUrl(item.paper, item.hit);
+            window.open(url);
+          });
+          const meta = row?.createDiv?.({ cls: "daito-related-meta" });
+          const author = item.paper.authors?.[0] || "Unknown";
+          const year = item.paper.year ? String(item.paper.year) : "n.d.";
+          const badge = item.hit.page ? `p. ${item.hit.page}` : "abstract";
+          meta?.setText?.(`${author} \xB7 ${year} \xB7 [${badge}]`);
+          if (item.hit.snippet) {
+            const snippet = row?.createDiv?.({ cls: "daito-related-snippet" });
+            snippet?.setText?.(item.hit.snippet);
+          }
+          const actions = row?.createDiv?.({ cls: "daito-related-actions" });
+          const citeBtn = actions?.createEl?.("button", { text: "Cite" });
+          citeBtn?.addEventListener?.("click", () => {
+            const activeView = this.app.workspace.getActiveViewOfType?.("markdown");
+            this.controller.handleCiteAction(
+              item.paper,
+              activeView?.editor,
+              navigator.clipboard
+            );
+          });
+          const noteBtn = actions?.createEl?.("button", { text: "Note" });
+          noteBtn?.addEventListener?.("click", () => {
+            this.controller.handleNoteAction(item.paper, this.app.workspace);
+          });
+        }
+        if (hiddenCount > 0) {
+          const footer = body.createDiv?.({ cls: "daito-related-footer" });
+          const toggleText = showHidden ? "hide" : "show";
+          const link = footer?.createEl?.("a", {
+            text: `${hiddenCount} already cited \xB7 ${toggleText}`
+          });
+          link?.addEventListener?.("click", (e) => {
+            e.preventDefault();
+            this.controller.toggleShowHidden();
+          });
+        }
+      }
+    }
+  };
+}
+
 // src/main.ts
 var DEFAULT_SETTINGS = {
   ollamaUrl: "http://127.0.0.1:11434",
@@ -1886,7 +2365,7 @@ var DEFAULT_SETTINGS = {
   inlineLimit: 8,
   inlineShowSnippet: true,
   relatedLimit: 5,
-  relatedMinScore: 0.25,
+  relatedMinScore: 0.5,
   relatedAutoRefresh: false,
   relatedInstruction: "Given a passage from my research notes, retrieve papers that report the findings or methods it discusses"
 };
@@ -1938,7 +2417,82 @@ var PaperSearchPlugin = class extends import_obsidian2.Plugin {
     });
     const PaperSearchSuggest = createPaperSearchSuggestClass(import_obsidian2.EditorSuggest);
     this.registerEditorSuggest(new PaperSearchSuggest(this.app, suggestController));
+    const relatedEmbedder = {
+      embedQuery: async (text, instruction) => {
+        const ix = this.indexStore.getIndex();
+        if (!ix) return null;
+        return embedQuery(import_obsidian2.requestUrl, {
+          url: this.settings.ollamaUrl,
+          model: ix.manifest?.model || "qwen3-embedding:0.6b",
+          instruction: instruction ?? this.settings.relatedInstruction,
+          query: text,
+          dims: ix.dims
+        });
+      }
+    };
+    const relatedController = new RelatedPapersController({
+      indexStore: this.indexStore,
+      embedder: relatedEmbedder,
+      vault: this.app.vault,
+      metadataCache: this.app.metadataCache,
+      settings: this.settings,
+      showNotice: (msg) => new import_obsidian2.Notice(msg)
+    });
+    const RelatedPapersView = createRelatedPapersViewClass(import_obsidian2.ItemView);
+    this.registerView("daito-related-papers", (leaf) => new RelatedPapersView(leaf, relatedController));
+    this.registerEvent(
+      this.app.workspace.on("file-open", (file) => {
+        relatedController.onFileOpen(
+          file ? { path: file.path } : null,
+          () => {
+            const activeView = this.app.workspace.getActiveViewOfType?.("markdown");
+            return activeView?.editor?.getValue() || "";
+          }
+        );
+      })
+    );
+    this.addCommand({
+      id: "show-related-papers",
+      name: "Show related papers",
+      callback: () => {
+        this.activateRelatedView();
+      }
+    });
+    this.addCommand({
+      id: "find-related-papers",
+      name: "Find papers related to this note",
+      callback: async () => {
+        await this.activateRelatedView();
+        const activeView = this.app.workspace.getActiveViewOfType?.("markdown");
+        if (activeView?.editor) {
+          const editor = activeView.editor;
+          const text = editor.getValue();
+          const sel = editor.getSelection();
+          const cursor = editor.posToOffset(editor.getCursor());
+          await relatedController.refresh(text, cursor, sel, activeView.file?.path || "");
+        }
+      }
+    });
     this.addSettingTab(new PaperSearchSettingTab(this.app, this));
+  }
+  async activateRelatedView() {
+    const { workspace } = this.app;
+    let leaf = null;
+    const leaves = workspace.getLeavesOfType("daito-related-papers");
+    if (leaves.length > 0) {
+      leaf = leaves[0];
+    } else {
+      leaf = workspace.getRightLeaf(false);
+      if (leaf) {
+        await leaf.setViewState({
+          type: "daito-related-papers",
+          active: true
+        });
+      }
+    }
+    if (leaf) {
+      workspace.revealLeaf(leaf);
+    }
   }
   checkHotkeyConflicts() {
     try {
@@ -2023,6 +2577,36 @@ var PaperSearchSettingTab = class extends import_obsidian2.PluginSettingTab {
     new import_obsidian2.Setting(containerEl).setName("Inline Show Snippets").setDesc("Show matched snippet text below each paper in the inline suggestion list").addToggle(
       (toggle) => toggle.setValue(this.plugin.settings.inlineShowSnippet).onChange(async (value) => {
         this.plugin.settings.inlineShowSnippet = value;
+        await this.plugin.saveSettings();
+      })
+    );
+    new import_obsidian2.Setting(containerEl).setName("Related Papers Limit").setDesc("Maximum number of related papers shown in the right sidebar (default 5)").addText(
+      (text) => text.setPlaceholder("5").setValue(String(this.plugin.settings.relatedLimit || 5)).onChange(async (value) => {
+        const parsed = parseInt(value.trim(), 10);
+        if (!isNaN(parsed) && parsed > 0) {
+          this.plugin.settings.relatedLimit = parsed;
+          await this.plugin.saveSettings();
+        }
+      })
+    );
+    new import_obsidian2.Setting(containerEl).setName("Related Minimum Score").setDesc("Minimum cosine similarity threshold to display related papers (default 0.50)").addText(
+      (text) => text.setPlaceholder("0.50").setValue(String(this.plugin.settings.relatedMinScore ?? 0.5)).onChange(async (value) => {
+        const parsed = parseFloat(value.trim());
+        if (!isNaN(parsed) && parsed >= 0) {
+          this.plugin.settings.relatedMinScore = parsed;
+          await this.plugin.saveSettings();
+        }
+      })
+    );
+    new import_obsidian2.Setting(containerEl).setName("Related Auto-Refresh").setDesc("Automatically refresh related papers 1s after switching active note").addToggle(
+      (toggle) => toggle.setValue(this.plugin.settings.relatedAutoRefresh).onChange(async (value) => {
+        this.plugin.settings.relatedAutoRefresh = value;
+        await this.plugin.saveSettings();
+      })
+    );
+    new import_obsidian2.Setting(containerEl).setName("Related Retrieval Instruction").setDesc("Embedding instruction prefix used to query related papers").addTextArea(
+      (text) => text.setPlaceholder(DEFAULT_SETTINGS.relatedInstruction).setValue(this.plugin.settings.relatedInstruction).onChange(async (value) => {
+        this.plugin.settings.relatedInstruction = value.trim() || DEFAULT_SETTINGS.relatedInstruction;
         await this.plugin.saveSettings();
       })
     );

@@ -6,6 +6,7 @@ import { BM25Index, type PaperMetadata, type ChunkDocument } from "../src/bm25.t
 import { IndexStore } from "../src/indexstore.ts";
 import { keyword, semantic, hybrid } from "../src/engine.ts";
 import { findTrigger, isExcludedContext } from "../src/cite.ts";
+import { extractPassage } from "../src/passage.ts";
 import { maintainSelection, type FakeSuggestLike, type SuggestionItem } from "../src/inline.ts";
 import { buildSyntheticIndex } from "../scripts/make-synthetic-index.ts";
 
@@ -123,10 +124,14 @@ test("PF2 B2: findTrigger + context check latency on lines up to 10k chars", { s
   const lineLengths = [10, 1000, 10000];
   const timesMs: number[] = [];
 
-  // Warm up JIT
-  for (let i = 0; i < 100; i++) {
+  // Warm up JIT on short and 10k character lines
+  const warmPad = "word ".repeat(2000);
+  for (let i = 0; i < 20; i++) {
     findTrigger("some line with @@stiff and more text", 20);
     isExcludedContext([], 0, "some line with @@stiff and more text", 20);
+    findTrigger(warmPad + "@@stiff", warmPad.length + 7);
+    isExcludedContext([], 0, warmPad + "@@stiff", warmPad.length + 7);
+    isExcludedContext([], 0, "text with `code` and $math$ " + warmPad + "@@query", warmPad.length + 35);
   }
 
   for (const len of lineLengths) {
@@ -411,4 +416,180 @@ test("PF7 B14: Selection stability across 1,000 randomised re-rank sequences", {
 
   console.log(`\n[PF7 / B14] Selection stability: ${violations} violations across 1,000 randomised sequences (budget: 0)`);
   assert.strictEqual(violations, 0, `B14 breach: expected 0 selection violations, got ${violations}`);
+});
+
+test("PF6 B10: extractPassage on a 200 kB note latency", { skip: !process.env.DAITO_PERF }, () => {
+  // Generate a realistic 200 kB note
+  const sections: string[] = [];
+  sections.push("---\ntitle: Very Long Research Note\ncitekey: test2024\n---\n");
+  sections.push("%% planner:start %%\nBrief block\n%% planner:end %%\n");
+
+  let charCount = 0;
+  let secIdx = 0;
+  while (charCount < 200000) {
+    secIdx++;
+    const secHeading = `\n# Section ${secIdx}: Hydrogel Viscoelasticity and Matrix Mechanics\n`;
+    let secBody = "";
+    for (let p = 0; p < 8; p++) {
+      secBody += `Paragraph ${p} explains how [[roth2023|Roth et al.]] demonstrated stress relaxation in viscoelastic gels. `;
+      secBody += `Organoids grown in stiffer matrices show altered mechanotransduction and chemoresistance [@lesavage2024]. `;
+      secBody += "Here is some code ```python\nprint('simulated stress')\n``` and math $$E = \\sigma / \\epsilon$$. ";
+      secBody += "Cells remodel their surrounding microenvironment dynamically over time. ";
+    }
+    const fullSec = secHeading + secBody;
+    sections.push(fullSec);
+    charCount += fullSec.length;
+  }
+
+  const bigNote = sections.join("\n");
+  assert.ok(bigNote.length >= 200000, `Generated note length ${bigNote.length} should be >= 200 kB`);
+
+  // Target cursor near the middle (approx 100 kB offset)
+  const cursorOffset = Math.floor(bigNote.length / 2);
+
+  // Warm-up JIT
+  for (let i = 0; i < 10; i++) {
+    extractPassage(bigNote, cursorOffset, "", 2000);
+  }
+
+  const timesMs: number[] = [];
+  for (let i = 0; i < 50; i++) {
+    const t0 = performance.now();
+    const passage = extractPassage(bigNote, cursorOffset, "", 2000);
+    const elapsed = performance.now() - t0;
+    timesMs.push(elapsed);
+    assert.ok(passage && passage.length <= 2000);
+  }
+
+  const p50 = percentile(timesMs, 50);
+  const p95 = percentile(timesMs, 95);
+  const max = Math.max(...timesMs);
+
+  console.log(`\n[PF6 / B10] extractPassage (200 kB note) p50: ${p50.toFixed(2)} ms, p95: ${p95.toFixed(2)} ms, max: ${max.toFixed(2)} ms (budget <= 5.0 ms)`);
+  assert.ok(max <= 5.0, `B10 breach: max was ${max.toFixed(2)} ms (budget <= 5.0 ms)`);
+});
+
+test("PF8 B9: Panel refresh end-to-end latency with warm Ollama", { skip: !process.env.DAITO_PERF || !process.env.DAITO_LIVE }, async () => {
+  const { papers, chunks, dir } = ensureSyntheticIndex();
+  const manifest = JSON.parse(fs.readFileSync(path.join(dir, "manifest.json"), "utf8"));
+  const vecBuf = fs.readFileSync(path.join(dir, "vectors.f32"));
+  const vectors = new Float32Array(vecBuf.buffer, vecBuf.byteOffset, vecBuf.byteLength / 4);
+  const dims = manifest.dims;
+  const totalRows = manifest.total_rows;
+
+  const rowToChunk = new Int32Array(totalRows);
+  const rowToPaper = new Int32Array(totalRows);
+  const rowIsAbstract = new Uint8Array(totalRows);
+  const paperAbstractRow = new Int32Array(papers.length).fill(-1);
+  const paperChunkRows: Int32Array[] = new Array(papers.length);
+  const chunkRowsMap = new Map<number, number[]>();
+
+  for (let p = 0; p < papers.length; p++) {
+    chunkRowsMap.set(p, []);
+    if (papers[p].abstract_row !== undefined && papers[p].abstract_row !== null) {
+      const r = papers[p].abstract_row!;
+      if (r >= 0 && r < totalRows) {
+        paperAbstractRow[p] = r;
+        rowToPaper[r] = p;
+        rowToChunk[r] = -1;
+        rowIsAbstract[r] = 1;
+      }
+    }
+  }
+
+  for (let c = 0; c < chunks.length; c++) {
+    const chunk = chunks[c];
+    if (chunk.row !== undefined && chunk.row >= 0 && chunk.row < totalRows) {
+      const r = chunk.row;
+      const p = chunk.paperIndex;
+      rowToChunk[r] = c;
+      rowToPaper[r] = p;
+      rowIsAbstract[r] = 0;
+      chunkRowsMap.get(p)?.push(r);
+    }
+  }
+
+  for (let p = 0; p < papers.length; p++) {
+    paperChunkRows[p] = new Int32Array(chunkRowsMap.get(p) || []);
+  }
+
+  const bm25 = new BM25Index(papers, chunks);
+  const loadedIndex = {
+    manifest,
+    papers,
+    chunks,
+    vectors,
+    dims,
+    totalRows,
+    rowToChunk,
+    rowToPaper,
+    rowIsAbstract,
+    paperAbstractRow,
+    paperChunkRows,
+    bm25,
+  };
+
+  const { RelatedPapersController } = await import("../src/related.ts");
+  const { FakeVault } = await import("./fakes.ts");
+  const { embedQuery, warmUp } = await import("../src/ollama.ts");
+
+  const reqUrl = async (req: any) => {
+    const res = await fetch(req.url, {
+      method: req.method || "POST",
+      headers: req.headers || { "Content-Type": "application/json" },
+      body: typeof req.body === "string" ? req.body : JSON.stringify(req.body),
+    });
+    const json = await res.json();
+    return { status: res.status, json, text: JSON.stringify(json) };
+  };
+
+  const model = "qwen3-embedding:0.6b";
+  await warmUp(reqUrl, { url: "http://127.0.0.1:11434", model });
+
+  const embedder = {
+    async embedQuery(text: string, instruction?: string) {
+      return embedQuery(reqUrl, {
+        url: "http://127.0.0.1:11434",
+        model,
+        instruction,
+        query: text,
+        dims,
+      });
+    },
+  };
+
+  const controller = new RelatedPapersController({
+    indexStore: {
+      isReady: () => true,
+      getIndex: () => loadedIndex,
+    },
+    embedder,
+    vault: new FakeVault(),
+    settings: {
+      relatedLimit: 5,
+      relatedMinScore: 0.1,
+      relatedInstruction: "Given a passage from my research notes, retrieve papers that report the findings or methods it discusses",
+    },
+  });
+
+  const sentence = "Faster stress relaxation in synthetic hydrogels modulates neural maturation and cellular mechanics in 3D culture. ";
+  const passage2000 = sentence.repeat(Math.ceil(2000 / sentence.length)).slice(0, 2000);
+
+  // Warm-up 2 runs
+  await controller.refresh(passage2000, 50, "", "notes/warmup.md");
+  await controller.refresh(passage2000, 50, "", "notes/warmup2.md");
+
+  const timesMs: number[] = [];
+  for (let i = 0; i < 20; i++) {
+    const t0 = performance.now();
+    await controller.refresh(passage2000, 50, "", `notes/run_${i}.md`);
+    timesMs.push(performance.now() - t0);
+  }
+
+  const p50 = percentile(timesMs, 50);
+  const p95 = percentile(timesMs, 95);
+  const max = Math.max(...timesMs);
+
+  console.log(`\n[PF8 / B9] Panel refresh (2k passage, warm Ollama) p50: ${p50.toFixed(1)} ms, p95: ${p95.toFixed(1)} ms, max: ${max.toFixed(1)} ms (budget p95 <= 400 ms)`);
+  assert.ok(p95 <= 400.0, `B9 breach: p95 was ${p95.toFixed(1)} ms (budget <= 400.0 ms)`);
 });
