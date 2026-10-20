@@ -1013,7 +1013,7 @@ function formatQuery(instruction, query) {
   return `Instruct: ${instruction}
 Query: ${query}`;
 }
-async function embedQuery(requestUrl2, options) {
+async function embedQuery(requestUrl3, options) {
   const formattedInput = formatQuery(options.instruction, options.query);
   const endpoint = `${options.url.replace(/\/+$/, "")}/api/embed`;
   const payload = {
@@ -1022,7 +1022,7 @@ async function embedQuery(requestUrl2, options) {
     keep_alive: options.keepAlive ?? "30m",
     truncate: true
   };
-  const resp = await requestUrl2({
+  const resp = await requestUrl3({
     url: endpoint,
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -1036,7 +1036,7 @@ async function embedQuery(requestUrl2, options) {
   const dims = options.dims ?? rawVec.length;
   return truncateAndNormalize(rawVec, dims);
 }
-async function warmUp(requestUrl2, options) {
+async function warmUp(requestUrl3, options) {
   const endpoint = `${options.url.replace(/\/+$/, "")}/api/embed`;
   const payload = {
     model: options.model,
@@ -1044,7 +1044,7 @@ async function warmUp(requestUrl2, options) {
     keep_alive: options.keepAlive ?? "30m"
   };
   try {
-    await requestUrl2({
+    await requestUrl3({
       url: endpoint,
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1525,6 +1525,353 @@ function checkHotkeyConflict(customHotkeys, targetModifiers = ["Mod", "Shift"], 
   return null;
 }
 
+// src/cite.ts
+function findTrigger(lineText, ch, trigger = "@@") {
+  if (ch < trigger.length) return null;
+  const windowStart = Math.max(0, ch - 160);
+  const windowText = lineText.slice(windowStart, ch);
+  const relIdx = windowText.lastIndexOf(trigger);
+  if (relIdx === -1) return null;
+  const triggerStart = windowStart + relIdx;
+  const triggerEnd = triggerStart + trigger.length;
+  if (triggerStart > 0) {
+    const prevChar = lineText[triggerStart - 1];
+    const isWhitespace = /\s/.test(prevChar);
+    const isOpenPunctuation = prevChar === "(" || prevChar === "[" || prevChar === "{" || prevChar === '"' || prevChar === "'";
+    if (!isWhitespace && !isOpenPunctuation) {
+      return null;
+    }
+  }
+  const query = lineText.slice(triggerEnd, ch);
+  if (query.length > 120) return null;
+  if (query.includes("]]") || query.includes(trigger) || query.includes("	")) {
+    return null;
+  }
+  if (query.startsWith("  ")) {
+    return null;
+  }
+  return {
+    start: triggerStart,
+    end: ch,
+    query
+  };
+}
+function isExcludedContext(sections, line, lineText, ch) {
+  if (sections && sections.length > 0) {
+    for (const sec of sections) {
+      if (sec.position && line >= sec.position.start.line && line <= sec.position.end.line) {
+        const type = (sec.type || "").toLowerCase();
+        if (type === "code" || type === "math" || type === "frontmatter" || type === "yaml") {
+          return true;
+        }
+      }
+    }
+  }
+  const textBeforeCursor = lineText.slice(0, ch);
+  let backtickCount = 0;
+  for (let i = 0; i < textBeforeCursor.length; i++) {
+    if (textBeforeCursor[i] === "`") {
+      backtickCount++;
+    }
+  }
+  if (backtickCount % 2 === 1) {
+    return true;
+  }
+  let inSingleMath = false;
+  let inDoubleMath = false;
+  for (let i = 0; i < textBeforeCursor.length; i++) {
+    if (textBeforeCursor[i] === "$") {
+      let backslashCount = 0;
+      let j = i - 1;
+      while (j >= 0 && textBeforeCursor[j] === "\\") {
+        backslashCount++;
+        j--;
+      }
+      if (backslashCount % 2 === 1) {
+        continue;
+      }
+      if (i + 1 < textBeforeCursor.length && textBeforeCursor[i + 1] === "$") {
+        inDoubleMath = !inDoubleMath;
+        i++;
+        continue;
+      }
+      inSingleMath = !inSingleMath;
+    }
+  }
+  if (inSingleMath || inDoubleMath) {
+    return true;
+  }
+  const lastBracketOpen = textBeforeCursor.lastIndexOf("[[");
+  if (lastBracketOpen !== -1) {
+    const lastBracketClose = textBeforeCursor.lastIndexOf("]]");
+    if (lastBracketClose === -1 || lastBracketClose < lastBracketOpen) {
+      return true;
+    }
+  }
+  return false;
+}
+function formatCitation2(format = "[[{{citekey}}]]", citekey) {
+  if (!format.includes("{{citekey}}") && !format.includes("{{ citekey }}")) {
+    throw new Error('Citation format must contain "{{citekey}}"');
+  }
+  return format.replace(/\{\{\s*citekey\s*\}\}/g, citekey);
+}
+
+// src/inline.ts
+var LRUQueryCache = class {
+  map = /* @__PURE__ */ new Map();
+  maxEntries;
+  constructor(maxEntries = 16) {
+    this.maxEntries = maxEntries;
+  }
+  get(key) {
+    if (!this.map.has(key)) return void 0;
+    const val = this.map.get(key);
+    this.map.delete(key);
+    this.map.set(key, val);
+    return val;
+  }
+  set(key, val) {
+    if (this.map.has(key)) {
+      this.map.delete(key);
+    } else if (this.map.size >= this.maxEntries) {
+      const oldestKey = this.map.keys().next().value;
+      if (oldestKey !== void 0) {
+        this.map.delete(oldestKey);
+      }
+    }
+    this.map.set(key, val);
+  }
+  has(key) {
+    return this.map.has(key);
+  }
+  clear() {
+    this.map.clear();
+  }
+  size() {
+    return this.map.size;
+  }
+};
+function maintainSelection(suggest, oldHits, newHits) {
+  if (!suggest.suggestions) return;
+  const currentIdx = suggest.suggestions.selectedItem ?? 0;
+  const oldPaper = oldHits[currentIdx]?.paper;
+  if (oldPaper) {
+    const newIdx = newHits.findIndex(
+      (h) => h.paper && h.paper.citekey === oldPaper.citekey
+    );
+    if (newIdx !== -1) {
+      suggest.suggestions.selectedItem = newIdx;
+      return;
+    }
+  }
+  suggest.suggestions.selectedItem = 0;
+}
+function refreshSuggestions(suggest, hits, query, cache) {
+  if (!suggest) return;
+  if (suggest.suggestions && typeof suggest.suggestions.setSuggestions === "function") {
+    const oldHits = suggest.suggestions.values || [];
+    maintainSelection(suggest, oldHits, hits);
+    suggest.suggestions.values = hits;
+    suggest.suggestions.setSuggestions(hits);
+  } else if (query && cache) {
+    cache.set(query, hits);
+  }
+}
+var InlineSuggestController = class {
+  indexStore;
+  embedder;
+  vault;
+  metadataCache;
+  settings;
+  queryCache = new LRUQueryCache(16);
+  debounceTimer = null;
+  currentSeq = 0;
+  ollamaDownNotified = false;
+  sessionNotices = /* @__PURE__ */ new Set();
+  showNotice;
+  setTimeoutFn;
+  clearTimeoutFn;
+  constructor(options) {
+    this.indexStore = options.indexStore;
+    this.embedder = options.embedder;
+    this.vault = options.vault;
+    this.metadataCache = options.metadataCache;
+    this.settings = options.settings || {};
+    this.showNotice = options.showNotice;
+    this.setTimeoutFn = options.setTimeoutFn || ((fn, ms) => setTimeout(fn, ms));
+    this.clearTimeoutFn = options.clearTimeoutFn || ((id) => clearTimeout(id));
+  }
+  onTrigger(cursor, lineText, sections) {
+    if (isExcludedContext(sections, cursor.line, lineText, cursor.ch)) {
+      return null;
+    }
+    const trigger = this.settings.inlineTrigger || "@@";
+    const res = findTrigger(lineText, cursor.ch, trigger);
+    if (!res) return null;
+    return {
+      start: { line: cursor.line, ch: res.start },
+      end: { line: cursor.line, ch: res.end },
+      query: res.query
+    };
+  }
+  async getSuggestions(query, suggestInstance) {
+    if (!this.indexStore.isReady()) {
+      return [{ type: "loading", message: "Loading paper index\u2026" }];
+    }
+    if (query === "") {
+      return [{ type: "hint", message: "Type to search your papers" }];
+    }
+    if (this.queryCache.has(query)) {
+      return this.queryCache.get(query);
+    }
+    const limit = this.settings.inlineLimit || 8;
+    const index = this.indexStore.getIndex();
+    const kwHits = keyword(index, query, limit);
+    const initialItems = kwHits.map((h) => ({
+      type: "paper",
+      paper: index.papers[h.paper],
+      snippet: h.snippet,
+      source: h.source,
+      score: h.score
+    }));
+    const tokens = query.trim().split(/\s+/);
+    const isGated = tokens.length >= 2 || query.length >= 12;
+    if (isGated && this.embedder) {
+      const seq = ++this.currentSeq;
+      if (this.debounceTimer) {
+        this.clearTimeoutFn(this.debounceTimer);
+      }
+      this.debounceTimer = this.setTimeoutFn(async () => {
+        try {
+          const qVec = await this.embedder.embedQuery(query);
+          if (seq !== this.currentSeq) {
+            return;
+          }
+          if (!qVec) {
+            this.handleOllamaDown(initialItems, suggestInstance, query);
+            return;
+          }
+          const semHits = semantic(index, qVec, query, { limit });
+          const merged = hybrid(kwHits, semHits, limit, 60);
+          const mergedItems = merged.map((h) => ({
+            type: "paper",
+            paper: index.papers[h.paper],
+            snippet: h.snippet,
+            source: h.source,
+            score: h.score
+          }));
+          refreshSuggestions(suggestInstance, mergedItems, query, this.queryCache);
+        } catch {
+          this.handleOllamaDown(initialItems, suggestInstance, query);
+        }
+      }, 250);
+    }
+    return initialItems;
+  }
+  handleOllamaDown(items, suggestInstance, query) {
+    if (!this.ollamaDownNotified) {
+      this.ollamaDownNotified = true;
+      this.showNotice?.("Paper search: Ollama is not running. Using keyword-only search.");
+    }
+    const withSemanticOff = items.map((it) => ({ ...it, semanticOff: true }));
+    refreshSuggestions(suggestInstance, withSemanticOff, query, this.queryCache);
+  }
+  async selectSuggestion(item, editor, context) {
+    if (item.type !== "paper" || !item.paper) {
+      return;
+    }
+    const citation = formatCitation2(
+      this.settings.citationFormat || "[[{{citekey}}]]",
+      item.paper.citekey
+    );
+    editor.replaceRange(citation, context.start, context.end);
+    if (editor.setCursor) {
+      editor.setCursor({
+        line: context.start.line,
+        ch: context.start.ch + citation.length
+      });
+    }
+    if (this.settings.createLiteratureNotes !== false) {
+      try {
+        await ensureLiteratureNote(
+          this.vault,
+          this.metadataCache,
+          item.paper,
+          this.settings,
+          {
+            showNotice: this.showNotice,
+            sessionNotices: this.sessionNotices
+          }
+        );
+      } catch {
+      }
+    }
+  }
+  renderSuggestion(item, el) {
+    el.empty?.();
+    if (item.type === "loading") {
+      const row = el.createDiv?.({ cls: "daito-suggest-loading" }) || el;
+      row.setText?.(item.message || "Loading paper index\u2026");
+      return;
+    }
+    if (item.type === "hint") {
+      const row = el.createDiv?.({ cls: "daito-suggest-hint" }) || el;
+      row.setText?.(item.message || "Type to search your papers");
+      return;
+    }
+    if (item.type === "paper" && item.paper) {
+      const container = el.createDiv?.({ cls: "daito-suggest-paper" }) || el;
+      let title = item.paper.title || "Untitled";
+      if (title.length > 80) {
+        title = title.slice(0, 77) + "\u2026";
+      }
+      const titleEl = container.createDiv?.({ cls: "daito-suggest-title" });
+      titleEl?.setText?.(title);
+      const firstAuthor = item.paper.authors && item.paper.authors.length > 0 ? item.paper.authors[0] : "Unknown author";
+      const year = item.paper.year ? String(item.paper.year) : "n.d.";
+      const metaEl = container.createDiv?.({ cls: "daito-suggest-meta" });
+      metaEl?.setText?.(`${firstAuthor} \xB7 ${year}`);
+      if (this.settings.inlineShowSnippet !== false && item.snippet) {
+        const snippetEl = container.createDiv?.({ cls: "daito-suggest-snippet" });
+        snippetEl?.setText?.(item.snippet);
+      }
+      if (item.semanticOff) {
+        const footer = container.createDiv?.({ cls: "daito-suggest-footer" });
+        footer?.setText?.("Semantic search unavailable");
+      }
+    }
+  }
+};
+function createPaperSearchSuggestClass(BaseClass) {
+  return class PaperSearchSuggest extends BaseClass {
+    controller;
+    constructor(app, controller) {
+      super(app);
+      this.controller = controller;
+    }
+    onTrigger(cursor, editor, file) {
+      const lineText = editor.getLine(cursor.line);
+      const cache = this.app.metadataCache.getFileCache(file);
+      return this.controller.onTrigger(cursor, lineText, cache?.sections);
+    }
+    getSuggestions(context) {
+      return this.controller.getSuggestions(context.query, this);
+    }
+    renderSuggestion(value, el) {
+      this.controller.renderSuggestion(value, el);
+    }
+    selectSuggestion(value, evt) {
+      if (this.context) {
+        this.controller.selectSuggestion(value, this.context.editor, {
+          start: this.context.start,
+          end: this.context.end
+        });
+      }
+    }
+  };
+}
+
 // src/main.ts
 var DEFAULT_SETTINGS = {
   ollamaUrl: "http://127.0.0.1:11434",
@@ -1568,6 +1915,29 @@ var PaperSearchPlugin = class extends import_obsidian2.Plugin {
         new PaperSearchModal(this.app, this).open();
       }
     });
+    const embedder = {
+      embedQuery: async (queryText) => {
+        const ix = this.indexStore.getIndex();
+        if (!ix) return null;
+        return embedQuery(import_obsidian2.requestUrl, {
+          url: this.settings.ollamaUrl,
+          model: ix.manifest?.model || "qwen3-embedding:0.6b",
+          instruction: ix.manifest?.query_instruction || "Given a query, retrieve relevant research papers",
+          query: queryText,
+          dims: ix.dims
+        });
+      }
+    };
+    const suggestController = new InlineSuggestController({
+      indexStore: this.indexStore,
+      embedder,
+      vault: this.app.vault,
+      metadataCache: this.app.metadataCache,
+      settings: this.settings,
+      showNotice: (msg) => new import_obsidian2.Notice(msg)
+    });
+    const PaperSearchSuggest = createPaperSearchSuggestClass(import_obsidian2.EditorSuggest);
+    this.registerEditorSuggest(new PaperSearchSuggest(this.app, suggestController));
     this.addSettingTab(new PaperSearchSettingTab(this.app, this));
   }
   checkHotkeyConflicts() {
@@ -1638,6 +2008,21 @@ var PaperSearchSettingTab = class extends import_obsidian2.PluginSettingTab {
     new import_obsidian2.Setting(containerEl).setName("Inline Suggestion Trigger").setDesc("Trigger characters to invoke paper citation search while typing").addText(
       (text) => text.setPlaceholder("@@").setValue(this.plugin.settings.inlineTrigger).onChange(async (value) => {
         this.plugin.settings.inlineTrigger = value.trim() || "@@";
+        await this.plugin.saveSettings();
+      })
+    );
+    new import_obsidian2.Setting(containerEl).setName("Inline Suggestion Limit").setDesc("Maximum number of suggestions shown while typing (default 8)").addText(
+      (text) => text.setPlaceholder("8").setValue(String(this.plugin.settings.inlineLimit || 8)).onChange(async (value) => {
+        const parsed = parseInt(value.trim(), 10);
+        if (!isNaN(parsed) && parsed > 0) {
+          this.plugin.settings.inlineLimit = parsed;
+          await this.plugin.saveSettings();
+        }
+      })
+    );
+    new import_obsidian2.Setting(containerEl).setName("Inline Show Snippets").setDesc("Show matched snippet text below each paper in the inline suggestion list").addToggle(
+      (toggle) => toggle.setValue(this.plugin.settings.inlineShowSnippet).onChange(async (value) => {
+        this.plugin.settings.inlineShowSnippet = value;
         await this.plugin.saveSettings();
       })
     );

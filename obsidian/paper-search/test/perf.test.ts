@@ -5,6 +5,8 @@ import path from "node:path";
 import { BM25Index, type PaperMetadata, type ChunkDocument } from "../src/bm25.ts";
 import { IndexStore } from "../src/indexstore.ts";
 import { keyword, semantic, hybrid } from "../src/engine.ts";
+import { findTrigger, isExcludedContext } from "../src/cite.ts";
+import { maintainSelection, type FakeSuggestLike, type SuggestionItem } from "../src/inline.ts";
 import { buildSyntheticIndex } from "../scripts/make-synthetic-index.ts";
 
 const SYNTHETIC_DIR = path.resolve(import.meta.dirname, "fixtures/synthetic_index");
@@ -115,6 +117,47 @@ test("PF1 B1: Keyword search latency across every prefix on 3x synthetic index",
   // Budget B1: p95 <= 8 ms, max <= 16 ms
   assert.ok(p95 <= 8.0, `B1 breach: p95 was ${p95.toFixed(2)} ms (budget <= 8.0 ms)`);
   assert.ok(max <= 16.0, `B1 breach: max was ${max.toFixed(2)} ms (budget <= 16.0 ms)`);
+});
+
+test("PF2 B2: findTrigger + context check latency on lines up to 10k chars", { skip: !process.env.DAITO_PERF }, () => {
+  const lineLengths = [10, 1000, 10000];
+  const timesMs: number[] = [];
+
+  // Warm up JIT
+  for (let i = 0; i < 100; i++) {
+    findTrigger("some line with @@stiff and more text", 20);
+    isExcludedContext([], 0, "some line with @@stiff and more text", 20);
+  }
+
+  for (const len of lineLengths) {
+    const pad = "word ".repeat(Math.floor(len / 5));
+    const cases = [
+      pad + "@@stiff",
+      pad.slice(0, Math.floor(len / 2)) + "@@stiff " + pad.slice(Math.floor(len / 2)),
+      pad,
+      "text with `code` and $math$ " + pad + "@@query",
+    ];
+
+    for (const line of cases) {
+      const ch = line.length;
+      for (let rep = 0; rep < 50; rep++) {
+        const t0 = performance.now();
+        const tr = findTrigger(line, ch);
+        const exc = isExcludedContext([], 0, line, ch);
+        const elapsed = performance.now() - t0;
+        timesMs.push(elapsed);
+      }
+    }
+  }
+
+  const p50 = percentile(timesMs, 50);
+  const p95 = percentile(timesMs, 95);
+  const p99 = percentile(timesMs, 99);
+  const max = Math.max(...timesMs);
+
+  console.log(`\n[PF2 / B2] findTrigger + isExcludedContext (10k chars) p50: ${p50.toFixed(4)} ms, p95: ${p95.toFixed(4)} ms, p99: ${p99.toFixed(4)} ms, max: ${max.toFixed(4)} ms (budget p99 <= 0.1 ms)`);
+
+  assert.ok(p99 <= 0.1, `B2 breach: p99 was ${p99.toFixed(4)} ms (budget <= 0.1 ms)`);
 });
 
 test("PF3 B3 & B4: Semantic scoring and hybrid merge latency on 3x synthetic index", { skip: !process.env.DAITO_PERF }, () => {
@@ -302,4 +345,70 @@ test("PF_B11: ensureLiteratureNote (find + render + create) latency", { skip: !p
 
   console.log(`\n[PF_B11 / B11] ensureLiteratureNote p50: ${p50.toFixed(2)} ms, p95: ${p95.toFixed(2)} ms, max: ${max.toFixed(2)} ms (budget <= 30 ms)`);
   assert.ok(max <= 30.0, `B11 breach: max was ${max.toFixed(2)} ms (budget <= 30 ms)`);
+});
+
+test("PF7 B14: Selection stability across 1,000 randomised re-rank sequences", { skip: !process.env.DAITO_PERF }, () => {
+  const { papers } = ensureSyntheticIndex();
+  let violations = 0;
+
+  for (let trial = 0; trial < 1000; trial++) {
+    // Pick 8 random distinct papers for old hits
+    const pool = [...papers].sort(() => Math.random() - 0.5);
+    const oldHits: SuggestionItem[] = pool.slice(0, 8).map((p) => ({
+      type: "paper",
+      paper: p,
+      score: Math.random(),
+    }));
+
+    const selectedIdx = Math.floor(Math.random() * oldHits.length);
+    const selectedPaper = oldHits[selectedIdx].paper!;
+
+    const fakeSuggest: FakeSuggestLike = {
+      suggestions: {
+        selectedItem: selectedIdx,
+        values: oldHits,
+        setSuggestions(items) {
+          this.values = items;
+        },
+      },
+    };
+
+    // Construct newHits: 70% chance of retaining selectedPaper at a new position, 30% dropping it
+    const retain = Math.random() < 0.7;
+    const otherPapers = pool.slice(8, 20);
+    const newItems: SuggestionItem[] = otherPapers.slice(0, 7).map((p) => ({
+      type: "paper",
+      paper: p,
+      score: Math.random(),
+    }));
+
+    if (retain) {
+      const insertPos = Math.floor(Math.random() * (newItems.length + 1));
+      newItems.splice(insertPos, 0, {
+        type: "paper",
+        paper: selectedPaper,
+        score: Math.random(),
+      });
+    }
+
+    // Call maintainSelection
+    maintainSelection(fakeSuggest, oldHits, newItems);
+
+    const actualIdx = fakeSuggest.suggestions!.selectedItem;
+    if (retain) {
+      const expectedIdx = newItems.findIndex(
+        (h) => h.paper && h.paper.citekey === selectedPaper.citekey
+      );
+      if (actualIdx !== expectedIdx) {
+        violations++;
+      }
+    } else {
+      if (actualIdx !== 0) {
+        violations++;
+      }
+    }
+  }
+
+  console.log(`\n[PF7 / B14] Selection stability: ${violations} violations across 1,000 randomised sequences (budget: 0)`);
+  assert.strictEqual(violations, 0, `B14 breach: expected 0 selection violations, got ${violations}`);
 });

@@ -1,14 +1,18 @@
 import {
   App,
+  EditorSuggest,
   Notice,
   Plugin,
   PluginSettingTab,
   Setting,
+  requestUrl,
 } from "obsidian";
 import { IndexStore } from "./indexstore.ts";
 import { PaperSearchModal } from "./modal.ts";
 import { checkHotkeyConflict } from "./hotkey.ts";
 import { formatCitation } from "./litnote.ts";
+import { embedQuery } from "./ollama.ts";
+import { createPaperSearchSuggestClass, InlineSuggestController } from "./inline.ts";
 
 export interface PaperSearchSettings {
   ollamaUrl: string;
@@ -81,6 +85,33 @@ export default class PaperSearchPlugin extends Plugin {
         new PaperSearchModal(this.app, this).open();
       },
     });
+
+    // 2. Register inline citation suggest (@@)
+    const embedder = {
+      embedQuery: async (queryText: string) => {
+        const ix = this.indexStore.getIndex();
+        if (!ix) return null;
+        return embedQuery(requestUrl, {
+          url: this.settings.ollamaUrl,
+          model: ix.manifest?.model || "qwen3-embedding:0.6b",
+          instruction: ix.manifest?.query_instruction || "Given a query, retrieve relevant research papers",
+          query: queryText,
+          dims: ix.dims,
+        });
+      },
+    };
+
+    const suggestController = new InlineSuggestController({
+      indexStore: this.indexStore,
+      embedder,
+      vault: this.app.vault,
+      metadataCache: this.app.metadataCache,
+      settings: this.settings,
+      showNotice: (msg: string) => new Notice(msg),
+    });
+
+    const PaperSearchSuggest = createPaperSearchSuggestClass(EditorSuggest);
+    this.registerEditorSuggest(new PaperSearchSuggest(this.app, suggestController));
 
     this.addSettingTab(new PaperSearchSettingTab(this.app, this));
   }
@@ -200,6 +231,34 @@ class PaperSearchSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.inlineTrigger)
           .onChange(async (value) => {
             this.plugin.settings.inlineTrigger = value.trim() || "@@";
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Inline Suggestion Limit")
+      .setDesc("Maximum number of suggestions shown while typing (default 8)")
+      .addText((text) =>
+        text
+          .setPlaceholder("8")
+          .setValue(String(this.plugin.settings.inlineLimit || 8))
+          .onChange(async (value) => {
+            const parsed = parseInt(value.trim(), 10);
+            if (!isNaN(parsed) && parsed > 0) {
+              this.plugin.settings.inlineLimit = parsed;
+              await this.plugin.saveSettings();
+            }
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Inline Show Snippets")
+      .setDesc("Show matched snippet text below each paper in the inline suggestion list")
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.inlineShowSnippet)
+          .onChange(async (value) => {
+            this.plugin.settings.inlineShowSnippet = value;
             await this.plugin.saveSettings();
           })
       );
