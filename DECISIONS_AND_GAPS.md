@@ -147,3 +147,11 @@ All execution speed budgets specified in `INTEGRATION_SPEC.md` were benchmarked 
       - 10th percentile expected score: 0.4985
   - Selection: Selected the instruction mode as the default because it produced sharper score differentiation between relevant and unrelated papers.
   - Threshold Calibration: Calibrated default `relatedMinScore` to **0.50** (retaining ≥90% of expected papers while filtering out background noise).
+
+### Web snapshots (text/html attachments)
+- **Scope:** child `text/html` attachments not in `deletedItems` are indexed alongside PDFs; standalone snapshots (no parent) stay excluded, like standalone PDFs. Owner's library at the time: 53 child snapshots, 7 items with a snapshot and no PDF, 5 `webpage` items.
+- **Text:** stdlib `html.parser` only (`planner/htmltext.py`). Drops `head` (the title is already metadata), `script`, `style`, `noscript`, `template`, `nav`, `header`, `footer`, `aside`, `svg`, `math`, `iframe`, `object`, `canvas`, `button`, `select`. `form` is kept because some sites wrap the whole page in one. Every tag boundary is a word break; whitespace (including NBSP) collapses to one space. Decoding: UTF-8, else the `<meta charset>` in the first 4 KB, else cp1252. No reference cut-off or header de-duplication: a snapshot is one "page".
+- **Chunks:** the PDF chunker (`pdftext.chunk_pages`) with `page: 0`; `max_chunks_per_paper` applies per attachment, as for PDFs. Chunker id bumped `pages-v1` → `pages-v2`, so existing indexes rebuild once.
+- **papers.json:** `pdfs` stays PDF-only; snapshots are listed separately as `snapshots: [{attachmentKey, hasText}]` so nothing that counts pages or PDFs changes meaning.
+- **Opening:** verified in the installed Zotero (9.0.6) `ZoteroProtocolHandler.mjs`: `zotero://open` and `zotero://open-pdf` share one handler that accepts any file attachment and calls `Zotero.FileHandlers.open`. A snapshot hit opens `zotero://open/library/items/<attKey>` with no page. Abstract hits prefer the first PDF, then the first snapshot, then select the item. Badge: `web page`.
+- **Watcher:** fingerprint counts and stats PDF and snapshot attachments together (changes the fingerprint once on upgrade, which coincides with the chunker rebuild).

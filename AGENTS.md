@@ -27,7 +27,7 @@ Audit trail & decisions log: [DECISIONS_AND_GAPS.md](DECISIONS_AND_GAPS.md).
 ### 2. Paper Search & Literature Discovery Layer
 - **Local Hybrid Search Engine**: Precomputed inverted-index BM25 with prefix expansion (top-64 candidate selection via dual binary search) and dense vector search (`qwen3-embedding:0.6b` via local Ollama). Scoring combines signals via Reciprocal Rank Fusion ($k=60$).
 - **Obsidian Paper Search Plugin** (`obsidian/paper-search`):
-  - **Search Modal (`PaperSearchModal`)**: Instant paper search. `Enter` opens the PDF in Zotero at the matching page; `Cmd+Enter` inserts the citation (default `[[{{citekey}}]]`) and ensures the literature note exists; `Alt+Enter` opens the literature note, creating it if needed; `Shift+Enter` selects the item in Zotero.
+  - **Search Modal (`PaperSearchModal`)**: Instant paper search. `Enter` opens the PDF in Zotero at the matching page (a web-snapshot match opens the snapshot via `zotero://open/library/items/<attKey>`, no page); `Cmd+Enter` inserts the citation (default `[[{{citekey}}]]`) and ensures the literature note exists; `Alt+Enter` opens the literature note, creating it if needed; `Shift+Enter` selects the item in Zotero.
   - **Inline Citations (`@@`)**: `EditorSuggest` autocompletion triggered anywhere in prose. Strictly excluded within code spans, math blocks, unclosed wikilinks, or frontmatter. Inserts citation in a single editor undo transaction and asynchronously creates the literature note.
   - **Literature Notes (`src/litnote.ts`)**: Idempotent generation of `<folder>/<citekey>.md` using custom or built-in templates. Handles YAML frontmatter escaping, path traversal protection, and safe character normalisation.
   - **Related Papers Panel (`RelatedPapersView`)**: Sidebar pane extracting the active note's passage/cursor section, cleans markdown formatting, shortens to $\le 2000$ characters at sentence boundaries, and retrieves relevant papers using calibrated instruction embedding. Hides already-cited papers by default with toggle to inspect them.
@@ -35,7 +35,8 @@ Audit trail & decisions log: [DECISIONS_AND_GAPS.md](DECISIONS_AND_GAPS.md).
   - Triggered via launchd (`com.planner.zotero-watch.plist`) on changes to `~/Zotero/zotero.sqlite`.
   - Waits for `zotero.sqlite` to be quiet for 20 s, then compares a fingerprint of the library with `state.json` → `fingerprint`; unchanged means no build and no writes. The fingerprint is recorded only after a successful build.
   - The index builder (`planner/searchindex.py`) computes `content_hash` over papers, chunks, and vector bytes, and writes nothing when it is unchanged.
-  - Retries missing PDF attachments on subsequent runs when files appear on disk.
+  - Indexes child PDFs and web snapshots (`text/html`, text via stdlib `html.parser` in `planner/htmltext.py`, chunks with page 0); both are in the fingerprint.
+  - Retries missing PDF/snapshot attachments on subsequent runs when files appear on disk.
   - Concurrency protected by the shared advisory lock `.planner/search.lock` (also taken by the morning job's `search index`).
 
 ---
@@ -58,7 +59,7 @@ Audit trail & decisions log: [DECISIONS_AND_GAPS.md](DECISIONS_AND_GAPS.md).
 
 ```
 planner/                __main__ (CLI), extract, threads, fixes, stats, brief, weekly, health, llm, vault, config
-                        searchindex.py (Zotero index builder), zotwatch.py (incremental watcher)
+                        searchindex.py (Zotero index builder), htmltext.py (snapshot text), zotwatch.py (incremental watcher)
 obsidian/paper-search/  Obsidian plugin: src/ (engine, indexstore, bm25, modal, inline, litnote, passage, related)
                         test/ (unit & perf benchmarks), scripts/ (make-synthetic-index, eval-related)
 prompts/                extract.md (per-note extraction), weekly.md (review)

@@ -32,7 +32,7 @@ Daito Paper Search runs entirely on your local machine with **zero external clou
 ```
 
 ### 1. Hybrid Search Engine (BM25 + Dense Embeddings)
-- **BM25 Keyword Search**: An inverted index with prefix expansion over paper titles, author surnames, citekeys, abstracts, and full PDF text chunks.
+- **BM25 Keyword Search**: An inverted index with prefix expansion over paper titles, author surnames, citekeys, abstracts, and full-text chunks from PDFs and Zotero web snapshots (HTML attachments).
 - **Dense Vector Search**: Powered locally by [Ollama](https://ollama.com) running `qwen3-embedding:0.6b` (1024 dimensions).
 - **Reciprocal Rank Fusion ($k=60$)**: Blends keyword and semantic scores so exact term matches and high-level conceptual queries both rank at the top.
 
@@ -40,7 +40,7 @@ Daito Paper Search runs entirely on your local machine with **zero external clou
 You never have to manually re-index or run terminal commands when reading and collecting papers:
 - A lightweight background daemon (`com.planner.zotero-watch` via macOS `launchd`) monitors your Zotero database (`~/Zotero/zotero.sqlite`) and PDF storage directory (`~/Zotero/storage`).
 - Whenever you add a paper, attach a PDF, or edit metadata in Zotero, the watcher detects the modification.
-- It waits 20 seconds for database writes to settle (quiet window), computes a fingerprint of the library, extracts clean text from new PDFs (stripping running headers, footers, and references), chunks the content, computes vector embeddings, and writes the updated index to `.planner/search/` inside your Obsidian vault.
+- It waits 20 seconds for database writes to settle (quiet window), computes a fingerprint of the library, extracts clean text from new PDFs (stripping running headers, footers, and references) and web snapshots (dropping scripts, styles, navigation, headers and footers), chunks the content, computes vector embeddings, and writes the updated index to `.planner/search/` inside your Obsidian vault.
 - The Obsidian plugin detects the updated index and hot-swaps it atomically in memory without interrupting your typing.
 
 ---
@@ -89,7 +89,7 @@ cd daito
 ### Instant Paper Search (`Cmd+Shift+0` / `Mod+Shift+0`)
 Open the search modal from anywhere in Obsidian:
 - Type words, authors, citekeys, or conceptual queries (e.g. `optogenetics neural control`).
-- **`Enter`**: Open the paper's PDF directly in Zotero at the matching page.
+- **`Enter`**: Open the paper's PDF directly in Zotero at the matching page (or, for a web-snapshot match, the snapshot in Zotero's reader).
 - **`Cmd+Enter`**: Insert citation link (default `[[citekey]]`) and create a literature note.
 - **`Alt+Enter`**: Open the literature note, creating it from your template if it does not exist yet.
 - **`Shift+Enter`**: Select and highlight the paper item in Zotero.
@@ -136,7 +136,7 @@ You can also run health diagnostics at any time with:
 ```
 setup-search.sh         One-command installer & watcher management script (symlinked as ./setup.sh)
 planner/                Python indexing and planning backend
-  ├── searchindex.py    Zotero SQLite extractor, PDF chunker, Ollama embedder, BM25 builder
+  ├── searchindex.py    Zotero SQLite extractor, PDF/snapshot chunker, Ollama embedder, BM25 builder
   ├── zotwatch.py       Incremental watcher with quiet window & library fingerprinting
   └── embed.py          Local Ollama embedding client
 obsidian/paper-search/  Obsidian plugin (TypeScript)

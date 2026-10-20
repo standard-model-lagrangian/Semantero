@@ -32,7 +32,7 @@ Status: proposal, not built. Companion to [SPEC.md](SPEC.md) (the planner). Same
  ↵ open PDF at page   ⌘↵ insert [[citekey]]   ⌥↵ literature note / Zotero item
 ```
 
-- **Enter** opens the PDF in Zotero's reader at the matching page: `zotero://open-pdf/library/items/<attachmentKey>?page=N`.
+- **Enter** opens the PDF in Zotero's reader at the matching page: `zotero://open-pdf/library/items/<attachmentKey>?page=N`. A chunk from a web snapshot has no page and opens the snapshot: `zotero://open/library/items/<attachmentKey>` (Zotero 7+ routes `open` and `open-pdf` to the same handler, which opens any file attachment).
 - **Cmd+Enter** inserts `[[citekey]]` at the cursor, matching your Zotero Integration `citeSuggestTemplate`.
 - **Alt+Enter** opens `<citekey>.md` if it exists, otherwise selects the item in Zotero: `zotero://select/library/items/<itemKey>`.
 
@@ -64,6 +64,7 @@ Sizes for this library: 148 PDFs, about 2,000 pages, so roughly 4–6k chunks. A
 | `citationKey` | Present on all 160 items | Native Zotero field; no Better BibTeX database needed. |
 | `abstractNote` | 136 of 156 papers | Papers without one rely on full-text chunks. |
 | PDFs | `itemAttachments` with `contentType = application/pdf`, `path = storage:<file>` → `~/Zotero/storage/<attachmentKey>/<file>` | 148 PDFs. Several PDFs per item (supplementary files) all belong to the parent paper. |
+| Web snapshots | `itemAttachments` with `contentType = text/html`, child items only (standalone snapshots have no paper) | Text via stdlib `html.parser` (`planner/htmltext.py`), dropping `head`, `script`, `style`, `nav`, `header`, `footer`, `aside` and similar; whitespace collapsed; chunked like a single PDF page with `page: 0`. Listed in `papers.json` as `snapshots: [{attachmentKey, hasText}]`. |
 | PDF text | `pdftotext -enc UTF-8 <pdf> -` (poppler, at `/opt/homebrew/bin`) | Pages are separated by `\f`, which gives page numbers. Zotero's `.zotero-ft-cache` is not used because it has no reliable page breaks. |
 
 ## Index format: `.planner/search/` (inside the vault, hidden from Obsidian)
@@ -78,7 +79,7 @@ Written into `.planner/search.tmp/`, then renamed into place, so the plugin neve
   "model": "qwen3-embedding:0.6b",
   "dims": 1024,
   "query_instruction": "Given a description of what a paper found or showed, retrieve that paper",
-  "chunker": "pages-v1",
+  "chunker": "pages-v2",
   "papers": 156,
   "chunks": 4812
 }

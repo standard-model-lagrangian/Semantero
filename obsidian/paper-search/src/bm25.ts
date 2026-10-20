@@ -12,13 +12,15 @@ export interface PaperMetadata {
   collections: string[];
   abstract: string | null;
   pdfs?: { attachmentKey: string; pages: number; hasText: boolean }[];
+  /** Web snapshots (text/html attachments); their chunks have page 0. */
+  snapshots?: { attachmentKey: string; hasText: boolean }[];
   abstractRow?: number | null;
 }
 
 export interface ChunkDocument {
   paper: number; // index into papers
   attachmentKey: string;
-  page: number;
+  page: number; // 1-based PDF page; 0 for a web snapshot
   text: string;
   row?: number;
 }

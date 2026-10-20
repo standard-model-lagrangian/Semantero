@@ -23,6 +23,29 @@ class PdfAttachment:
 
 
 @dataclass
+class SnapshotAttachment:
+    """A web snapshot (text/html attachment). It has no pages; its chunks carry page 0."""
+    attachmentKey: str
+    path: Path
+    pages: int = 0
+    hasText: bool = True
+
+    def to_dict(self):
+        return {
+            "attachmentKey": self.attachmentKey,
+            "hasText": self.hasText,
+        }
+
+
+def attachment_path(zotero_dir: Path, att_key: str, path_str: str | None) -> Path | None:
+    if path_str and path_str.startswith("storage:"):
+        return zotero_dir / "storage" / att_key / path_str[len("storage:"):]
+    if path_str:
+        return Path(path_str)
+    return None
+
+
+@dataclass
 class Paper:
     key: str
     citekey: str
@@ -35,6 +58,10 @@ class Paper:
     collections: list[str] = field(default_factory=list)
     abstract: str | None = None
     pdfs: list[PdfAttachment] = field(default_factory=list)
+    snapshots: list[SnapshotAttachment] = field(default_factory=list)
+
+    def attachments(self) -> list[PdfAttachment | SnapshotAttachment]:
+        return [*self.pdfs, *self.snapshots]
 
     def to_dict(self, abstract_row: int | None = None):
         return {
@@ -49,6 +76,7 @@ class Paper:
             "collections": self.collections,
             "abstract": self.abstract,
             "pdfs": [p.to_dict() for p in self.pdfs],
+            "snapshots": [s.to_dict() for s in self.snapshots],
             "abstractRow": abstract_row,
         }
 
@@ -152,28 +180,30 @@ def read_library(zotero_dir: Path | str) -> list[Paper]:
         for item_id, cname in cur.fetchall():
             collections_by_id.setdefault(item_id, []).append(cname)
 
-        # 9. Load PDF attachments
+        # 9. Load PDF and web-snapshot attachments (children only; standalone ones have no paper)
         cur.execute("""
-            SELECT a.itemID, i.key, a.parentItemID, a.path
+            SELECT a.itemID, i.key, a.parentItemID, a.path, a.contentType
             FROM itemAttachments a
             JOIN items i ON a.itemID = i.itemID
-            WHERE a.contentType = 'application/pdf'
+            WHERE a.contentType IN ('application/pdf', 'text/html')
               AND a.itemID NOT IN (SELECT itemID FROM deletedItems)
         """)
         pdfs_by_parent: dict[int, list[PdfAttachment]] = {}
-        for att_id, att_key, parent_id, path_str in cur.fetchall():
+        snapshots_by_parent: dict[int, list[SnapshotAttachment]] = {}
+        for att_id, att_key, parent_id, path_str, content_type in cur.fetchall():
             if not parent_id:
                 continue
-            if path_str and path_str.startswith("storage:"):
-                fname = path_str[len("storage:"):]
-                full_path = zotero_dir / "storage" / att_key / fname
-            elif path_str:
-                full_path = Path(path_str)
-            else:
+            full_path = attachment_path(zotero_dir, att_key, path_str)
+            if full_path is None:
                 continue
-            pdfs_by_parent.setdefault(parent_id, []).append(
-                PdfAttachment(attachmentKey=att_key, path=full_path)
-            )
+            if content_type == "text/html":
+                snapshots_by_parent.setdefault(parent_id, []).append(
+                    SnapshotAttachment(attachmentKey=att_key, path=full_path)
+                )
+            else:
+                pdfs_by_parent.setdefault(parent_id, []).append(
+                    PdfAttachment(attachmentKey=att_key, path=full_path)
+                )
 
         conn.close()
 
@@ -192,6 +222,7 @@ def read_library(zotero_dir: Path | str) -> list[Paper]:
             tags = tags_by_id.get(item_id, [])
             collections = collections_by_id.get(item_id, [])
             pdfs = pdfs_by_parent.get(item_id, [])
+            snapshots = snapshots_by_parent.get(item_id, [])
 
             papers.append(
                 Paper(
@@ -206,6 +237,7 @@ def read_library(zotero_dir: Path | str) -> list[Paper]:
                     collections=collections,
                     abstract=abstract,
                     pdfs=pdfs,
+                    snapshots=snapshots,
                 )
             )
 

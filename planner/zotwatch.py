@@ -6,6 +6,7 @@ from pathlib import Path
 
 from . import searchindex
 from .searchindex import search_lock, load_json, write_json
+from .zotlib import attachment_path
 
 
 def compute_fingerprint(zotero_dir: Path | str) -> str | None:
@@ -37,20 +38,20 @@ def compute_fingerprint(zotero_dir: Path | str) -> str | None:
         """)
         max_client_date = cur.fetchone()[0] or ""
 
-        # 3. number of attachments
+        # 3. number of PDF and web-snapshot attachments
         cur.execute("""
             SELECT COUNT(*) FROM itemAttachments
             WHERE itemID NOT IN (SELECT itemID FROM deletedItems)
-              AND contentType = 'application/pdf'
+              AND contentType IN ('application/pdf', 'text/html')
         """)
         att_count = cur.fetchone()[0]
 
-        # 4. sorted list of (PDF path, mtime, size) for each PDF attachment
+        # 4. sorted list of (path, mtime, size) for each PDF or snapshot attachment
         cur.execute("""
             SELECT i.key, a.path
             FROM itemAttachments a
             JOIN items i ON a.itemID = i.itemID
-            WHERE a.contentType = 'application/pdf'
+            WHERE a.contentType IN ('application/pdf', 'text/html')
               AND a.itemID NOT IN (SELECT itemID FROM deletedItems)
         """)
         pdf_rows = cur.fetchall()
@@ -58,12 +59,8 @@ def compute_fingerprint(zotero_dir: Path | str) -> str | None:
 
         pdf_stats: list[tuple[str, int, int]] = []
         for att_key, path_str in pdf_rows:
-            if path_str and path_str.startswith("storage:"):
-                fname = path_str[len("storage:"):]
-                full_path = zotero_dir / "storage" / att_key / fname
-            elif path_str:
-                full_path = Path(path_str)
-            else:
+            full_path = attachment_path(zotero_dir, att_key, path_str)
+            if full_path is None:
                 continue
 
             if full_path.exists():
