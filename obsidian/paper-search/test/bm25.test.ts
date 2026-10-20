@@ -140,3 +140,294 @@ test("zero-score chunk is not set as bestChunkIndex when only metadata matches",
   assert.strictEqual(results[0].bestChunkScore, 0);
   assert.strictEqual(results[0].bestChunkIndex, undefined);
 });
+
+// --- Phase 0b: Tests K1–K8 ---
+
+test("K1 short unfinished word ignored", () => {
+  const index = new BM25Index(samplePapers, sampleChunks);
+  // "s" gives the same ranking as "" (empty)
+  const resS = index.search("s");
+  const resEmpty = index.search("");
+  assert.deepStrictEqual(resS, resEmpty);
+  assert.strictEqual(resS.length, 0);
+
+  // "stiff g" gives the same ranking as "stiff "
+  const resStiffG = index.search("stiff g");
+  const resStiffSpace = index.search("stiff ");
+  assert.strictEqual(resStiffG.length, resStiffSpace.length);
+  for (let i = 0; i < resStiffG.length; i++) {
+    assert.strictEqual(resStiffG[i].paperIndex, resStiffSpace[i].paperIndex);
+    assert.ok(Math.abs(resStiffG[i].score - resStiffSpace[i].score) < 1e-9);
+  }
+});
+
+test("K2 a short word that's a real term still matches exactly", () => {
+  const papers: PaperMetadata[] = [
+    {
+      key: "K1",
+      citekey: "paper1",
+      title: "Targeting il pathways in 3d models",
+      authors: ["Author"],
+      year: 2023,
+      journal: null,
+      doi: null,
+      tags: [],
+      collections: [],
+      abstract: "Study on il and 3d constructs.",
+    },
+    {
+      key: "K2",
+      citekey: "paper2",
+      title: "Other work",
+      authors: ["Author2"],
+      year: 2022,
+      journal: null,
+      doi: null,
+      tags: [],
+      collections: [],
+      abstract: "Unrelated.",
+    },
+  ];
+  const index = new BM25Index(papers, []);
+
+  // "il" and "3d" are in the vocabulary
+  const resIl = index.search("il");
+  assert.ok(resIl.length > 0);
+  assert.strictEqual(resIl[0].paperIndex, 0);
+
+  const res3d = index.search("3d");
+  assert.ok(res3d.length > 0);
+  assert.strictEqual(res3d[0].paperIndex, 0);
+});
+
+test("K3 three-letter prefix expands", () => {
+  const papers: PaperMetadata[] = [
+    {
+      key: "K1",
+      citekey: "p1",
+      title: "Study of viscoelasticity",
+      authors: ["A"],
+      year: 2023,
+      journal: null,
+      doi: null,
+      tags: [],
+      collections: [],
+      abstract: null,
+    },
+    {
+      key: "K2",
+      citekey: "p2",
+      title: "Measuring viscosity in fluids",
+      authors: ["B"],
+      year: 2023,
+      journal: null,
+      doi: null,
+      tags: [],
+      collections: [],
+      abstract: null,
+    },
+    {
+      key: "K3",
+      citekey: "p3",
+      title: "Completely unrelated title",
+      authors: ["C"],
+      year: 2023,
+      journal: null,
+      doi: null,
+      tags: [],
+      collections: [],
+      abstract: null,
+    },
+  ];
+  const index = new BM25Index(papers, []);
+  const res = index.search("vis");
+  assert.strictEqual(res.length, 2);
+  const foundPapers = new Set(res.map((r) => r.paperIndex));
+  assert.ok(foundPapers.has(0));
+  assert.ok(foundPapers.has(1));
+  assert.ok(!foundPapers.has(2));
+});
+
+test("K4 at most 64 expansions, highest document frequency kept", () => {
+  // Create 500 stiff* terms across chunks/papers with varying df
+  const papers: PaperMetadata[] = [];
+  const chunks: ChunkDocument[] = [];
+
+  // Generate 500 terms: stiff000 through stiff499
+  // Give term stiff000 through stiff063 df = 2
+  // Give terms stiff064 through stiff499 df = 1
+  for (let i = 0; i < 500; i++) {
+    const term = `stiff${i.toString().padStart(3, "0")}`;
+    papers.push({
+      key: `K${i}`,
+      citekey: `cite${i}`,
+      title: `Paper ${i} mentioning ${term}`,
+      authors: ["Author"],
+      year: 2023,
+      journal: null,
+      doi: null,
+      tags: [],
+      collections: [],
+      abstract: i < 64 ? `Extra mention of ${term}` : null,
+    });
+    if (i < 64) {
+      chunks.push({
+        paper: i,
+        attachmentKey: `ATT${i}`,
+        page: 1,
+        text: `Chunk also containing ${term}`,
+      });
+    }
+  }
+
+  const index = new BM25Index(papers, chunks);
+  const [start, end] = index.findPrefixRange("stiff");
+  assert.strictEqual(end - start, 500);
+
+  // Search with prefix "stiff"
+  const results = index.search("stiff");
+  // Should have expanded to at most 64 terms, and since each paper has one term, exactly 64 papers match
+  assert.strictEqual(results.length, 64);
+  // The 64 kept should be papers 0..63 (the ones with df = 2)
+  for (const r of results) {
+    assert.ok(r.paperIndex < 64, `Expected paperIndex < 64, got ${r.paperIndex}`);
+  }
+});
+
+test("K5 a completed word never prefix-matches", () => {
+  const papers: PaperMetadata[] = [
+    {
+      key: "K1",
+      citekey: "p1",
+      title: "Cellular morphology in tissue",
+      authors: ["Author"],
+      year: 2023,
+      journal: null,
+      doi: null,
+      tags: [],
+      collections: [],
+      abstract: null,
+    },
+    {
+      key: "K2",
+      citekey: "p2",
+      title: "Single cell analysis",
+      authors: ["Author2"],
+      year: 2023,
+      journal: null,
+      doi: null,
+      tags: [],
+      collections: [],
+      abstract: null,
+    },
+  ];
+  const index = new BM25Index(papers, []);
+
+  // "cell " completed: matches paper 1, does NOT match paper 0 ("cellular")
+  const results = index.search("cell ");
+  assert.strictEqual(results.length, 1);
+  assert.strictEqual(results[0].paperIndex, 1);
+});
+
+test("K6 ranking unchanged for completed-word queries", async () => {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+
+  const FIXTURES_DIR = path.resolve(import.meta.dirname, "../../../tests/fixtures/search/index_small");
+  const papers: PaperMetadata[] = JSON.parse(fs.readFileSync(path.join(FIXTURES_DIR, "papers.json"), "utf8"));
+  const chunks: ChunkDocument[] = JSON.parse(fs.readFileSync(path.join(FIXTURES_DIR, "chunks.json"), "utf8"));
+  const goldensPath = path.resolve(import.meta.dirname, "goldens.json");
+  const goldens = JSON.parse(fs.readFileSync(goldensPath, "utf8"));
+
+  const index = new BM25Index(papers, chunks);
+
+  // First 20 queries are completed-word queries
+  for (let i = 0; i < 20; i++) {
+    const g = goldens[i];
+    const results = index.search(g.query);
+    assert.strictEqual(
+      results.length,
+      g.keywordRes.length,
+      `Query "${g.query}" length mismatch: got ${results.length}, expected ${g.keywordRes.length}`
+    );
+    for (let j = 0; j < results.length; j++) {
+      assert.strictEqual(results[j].paperIndex, g.keywordRes[j].paperIndex, `Query "${g.query}" paperIndex mismatch at rank ${j}`);
+      assert.ok(
+        Math.abs(results[j].score - g.keywordRes[j].score) < 1e-6,
+        `Query "${g.query}" score mismatch at rank ${j}: ${results[j].score} vs ${g.keywordRes[j].score}`
+      );
+    }
+  }
+});
+
+test("K7 sorted vocabulary binary search agrees with a linear scan", () => {
+  // Build a test vocabulary with 2,000 synthetic terms
+  const vocabSet = new Set<string>();
+  const letters = "abcdefghijklmnopqrstuvwxyz";
+  for (let i = 0; i < 2000; i++) {
+    let word = "";
+    const len = 3 + (i % 6);
+    for (let c = 0; c < len; c++) {
+      word += letters[Math.floor(((i * 31 + c * 17 + i * i) & 0x7fffffff) % letters.length)];
+    }
+    vocabSet.add(word);
+  }
+  const papers: PaperMetadata[] = [
+    {
+      key: "K1",
+      citekey: "p1",
+      title: Array.from(vocabSet).join(" "),
+      authors: ["Author"],
+      year: 2023,
+      journal: null,
+      doi: null,
+      tags: [],
+      collections: [],
+      abstract: null,
+    },
+  ];
+  const index = new BM25Index(papers, []);
+  const sortedVocab = (index as any).sortedVocab as string[];
+
+  // 1,000 random prefixes
+  for (let i = 0; i < 1000; i++) {
+    let prefix = "";
+    const pLen = 1 + (i % 4);
+    for (let c = 0; c < pLen; c++) {
+      prefix += letters[Math.floor(((i * 47 + c * 23 + 101) & 0x7fffffff) % letters.length)];
+    }
+
+    const [start, end] = index.findPrefixRange(prefix);
+    const binaryMatches = sortedVocab.slice(start, end);
+
+    const linearMatches = sortedVocab.filter((v) => v.startsWith(prefix));
+    assert.deepStrictEqual(
+      binaryMatches,
+      linearMatches,
+      `Prefix binary search mismatch for "${prefix}": range [${start}, ${end}) vs linear count ${linearMatches.length}`
+    );
+  }
+});
+
+test("K8 unicode and odd input don't crash", () => {
+  const index = new BM25Index(samplePapers, sampleChunks);
+  const oddInputs = [
+    "Φ29",
+    "β-catenin",
+    "naïve",
+    "🎉 🧬 🔬",
+    "a ".repeat(5000), // 10 kB of "a "
+    "the of and to a in", // only stopwords
+    "., -;: !? ()[]{}", // only punctuation
+    "",
+    "   ",
+    "\\@@ \u0000 \uFFFD",
+  ];
+
+  for (const input of oddInputs) {
+    assert.doesNotThrow(() => {
+      const res = index.search(input);
+      assert.ok(Array.isArray(res));
+    }, `Failed on input: ${input.slice(0, 30)}...`);
+  }
+});
