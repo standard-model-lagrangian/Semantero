@@ -164,10 +164,9 @@ export function extractPassage(
     const sentences = splitSentences(cleanSec);
     if (sentences.length === 0) return cleanSec.slice(0, maxChars);
 
-    // Approximate cursor position within cleaned section
-    const relOffset = Math.max(0, cursorOffset - prevHeadingEnd);
-    const ratio = sectionRaw.length > 0 ? relOffset / sectionRaw.length : 0.5;
-    const approxCleanOffset = Math.floor(ratio * cleanSec.length);
+    // Cursor position in the cleaned section: clean the text before the cursor the same way.
+    // (A proportional estimate drifts when large blocks are removed and can drop the cursor's sentence.)
+    const approxCleanOffset = cleanMarkdown(noteText.slice(prevHeadingEnd, Math.max(prevHeadingEnd, cursorOffset))).length;
 
     // Find cursor sentence index
     let cursorSentenceIdx = 0;
@@ -193,9 +192,8 @@ export function extractPassage(
   const sentences = splitSentences(cleanWhole);
   if (sentences.length === 0) return cleanWhole.slice(0, maxChars);
 
-  // Approximate cursor position within cleaned whole note
-  const ratio = noteText.length > 0 ? cursorOffset / noteText.length : 0.5;
-  const approxCleanOffset = Math.floor(ratio * cleanWhole.length);
+  // Cursor position in the cleaned note (see the section case above).
+  const approxCleanOffset = cleanMarkdown(noteText.slice(0, Math.max(0, cursorOffset))).length;
 
   let cursorSentenceIdx = 0;
   let accumulated = 0;

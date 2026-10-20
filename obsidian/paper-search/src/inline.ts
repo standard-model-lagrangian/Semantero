@@ -1,4 +1,4 @@
-import { keyword, semantic, hybrid, type SearchResult } from "./engine.ts";
+import { keyword, hybridSearch } from "./engine.ts";
 import { findTrigger, isExcludedContext, formatCitation } from "./cite.ts";
 import { ensureLiteratureNote, type LitNoteSettings, type VaultLike, type MetadataCacheLike } from "./litnote.ts";
 import type { PaperMetadata } from "./bm25.ts";
@@ -16,6 +16,7 @@ export interface SuggestionItem {
 export interface FakeSuggestLike {
   suggestions?: {
     setSuggestions?(items: SuggestionItem[]): void;
+    setSelectedItem?(index: number, evt?: unknown): void;
     selectedItem?: number;
     values?: SuggestionItem[];
   };
@@ -68,29 +69,28 @@ export class LRUQueryCache<T> {
 }
 
 /**
- * Maintains selection when suggestions are refreshed.
- * If the previously selected paper is still in the new hits, keep it selected.
+ * Index the selection should move to after a refresh: the same paper if it is still listed,
+ * otherwise the first row.
  */
+export function selectionAfterRefresh(
+  oldHits: SuggestionItem[],
+  oldSelected: number,
+  newHits: SuggestionItem[]
+): number {
+  const oldPaper = oldHits[oldSelected]?.paper;
+  if (!oldPaper) return 0;
+  const idx = newHits.findIndex((h) => h.paper && h.paper.citekey === oldPaper.citekey);
+  return idx === -1 ? 0 : idx;
+}
+
+/** Sets suggest.suggestions.selectedItem to the index from selectionAfterRefresh. */
 export function maintainSelection(
   suggest: FakeSuggestLike,
   oldHits: SuggestionItem[],
   newHits: SuggestionItem[]
 ): void {
   if (!suggest.suggestions) return;
-  const currentIdx = suggest.suggestions.selectedItem ?? 0;
-  const oldPaper = oldHits[currentIdx]?.paper;
-
-  if (oldPaper) {
-    const newIdx = newHits.findIndex(
-      (h) => h.paper && h.paper.citekey === oldPaper.citekey
-    );
-    if (newIdx !== -1) {
-      suggest.suggestions.selectedItem = newIdx;
-      return;
-    }
-  }
-
-  suggest.suggestions.selectedItem = 0;
+  suggest.suggestions.selectedItem = selectionAfterRefresh(oldHits, suggest.suggestions.selectedItem ?? 0, newHits);
 }
 
 /**
@@ -106,11 +106,14 @@ export function refreshSuggestions(
 ): void {
   if (!suggest) return;
 
-  if (suggest.suggestions && typeof suggest.suggestions.setSuggestions === "function") {
-    const oldHits = suggest.suggestions.values || [];
-    maintainSelection(suggest, oldHits, hits);
-    suggest.suggestions.values = hits;
-    suggest.suggestions.setSuggestions(hits);
+  const s = suggest.suggestions;
+  if (s && typeof s.setSuggestions === "function") {
+    const newIdx = selectionAfterRefresh(s.values || [], s.selectedItem ?? 0, hits);
+    // setSuggestions resets the selection to row 0, so restore it afterwards.
+    s.setSuggestions(hits);
+    if (s.values !== hits) s.values = hits;
+    if (typeof s.setSelectedItem === "function") s.setSelectedItem(newIdx);
+    else s.selectedItem = newIdx;
   } else if (query && cache) {
     cache.set(query, hits);
   }
@@ -196,10 +199,22 @@ export class InlineSuggestController {
     };
   }
 
+  /** Drop any pending or in-flight semantic request (list closed, or the query changed). */
+  cancel(): void {
+    this.currentSeq++;
+    if (this.debounceTimer) {
+      this.clearTimeoutFn(this.debounceTimer);
+      this.debounceTimer = null;
+    }
+  }
+
   async getSuggestions(
     query: string,
     suggestInstance?: FakeSuggestLike
   ): Promise<SuggestionItem[]> {
+    // Every new query supersedes earlier requests, whether or not it runs semantic search itself.
+    this.cancel();
+
     // 1. If index not ready yet
     if (!this.indexStore.isReady()) {
       return [{ type: "loading", message: "Loading paper index…" }];
@@ -232,12 +247,9 @@ export class InlineSuggestController {
     const isGated = tokens.length >= 2 || query.length >= 12;
 
     if (isGated && this.embedder) {
-      const seq = ++this.currentSeq;
-      if (this.debounceTimer) {
-        this.clearTimeoutFn(this.debounceTimer);
-      }
-
+      const seq = this.currentSeq;
       this.debounceTimer = this.setTimeoutFn(async () => {
+        this.debounceTimer = null;
         try {
           const qVec = await this.embedder!.embedQuery(query);
           if (seq !== this.currentSeq) {
@@ -250,8 +262,7 @@ export class InlineSuggestController {
             return;
           }
 
-          const semHits = semantic(index, qVec, query, { limit });
-          const merged = hybrid(kwHits, semHits, limit, 60);
+          const merged = hybridSearch(index, query, qVec, limit);
           const mergedItems: SuggestionItem[] = merged.map((h) => ({
             type: "paper",
             paper: index.papers[h.paper],
@@ -262,6 +273,7 @@ export class InlineSuggestController {
 
           refreshSuggestions(suggestInstance, mergedItems, query, this.queryCache);
         } catch {
+          if (seq !== this.currentSeq) return; // failure of an outdated request
           this.handleOllamaDown(initialItems, suggestInstance, query);
         }
       }, 250);
@@ -406,6 +418,11 @@ export function createPaperSearchSuggestClass(BaseClass: any) {
 
     renderSuggestion(value: SuggestionItem, el: HTMLElement) {
       this.controller.renderSuggestion(value, el);
+    }
+
+    close() {
+      this.controller.cancel();
+      super.close();
     }
 
     selectSuggestion(value: SuggestionItem, evt: MouseEvent | KeyboardEvent) {

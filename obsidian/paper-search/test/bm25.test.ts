@@ -190,14 +190,31 @@ test("K2 a short word that's a real term still matches exactly", () => {
   ];
   const index = new BM25Index(papers, []);
 
-  // "il" and "3d" are in the vocabulary
-  const resIl = index.search("il");
-  assert.ok(resIl.length > 0);
-  assert.strictEqual(resIl[0].paperIndex, 0);
+  // Unfinished short words match only when they contain a digit ("3d", "6"); letters-only
+  // short words ("il") wait for a third letter or a space.
+  assert.strictEqual(index.search("il").length, 0);
+  const resIlDone = index.search("il ");
+  assert.ok(resIlDone.length > 0);
+  assert.strictEqual(resIlDone[0].paperIndex, 0);
 
   const res3d = index.search("3d");
   assert.ok(res3d.length > 0);
   assert.strictEqual(res3d[0].paperIndex, 0);
+});
+
+test("K1b single letters in the real vocabulary (from \"cell's\", \"g of\") don't match while typing", () => {
+  const papers: PaperMetadata[] = [
+    { key: "A", citekey: "a", title: "The cell's response to stiff gels", authors: ["X"], year: 2023, journal: null, doi: null, tags: [], collections: [], abstract: "5 g of polymer per stiff matrix." },
+    { key: "B", citekey: "b", title: "Stiff matrices and soft tissue", authors: ["Y"], year: 2022, journal: null, doi: null, tags: [], collections: [], abstract: "Nothing else." },
+  ];
+  const index = new BM25Index(papers, []);
+  assert.strictEqual(index.search("s").length, 0, "\"s\" alone returns nothing");
+  assert.strictEqual(index.search("c").length, 0);
+  const g = index.search("stiff g");
+  const sp = index.search("stiff ");
+  assert.deepStrictEqual(g.map((r) => [r.paperIndex, r.score]), sp.map((r) => [r.paperIndex, r.score]));
+  // a digit token still matches while unfinished
+  assert.ok(index.search("5").length > 0);
 });
 
 test("K3 three-letter prefix expands", () => {

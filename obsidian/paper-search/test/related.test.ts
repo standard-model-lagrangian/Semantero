@@ -373,10 +373,11 @@ test("P7 actions: cite inserts into editor or clipboard; note opens/creates; cli
     source: "semantic" as const,
     snippet: "snippet",
     page: 5,
+    attachmentKey: "ATT_roth",
     fromAbstract: false,
   };
   const url = controller.getPdfUrl(paper, hit);
-  assert.strictEqual(url, "zotero://open-pdf/0_KEY_roth2023/5");
+  assert.strictEqual(url, "zotero://open-pdf/library/items/ATT_roth?page=5");
 });
 
 test("P8 Ollama down -> needs Ollama state and at most one notice per session", async () => {

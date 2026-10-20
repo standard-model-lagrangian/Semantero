@@ -3,6 +3,8 @@ import { citedKeys, formatCitation } from "./cite.ts";
 import { semantic, type Hit, type LoadedIndex } from "./engine.ts";
 import { ensureLiteratureNote, type LitNoteSettings, type VaultLike, type MetadataCacheLike } from "./litnote.ts";
 import type { PaperMetadata } from "./bm25.ts";
+import { editorSnapshot, type ActiveEditorTracker } from "./editortracker.ts";
+import { openPdfUrl, selectItemUrl } from "./zotero.ts";
 
 export interface RelatedSettings extends LitNoteSettings {
   relatedLimit?: number;
@@ -314,10 +316,11 @@ export class RelatedPapersController {
     }
   }
 
-  getPdfUrl(paper: PaperMetadata, hit: Hit): string {
-    const key = paper.key || paper.citekey;
-    const page = hit.page || 1;
-    return `zotero://open-pdf/0_${key}/${page}`;
+  /** The PDF that matched, at the matching page; the first PDF for abstract hits; the item if no PDF. */
+  getPdfUrl(paper: PaperMetadata, hit: Partial<Hit>): string {
+    const attKey = hit.attachmentKey || (paper as any).pdfs?.[0]?.attachmentKey;
+    if (!attKey) return selectItemUrl(paper.key);
+    return openPdfUrl(attKey, hit.attachmentKey ? hit.page : 1);
   }
 }
 
@@ -327,10 +330,12 @@ export class RelatedPapersController {
 export function createRelatedPapersViewClass(ItemViewBase: any) {
   return class RelatedPapersView extends ItemViewBase {
     controller: RelatedPapersController;
+    tracker: ActiveEditorTracker;
 
-    constructor(leaf: any, controller: RelatedPapersController) {
+    constructor(leaf: any, controller: RelatedPapersController, tracker: ActiveEditorTracker) {
       super(leaf);
       this.controller = controller;
+      this.tracker = tracker;
       this.controller.onStateChange = () => this.render();
     }
 
@@ -359,13 +364,10 @@ export function createRelatedPapersViewClass(ItemViewBase: any) {
       const titleEl = header.createEl?.("h4", { text: "Related papers" });
       const refreshBtn = header.createEl?.("button", { text: "Refresh" });
       refreshBtn?.addEventListener?.("click", () => {
-        const activeView = (this.app.workspace as any).getActiveViewOfType?.("markdown");
-        if (activeView?.editor) {
-          const editor = activeView.editor;
-          const text = editor.getValue();
-          const sel = editor.getSelection();
-          const cursor = editor.posToOffset(editor.getCursor());
-          this.controller.refresh(text, cursor, sel, activeView.file?.path || "");
+        // The panel is the active view once clicked, so use the last Markdown editor instead.
+        const snap = editorSnapshot(this.tracker.get());
+        if (snap) {
+          this.controller.refresh(snap.text, snap.cursorOffset, snap.selection, snap.filePath);
         }
       });
 
@@ -441,10 +443,9 @@ export function createRelatedPapersViewClass(ItemViewBase: any) {
           const actions = row?.createDiv?.({ cls: "daito-related-actions" });
           const citeBtn = actions?.createEl?.("button", { text: "Cite" });
           citeBtn?.addEventListener?.("click", () => {
-            const activeView = (this.app.workspace as any).getActiveViewOfType?.("markdown");
             this.controller.handleCiteAction(
               item.paper,
-              activeView?.editor,
+              this.tracker.get()?.editor as any,
               navigator.clipboard
             );
           });

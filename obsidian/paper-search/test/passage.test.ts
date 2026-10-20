@@ -174,3 +174,21 @@ Inline \`[[ignoredKey3]]\` and \`[@ignoredKey4]\` are also ignored.
   assert.ok(!keys.has("ignoredKey3"));
   assert.ok(!keys.has("ignoredKey4"));
 });
+
+test("R4b cursor sentence survives large removed blocks before or after the cursor", () => {
+  const filler = (tag: string) =>
+    Array.from({ length: 60 }, (_, i) => `Filler sentence ${tag}${i} about hydrogel rheology and organoid culture conditions.`).join(" ");
+  const code = "\n```python\n" + "x = compute(1)\n".repeat(400) + "```\n";
+  const brief = "%% planner:start %%\n> " + "brief line. ".repeat(300) + "\n%% planner:end %%\n";
+  const target = "MITOCHONDRIA TRANSFER from immune cells drives lymph node metastasis.";
+  const cases = [
+    filler("a") + code + target + " " + filler("b"), // big block before the cursor
+    filler("a") + " " + target + code + filler("b"), // big block after the cursor
+    brief + filler("a") + " " + target + " " + filler("b") + code, // both
+  ];
+  for (const note of cases) {
+    const out = extractPassage(note, note.indexOf(target) + 5, "", 2000)!;
+    assert.ok(out.length <= 2000);
+    assert.ok(out.includes("MITOCHONDRIA TRANSFER"), "cursor sentence missing");
+  }
+});

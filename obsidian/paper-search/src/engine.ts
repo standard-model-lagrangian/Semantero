@@ -25,13 +25,33 @@ export interface Hit {
   page?: number;
   attachmentKey?: string;
   fromAbstract: boolean;
+  chunkIndex?: number; // winning chunk, so a snippet can be built later (undefined = abstract/title)
+}
+
+export interface SearchOptions {
+  /** false: rank only, leave snippet "" (build later with fillSnippets). Default true. */
+  snippets?: boolean;
+}
+
+/** The snippet for a hit: from its winning chunk, else the abstract, else the title. */
+function snippetFor(ix: LoadedIndex, hit: Hit, tokens: string[]): string {
+  if (hit.chunkIndex !== undefined && hit.chunkIndex >= 0) return bestSnippet(ix.chunks[hit.chunkIndex].text, tokens).text;
+  const paper = ix.papers[hit.paper];
+  return bestSnippet(paper.abstract || paper.title, tokens).text;
+}
+
+export function fillSnippets(ix: LoadedIndex, hits: Hit[], query: string): Hit[] {
+  const { tokens } = tokenize(query);
+  for (const h of hits) if (!h.snippet) h.snippet = snippetFor(ix, h, tokens);
+  return hits;
 }
 
 /**
  * Keyword search over index using BM25.
  * Synchronous, <= 16 ms (Budget B1).
  */
-export function keyword(ix: LoadedIndex, query: string, limit: number = 10): Hit[] {
+export function keyword(ix: LoadedIndex, query: string, limit: number = 10, opts?: SearchOptions): Hit[] {
+  const withSnippets = opts?.snippets !== false;
   const { tokens } = tokenize(query);
   const keywordRes = ix.bm25.search(query, limit);
   const hits: Hit[] = [];
@@ -51,21 +71,16 @@ export function keyword(ix: LoadedIndex, query: string, limit: number = 10): Hit
       match.bestChunkIndex !== undefined &&
       match.bestChunkIndex >= 0;
 
+    let chunkIndex: number | undefined;
     if (chunkWon) {
       const c = ix.chunks[match.bestChunkIndex!];
-      snippet = bestSnippet(c.text, tokens).text;
+      chunkIndex = match.bestChunkIndex!;
       page = c.page;
       fromAbstract = false;
       attKey = c.attachmentKey;
-    } else if (paper.abstract) {
-      snippet = bestSnippet(paper.abstract, tokens).text;
-      fromAbstract = true;
-    } else {
-      snippet = bestSnippet(paper.title, tokens).text;
-      fromAbstract = true;
     }
 
-    hits.push({
+    const hit: Hit = {
       paper: pIdx,
       score: match.score,
       source: "keyword",
@@ -73,7 +88,10 @@ export function keyword(ix: LoadedIndex, query: string, limit: number = 10): Hit
       page,
       attachmentKey: attKey || paper.pdfs?.[0]?.attachmentKey,
       fromAbstract,
-    });
+      chunkIndex,
+    };
+    if (withSnippets) hit.snippet = snippetFor(ix, hit, tokens);
+    hits.push(hit);
   }
 
   return hits;
@@ -87,8 +105,9 @@ export function semantic(
   ix: LoadedIndex,
   qVec: Float32Array,
   query: string,
-  opts?: { limit?: number; exclude?: Set<number>; minScore?: number }
+  opts?: { limit?: number; exclude?: Set<number>; minScore?: number } & SearchOptions
 ): Hit[] {
+  const withSnippets = opts?.snippets !== false;
   if (!ix.vectors || ix.vectors.length === 0 || ix.totalRows === 0) {
     return [];
   }
@@ -150,24 +169,19 @@ export function semantic(
     let fromAbstract = true;
     let attKey: string | undefined;
 
+    let chunkIndex: number | undefined;
     if (!isAbstract && winningRow >= 0) {
       const chunkIdx = ix.rowToChunk[winningRow];
       if (chunkIdx >= 0) {
         const c = ix.chunks[chunkIdx];
-        snippet = bestSnippet(c.text, tokens).text;
+        chunkIndex = chunkIdx;
         page = c.page;
         fromAbstract = false;
         attKey = c.attachmentKey;
       }
-    } else if (paper.abstract) {
-      snippet = bestSnippet(paper.abstract, tokens).text;
-      fromAbstract = true;
-    } else {
-      snippet = bestSnippet(paper.title, tokens).text;
-      fromAbstract = true;
     }
 
-    hits.push({
+    const hit: Hit = {
       paper: h.paper,
       score: h.score,
       source: "semantic",
@@ -175,7 +189,10 @@ export function semantic(
       page,
       attachmentKey: attKey || paper.pdfs?.[0]?.attachmentKey,
       fromAbstract,
-    });
+      chunkIndex,
+    };
+    if (withSnippets) hit.snippet = snippetFor(ix, hit, tokens);
+    hits.push(hit);
   }
 
   return hits;
@@ -256,8 +273,21 @@ export function hybrid(
       page: baseHit.page,
       attachmentKey: baseHit.attachmentKey,
       fromAbstract: baseHit.fromAbstract,
+      chunkIndex: baseHit.chunkIndex,
     });
   }
 
   return hits;
+}
+
+/**
+ * Keyword + semantic merged over the FULL ranked lists (RRF, as the original modal did), with
+ * snippets built only for the returned top `limit`. Truncating either list before the merge
+ * drops papers that rank well in both but outside one list's top `limit`.
+ */
+export function hybridSearch(ix: LoadedIndex, query: string, qVec: Float32Array, limit: number): Hit[] {
+  const n = ix.papers.length;
+  const kw = keyword(ix, query, n, { snippets: false });
+  const sem = semantic(ix, qVec, query, { limit: n, snippets: false });
+  return fillSnippets(ix, hybrid(kw, sem, limit), query);
 }

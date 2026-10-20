@@ -34,9 +34,24 @@ def compute_content_hash(papers_data: list[dict], chunks_data: list[dict], vecto
     return hasher.hexdigest()
 
 
+# Locks this process already holds, by path, with their nesting depth. flock locks belong to the
+# open file, so a second open() of the same lock in this process would block on the first one
+# (watch-run holds the lock and then calls build_index, which takes it again).
+_held_locks: dict[str, int] = {}
+
+
 @contextmanager
 def search_lock(cfg, timeout: float = 60.0, blocking: bool = True):
     lock_path = cfg.data_dir / "search.lock"
+    key = str(lock_path.resolve())
+    if _held_locks.get(key):
+        _held_locks[key] += 1
+        try:
+            yield None
+        finally:
+            _held_locks[key] -= 1
+        return
+
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     f = open(lock_path, "a")
     start_time = time.time()
@@ -53,9 +68,11 @@ def search_lock(cfg, timeout: float = 60.0, blocking: bool = True):
                 if (time.time() - start_time) >= timeout:
                     raise TimeoutError(f"Could not acquire search.lock after {timeout}s: held by another process")
                 time.sleep(0.05)
+        _held_locks[key] = 1
         yield f
     finally:
         if acquired:
+            _held_locks.pop(key, None)
             try:
                 fcntl.flock(f.fileno(), fcntl.LOCK_UN)
             except OSError:

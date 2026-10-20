@@ -296,9 +296,10 @@ export class BM25Index {
 
       if (isLast && lastIncomplete) {
         if (t.length < 3) {
-          // An unfinished word shorter than 3 characters is ignored,
-          // unless it's a complete vocabulary term on its own ("il", "3d")
-          if (this.df.has(t)) {
+          // An unfinished word shorter than 3 characters is ignored, unless it contains a digit
+          // and is a vocabulary term ("3d", "6"). Letters-only terms like "s", "c", "il" exist in the
+          // vocabulary (from "cell's" etc.) and would match most of the library on the first keystroke.
+          if (/\d/.test(t) && this.df.has(t)) {
             termMatchers.push({ isPrefix: false, matchingTerms: [t] });
           }
           // otherwise ignored

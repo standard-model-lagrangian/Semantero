@@ -6,10 +6,11 @@ import {
   requestUrl,
 } from "obsidian";
 import type PaperSearchPlugin from "./main.ts";
-import { keyword, semantic, hybrid, type Hit, type LoadedIndex } from "./engine.ts";
+import { keyword, hybridSearch, type Hit, type LoadedIndex } from "./engine.ts";
 import { embedQuery, warmUp } from "./ollama.ts";
 import { shouldRunSemantic, SemanticCoordinator } from "./rank.ts";
 import { ensureLiteratureNote, formatCitation } from "./litnote.ts";
+import { openPdfUrl, selectItemUrl } from "./zotero.ts";
 
 export interface SearchModalItem {
   hit?: Hit;
@@ -160,8 +161,8 @@ export class PaperSearchModal extends SuggestModal<SearchModalItem> {
       this.updateFooter("");
 
       // Semantic search + Hybrid merge
-      const sHits = semantic(ix, qVec, query, { limit: this.plugin.settings.limit });
-      const mergedHits = hybrid(this.lastKeywordHits, sHits, this.plugin.settings.limit);
+      // Merge over the full ranked lists, not the 12 shown while typing.
+      const mergedHits = hybridSearch(ix, query, qVec, this.plugin.settings.limit);
 
       const newItems: SearchModalItem[] = mergedHits.map((h) => ({
         hit: h,
@@ -248,9 +249,9 @@ export class PaperSearchModal extends SuggestModal<SearchModalItem> {
     const attKey = hit?.attachmentKey || paper.pdfs?.[0]?.attachmentKey;
     const page = hit?.page || 1;
     if (attKey) {
-      window.open(`zotero://open-pdf/library/items/${attKey}?page=${page}`);
+      window.open(openPdfUrl(attKey, page));
     } else {
-      window.open(`zotero://select/items/${paper.key}`);
+      window.open(selectItemUrl(paper.key));
     }
   }
 
@@ -298,7 +299,7 @@ export class PaperSearchModal extends SuggestModal<SearchModalItem> {
     if (!ix) return;
     const paper = ix.papers[paperIndex];
     if (paper.key) {
-      window.open(`zotero://select/items/${paper.key}`);
+      window.open(selectItemUrl(paper.key));
     }
   }
 }

@@ -502,7 +502,7 @@ var BM25Index = class {
       const isLast = i === tokens.length - 1;
       if (isLast && lastIncomplete) {
         if (t.length < 3) {
-          if (this.df.has(t)) {
+          if (/\d/.test(t) && this.df.has(t)) {
             termMatchers.push({ isPrefix: false, matchingTerms: [t] });
           }
         } else {
@@ -821,7 +821,18 @@ var IndexStore = class _IndexStore {
 var import_obsidian = require("obsidian");
 
 // src/engine.ts
-function keyword(ix, query, limit = 10) {
+function snippetFor(ix, hit, tokens) {
+  if (hit.chunkIndex !== void 0 && hit.chunkIndex >= 0) return bestSnippet(ix.chunks[hit.chunkIndex].text, tokens).text;
+  const paper = ix.papers[hit.paper];
+  return bestSnippet(paper.abstract || paper.title, tokens).text;
+}
+function fillSnippets(ix, hits, query) {
+  const { tokens } = tokenize(query);
+  for (const h of hits) if (!h.snippet) h.snippet = snippetFor(ix, h, tokens);
+  return hits;
+}
+function keyword(ix, query, limit = 10, opts) {
+  const withSnippets = opts?.snippets !== false;
   const { tokens } = tokenize(query);
   const keywordRes = ix.bm25.search(query, limit);
   const hits = [];
@@ -834,32 +845,31 @@ function keyword(ix, query, limit = 10) {
     let fromAbstract = true;
     let attKey;
     const chunkWon = match.bestChunkScore > match.metadataScore && match.bestChunkIndex !== void 0 && match.bestChunkIndex >= 0;
+    let chunkIndex;
     if (chunkWon) {
       const c = ix.chunks[match.bestChunkIndex];
-      snippet = bestSnippet(c.text, tokens).text;
+      chunkIndex = match.bestChunkIndex;
       page = c.page;
       fromAbstract = false;
       attKey = c.attachmentKey;
-    } else if (paper.abstract) {
-      snippet = bestSnippet(paper.abstract, tokens).text;
-      fromAbstract = true;
-    } else {
-      snippet = bestSnippet(paper.title, tokens).text;
-      fromAbstract = true;
     }
-    hits.push({
+    const hit = {
       paper: pIdx,
       score: match.score,
       source: "keyword",
       snippet,
       page,
       attachmentKey: attKey || paper.pdfs?.[0]?.attachmentKey,
-      fromAbstract
-    });
+      fromAbstract,
+      chunkIndex
+    };
+    if (withSnippets) hit.snippet = snippetFor(ix, hit, tokens);
+    hits.push(hit);
   }
   return hits;
 }
 function semantic(ix, qVec, query, opts) {
+  const withSnippets = opts?.snippets !== false;
   if (!ix.vectors || ix.vectors.length === 0 || ix.totalRows === 0) {
     return [];
   }
@@ -906,31 +916,29 @@ function semantic(ix, qVec, query, opts) {
     let page;
     let fromAbstract = true;
     let attKey;
+    let chunkIndex;
     if (!isAbstract && winningRow >= 0) {
       const chunkIdx = ix.rowToChunk[winningRow];
       if (chunkIdx >= 0) {
         const c = ix.chunks[chunkIdx];
-        snippet = bestSnippet(c.text, tokens).text;
+        chunkIndex = chunkIdx;
         page = c.page;
         fromAbstract = false;
         attKey = c.attachmentKey;
       }
-    } else if (paper.abstract) {
-      snippet = bestSnippet(paper.abstract, tokens).text;
-      fromAbstract = true;
-    } else {
-      snippet = bestSnippet(paper.title, tokens).text;
-      fromAbstract = true;
     }
-    hits.push({
+    const hit = {
       paper: h.paper,
       score: h.score,
       source: "semantic",
       snippet,
       page,
       attachmentKey: attKey || paper.pdfs?.[0]?.attachmentKey,
-      fromAbstract
-    });
+      fromAbstract,
+      chunkIndex
+    };
+    if (withSnippets) hit.snippet = snippetFor(ix, hit, tokens);
+    hits.push(hit);
   }
   return hits;
 }
@@ -983,10 +991,17 @@ function hybrid(keywordHits, semanticHits, limit = 10, k = 60) {
       snippet: baseHit.snippet,
       page: baseHit.page,
       attachmentKey: baseHit.attachmentKey,
-      fromAbstract: baseHit.fromAbstract
+      fromAbstract: baseHit.fromAbstract,
+      chunkIndex: baseHit.chunkIndex
     });
   }
   return hits;
+}
+function hybridSearch(ix, query, qVec, limit) {
+  const n = ix.papers.length;
+  const kw = keyword(ix, query, n, { snippets: false });
+  const sem = semantic(ix, qVec, query, { limit: n, snippets: false });
+  return fillSnippets(ix, hybrid(kw, sem, limit), query);
 }
 
 // src/vectors.ts
@@ -1083,6 +1098,15 @@ var SemanticCoordinator = class {
   }
 };
 
+// src/zotero.ts
+function selectItemUrl(itemKey) {
+  return `zotero://select/library/items/${itemKey}`;
+}
+function openPdfUrl(attachmentKey, page) {
+  const p = page && page > 0 ? Math.floor(page) : 1;
+  return `zotero://open-pdf/library/items/${attachmentKey}?page=${p}`;
+}
+
 // src/litnote.ts
 var BUILTIN_TEMPLATE = `---
 citekey: "{{citekey}}"
@@ -1162,7 +1186,7 @@ function renderTemplate(templateText, paper, options) {
     year: paper.year !== null && paper.year !== void 0 ? String(paper.year) : "",
     journal: paper.journal || "",
     doi: paper.doi || "",
-    zoteroSelect: paper.key ? `zotero://select/items/${paper.key}` : ""
+    zoteroSelect: paper.key ? selectItemUrl(paper.key) : ""
   };
   let frontmatterText = "";
   let bodyText = templateText;
@@ -1390,8 +1414,7 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
         return;
       }
       this.updateFooter("");
-      const sHits = semantic(ix, qVec, query, { limit: this.plugin.settings.limit });
-      const mergedHits = hybrid(this.lastKeywordHits, sHits, this.plugin.settings.limit);
+      const mergedHits = hybridSearch(ix, query, qVec, this.plugin.settings.limit);
       const newItems = mergedHits.map((h) => ({
         hit: h,
         paperIndex: h.paper
@@ -1460,9 +1483,9 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
     const attKey = hit?.attachmentKey || paper.pdfs?.[0]?.attachmentKey;
     const page = hit?.page || 1;
     if (attKey) {
-      window.open(`zotero://open-pdf/library/items/${attKey}?page=${page}`);
+      window.open(openPdfUrl(attKey, page));
     } else {
-      window.open(`zotero://select/items/${paper.key}`);
+      window.open(selectItemUrl(paper.key));
     }
   }
   async insertCitationAndEnsureNote(paperIndex) {
@@ -1503,7 +1526,7 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
     if (!ix) return;
     const paper = ix.papers[paperIndex];
     if (paper.key) {
-      window.open(`zotero://select/items/${paper.key}`);
+      window.open(selectItemUrl(paper.key));
     }
   }
 };
@@ -1697,28 +1720,21 @@ var LRUQueryCache = class {
     return this.map.size;
   }
 };
-function maintainSelection(suggest, oldHits, newHits) {
-  if (!suggest.suggestions) return;
-  const currentIdx = suggest.suggestions.selectedItem ?? 0;
-  const oldPaper = oldHits[currentIdx]?.paper;
-  if (oldPaper) {
-    const newIdx = newHits.findIndex(
-      (h) => h.paper && h.paper.citekey === oldPaper.citekey
-    );
-    if (newIdx !== -1) {
-      suggest.suggestions.selectedItem = newIdx;
-      return;
-    }
-  }
-  suggest.suggestions.selectedItem = 0;
+function selectionAfterRefresh(oldHits, oldSelected, newHits) {
+  const oldPaper = oldHits[oldSelected]?.paper;
+  if (!oldPaper) return 0;
+  const idx = newHits.findIndex((h) => h.paper && h.paper.citekey === oldPaper.citekey);
+  return idx === -1 ? 0 : idx;
 }
 function refreshSuggestions(suggest, hits, query, cache) {
   if (!suggest) return;
-  if (suggest.suggestions && typeof suggest.suggestions.setSuggestions === "function") {
-    const oldHits = suggest.suggestions.values || [];
-    maintainSelection(suggest, oldHits, hits);
-    suggest.suggestions.values = hits;
-    suggest.suggestions.setSuggestions(hits);
+  const s = suggest.suggestions;
+  if (s && typeof s.setSuggestions === "function") {
+    const newIdx = selectionAfterRefresh(s.values || [], s.selectedItem ?? 0, hits);
+    s.setSuggestions(hits);
+    if (s.values !== hits) s.values = hits;
+    if (typeof s.setSelectedItem === "function") s.setSelectedItem(newIdx);
+    else s.selectedItem = newIdx;
   } else if (query && cache) {
     cache.set(query, hits);
   }
@@ -1760,7 +1776,16 @@ var InlineSuggestController = class {
       query: res.query
     };
   }
+  /** Drop any pending or in-flight semantic request (list closed, or the query changed). */
+  cancel() {
+    this.currentSeq++;
+    if (this.debounceTimer) {
+      this.clearTimeoutFn(this.debounceTimer);
+      this.debounceTimer = null;
+    }
+  }
   async getSuggestions(query, suggestInstance) {
+    this.cancel();
     if (!this.indexStore.isReady()) {
       return [{ type: "loading", message: "Loading paper index\u2026" }];
     }
@@ -1783,11 +1808,9 @@ var InlineSuggestController = class {
     const tokens = query.trim().split(/\s+/);
     const isGated = tokens.length >= 2 || query.length >= 12;
     if (isGated && this.embedder) {
-      const seq = ++this.currentSeq;
-      if (this.debounceTimer) {
-        this.clearTimeoutFn(this.debounceTimer);
-      }
+      const seq = this.currentSeq;
       this.debounceTimer = this.setTimeoutFn(async () => {
+        this.debounceTimer = null;
         try {
           const qVec = await this.embedder.embedQuery(query);
           if (seq !== this.currentSeq) {
@@ -1797,8 +1820,7 @@ var InlineSuggestController = class {
             this.handleOllamaDown(initialItems, suggestInstance, query);
             return;
           }
-          const semHits = semantic(index, qVec, query, { limit });
-          const merged = hybrid(kwHits, semHits, limit, 60);
+          const merged = hybridSearch(index, query, qVec, limit);
           const mergedItems = merged.map((h) => ({
             type: "paper",
             paper: index.papers[h.paper],
@@ -1808,6 +1830,7 @@ var InlineSuggestController = class {
           }));
           refreshSuggestions(suggestInstance, mergedItems, query, this.queryCache);
         } catch {
+          if (seq !== this.currentSeq) return;
           this.handleOllamaDown(initialItems, suggestInstance, query);
         }
       }, 250);
@@ -1906,6 +1929,10 @@ function createPaperSearchSuggestClass(BaseClass) {
     renderSuggestion(value, el) {
       this.controller.renderSuggestion(value, el);
     }
+    close() {
+      this.controller.cancel();
+      super.close();
+    }
     selectSuggestion(value, evt) {
       if (this.context) {
         this.controller.selectSuggestion(value, this.context.editor, {
@@ -1999,9 +2026,7 @@ function extractPassage(noteText, cursorOffset, selection = "", maxChars = 2e3) 
   if (cleanSec.length >= 200) {
     const sentences2 = splitSentences(cleanSec);
     if (sentences2.length === 0) return cleanSec.slice(0, maxChars);
-    const relOffset = Math.max(0, cursorOffset - prevHeadingEnd);
-    const ratio2 = sectionRaw.length > 0 ? relOffset / sectionRaw.length : 0.5;
-    const approxCleanOffset2 = Math.floor(ratio2 * cleanSec.length);
+    const approxCleanOffset2 = cleanMarkdown(noteText.slice(prevHeadingEnd, Math.max(prevHeadingEnd, cursorOffset))).length;
     let cursorSentenceIdx2 = 0;
     let accumulated2 = 0;
     for (let i = 0; i < sentences2.length; i++) {
@@ -2019,8 +2044,7 @@ function extractPassage(noteText, cursorOffset, selection = "", maxChars = 2e3) 
   }
   const sentences = splitSentences(cleanWhole);
   if (sentences.length === 0) return cleanWhole.slice(0, maxChars);
-  const ratio = noteText.length > 0 ? cursorOffset / noteText.length : 0.5;
-  const approxCleanOffset = Math.floor(ratio * cleanWhole.length);
+  const approxCleanOffset = cleanMarkdown(noteText.slice(0, Math.max(0, cursorOffset))).length;
   let cursorSentenceIdx = 0;
   let accumulated = 0;
   for (let i = 0; i < sentences.length; i++) {
@@ -2031,6 +2055,43 @@ function extractPassage(noteText, cursorOffset, selection = "", maxChars = 2e3) 
     }
   }
   return shortenSentences(sentences, cursorSentenceIdx, maxChars);
+}
+
+// src/editortracker.ts
+function isMarkdownView(view) {
+  return !!view && typeof view.getViewType === "function" && view.getViewType() === "markdown" && !!view.editor;
+}
+var ActiveEditorTracker = class {
+  last = null;
+  /** Call from workspace "active-leaf-change". */
+  onActiveLeafChange(leaf) {
+    const view = leaf?.view;
+    if (isMarkdownView(view)) this.last = view;
+  }
+  /** Call once on layout ready with the currently active Markdown view, if any. */
+  seed(view) {
+    if (isMarkdownView(view)) this.last = view;
+  }
+  /** The last Markdown view, or null if it has since been closed or its leaf reused. */
+  get() {
+    const v = this.last;
+    if (!v) return null;
+    if (v.leaf && v.leaf.view !== v) {
+      this.last = null;
+      return null;
+    }
+    return v;
+  }
+};
+function editorSnapshot(view) {
+  const editor = view?.editor;
+  if (!editor) return null;
+  return {
+    text: editor.getValue(),
+    cursorOffset: editor.posToOffset(editor.getCursor()),
+    selection: editor.getSelection(),
+    filePath: view?.file?.path || ""
+  };
 }
 
 // src/related.ts
@@ -2221,18 +2282,21 @@ var RelatedPapersController = class {
       await workspace.openFile(res.file);
     }
   }
+  /** The PDF that matched, at the matching page; the first PDF for abstract hits; the item if no PDF. */
   getPdfUrl(paper, hit) {
-    const key = paper.key || paper.citekey;
-    const page = hit.page || 1;
-    return `zotero://open-pdf/0_${key}/${page}`;
+    const attKey = hit.attachmentKey || paper.pdfs?.[0]?.attachmentKey;
+    if (!attKey) return selectItemUrl(paper.key);
+    return openPdfUrl(attKey, hit.attachmentKey ? hit.page : 1);
   }
 };
 function createRelatedPapersViewClass(ItemViewBase) {
   return class RelatedPapersView extends ItemViewBase {
     controller;
-    constructor(leaf, controller) {
+    tracker;
+    constructor(leaf, controller, tracker) {
       super(leaf);
       this.controller = controller;
+      this.tracker = tracker;
       this.controller.onStateChange = () => this.render();
     }
     getViewType() {
@@ -2254,13 +2318,9 @@ function createRelatedPapersViewClass(ItemViewBase) {
       const titleEl = header.createEl?.("h4", { text: "Related papers" });
       const refreshBtn = header.createEl?.("button", { text: "Refresh" });
       refreshBtn?.addEventListener?.("click", () => {
-        const activeView = this.app.workspace.getActiveViewOfType?.("markdown");
-        if (activeView?.editor) {
-          const editor = activeView.editor;
-          const text = editor.getValue();
-          const sel = editor.getSelection();
-          const cursor = editor.posToOffset(editor.getCursor());
-          this.controller.refresh(text, cursor, sel, activeView.file?.path || "");
+        const snap = editorSnapshot(this.tracker.get());
+        if (snap) {
+          this.controller.refresh(snap.text, snap.cursorOffset, snap.selection, snap.filePath);
         }
       });
       const body = container.createDiv?.({ cls: "daito-related-body" }) || container;
@@ -2323,10 +2383,9 @@ function createRelatedPapersViewClass(ItemViewBase) {
           const actions = row?.createDiv?.({ cls: "daito-related-actions" });
           const citeBtn = actions?.createEl?.("button", { text: "Cite" });
           citeBtn?.addEventListener?.("click", () => {
-            const activeView = this.app.workspace.getActiveViewOfType?.("markdown");
             this.controller.handleCiteAction(
               item.paper,
-              activeView?.editor,
+              this.tracker.get()?.editor,
               navigator.clipboard
             );
           });
@@ -2372,6 +2431,7 @@ var DEFAULT_SETTINGS = {
 var PaperSearchPlugin = class extends import_obsidian2.Plugin {
   settings = DEFAULT_SETTINGS;
   indexStore;
+  editorTracker = new ActiveEditorTracker();
   async onload() {
     await this.loadSettings();
     const adapter = {
@@ -2438,16 +2498,18 @@ var PaperSearchPlugin = class extends import_obsidian2.Plugin {
       settings: this.settings,
       showNotice: (msg) => new import_obsidian2.Notice(msg)
     });
+    this.registerEvent(this.app.workspace.on("active-leaf-change", (leaf) => this.editorTracker.onActiveLeafChange(leaf)));
+    this.app.workspace.onLayoutReady(() => this.editorTracker.seed(this.app.workspace.getActiveViewOfType(import_obsidian2.MarkdownView)));
     const RelatedPapersView = createRelatedPapersViewClass(import_obsidian2.ItemView);
-    this.registerView("daito-related-papers", (leaf) => new RelatedPapersView(leaf, relatedController));
+    this.registerView(
+      "daito-related-papers",
+      (leaf) => new RelatedPapersView(leaf, relatedController, this.editorTracker)
+    );
     this.registerEvent(
       this.app.workspace.on("file-open", (file) => {
         relatedController.onFileOpen(
           file ? { path: file.path } : null,
-          () => {
-            const activeView = this.app.workspace.getActiveViewOfType?.("markdown");
-            return activeView?.editor?.getValue() || "";
-          }
+          () => this.editorTracker.get()?.editor?.getValue() || ""
         );
       })
     );
@@ -2462,14 +2524,10 @@ var PaperSearchPlugin = class extends import_obsidian2.Plugin {
       id: "find-related-papers",
       name: "Find papers related to this note",
       callback: async () => {
+        const snap = editorSnapshot(this.editorTracker.get());
         await this.activateRelatedView();
-        const activeView = this.app.workspace.getActiveViewOfType?.("markdown");
-        if (activeView?.editor) {
-          const editor = activeView.editor;
-          const text = editor.getValue();
-          const sel = editor.getSelection();
-          const cursor = editor.posToOffset(editor.getCursor());
-          await relatedController.refresh(text, cursor, sel, activeView.file?.path || "");
+        if (snap) {
+          await relatedController.refresh(snap.text, snap.cursorOffset, snap.selection, snap.filePath);
         }
       }
     });

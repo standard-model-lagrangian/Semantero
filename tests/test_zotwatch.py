@@ -370,6 +370,50 @@ class TestZotwatch(unittest.TestCase):
             self.assertEqual(p.stat().st_mtime_ns, mtime)
             self.assertEqual(p.read_bytes(), content)
 
+    # W11 the real watch_run -> build_index path builds (regression: build_index re-took the
+    # watcher's own lock and always timed out). Only the embedding call is faked.
+    def test_w11_real_build_under_watcher_lock(self):
+        import functools
+
+        real_build = searchindex.build_index
+        stdout = io.StringIO()
+        # lock_timeout=1 so a self-deadlock fails in 1 s instead of 60 s
+        with patch("planner.searchindex.build_index", functools.partial(real_build, lock_timeout=1.0)), \
+             patch("planner.embed.embed", side_effect=lambda texts, **kw: self.fake_embed(texts, **kw)), \
+             patch("sys.stdout", stdout):
+            ret = zotwatch.watch_run(self.cfg, quiet_s=0.0)
+
+        log = stdout.getvalue()
+        self.assertEqual(ret, 0)
+        self.assertIn("build completed", log, log)
+        self.assertNotIn("build failed", log)
+        state = json.loads((self.data_dir / "search" / "state.json").read_text())
+        self.assertEqual(state.get("fingerprint"), zotwatch.compute_fingerprint(self.zotero_dir))
+        self.assertTrue((self.data_dir / "search" / "vectors.f32").exists())
+
+    # W12 the lock still excludes a different process while held re-entrantly in this one
+    def test_w12_reentrant_lock_still_excludes_other_processes(self):
+        import subprocess, sys, textwrap
+
+        probe = textwrap.dedent(f"""
+            import fcntl, sys
+            f = open({str(self.data_dir / 'search.lock')!r}, 'a')
+            try:
+                fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                print('acquired')
+            except OSError:
+                print('busy')
+        """)
+        with searchindex.search_lock(self.cfg, blocking=False):
+            with searchindex.search_lock(self.cfg, timeout=1.0):
+                out = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True).stdout.strip()
+                self.assertEqual(out, "busy")
+            # inner exit must not release the outer hold
+            out = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True).stdout.strip()
+            self.assertEqual(out, "busy")
+        out = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True).stdout.strip()
+        self.assertEqual(out, "acquired")
+
 
 if __name__ == "__main__":
     unittest.main()

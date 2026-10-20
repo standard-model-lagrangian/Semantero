@@ -1,4 +1,5 @@
 import type { PaperMetadata } from "./bm25.ts";
+import { selectItemUrl } from "./zotero.ts";
 
 export interface VaultLike {
   getFiles(): any[];
@@ -133,7 +134,7 @@ export function renderTemplate(
     year: paper.year !== null && paper.year !== undefined ? String(paper.year) : "",
     journal: paper.journal || "",
     doi: paper.doi || "",
-    zoteroSelect: paper.key ? `zotero://select/items/${paper.key}` : "",
+    zoteroSelect: paper.key ? selectItemUrl(paper.key) : "",
   };
 
   // Check frontmatter boundaries

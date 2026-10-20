@@ -40,7 +40,7 @@ Cause of the keyword spikes, in `src/bm25.ts` around line 171: an unfinished las
 ### 0.1 Bound prefix expansion (`src/bm25.ts`)
 
 - The vocabulary is kept as a **sorted array** built once at load. A prefix lookup is a binary search for the range: O(log V + matches).
-- **An unfinished word shorter than 3 characters is ignored,** unless it's a complete vocabulary term on its own (`"il"`, `"3d"`), in which case it matches exactly. So `"s"` and `"st"` contribute nothing until the third letter.
+- **An unfinished word shorter than 3 characters is ignored,** unless it contains a digit and is a vocabulary term (`"3d"`, `"6"`), in which case it matches exactly. So `"s"`, `"st"` and `"il"` contribute nothing until the third letter or a space. (Changed 20 Oct: the real vocabulary contains single letters such as `s` and `c`, from "cell's" and similar, so the earlier "any complete term" exception made `"s"` match 150 papers.)
 - **At most 64 expansions per prefix.** If more terms match, keep the 64 with the highest document frequency. Frequent terms are what a person is most likely typing, and this bounds the work.
 - Postings are merged into a reused `Float64Array` of per-paper scores, not a `Map`, to avoid garbage-collection pauses.
 - Results are ranked with a partial top-k (`limit` × 4 candidates), not a full sort.

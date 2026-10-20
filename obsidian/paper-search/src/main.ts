@@ -2,6 +2,7 @@ import {
   App,
   EditorSuggest,
   ItemView,
+  MarkdownView,
   Notice,
   Plugin,
   PluginSettingTab,
@@ -16,6 +17,7 @@ import { formatCitation } from "./litnote.ts";
 import { embedQuery } from "./ollama.ts";
 import { createPaperSearchSuggestClass, InlineSuggestController } from "./inline.ts";
 import { createRelatedPapersViewClass, RelatedPapersController } from "./related.ts";
+import { ActiveEditorTracker, editorSnapshot } from "./editortracker.ts";
 
 export interface PaperSearchSettings {
   ollamaUrl: string;
@@ -57,6 +59,7 @@ export const DEFAULT_SETTINGS: PaperSearchSettings = {
 export default class PaperSearchPlugin extends Plugin {
   settings: PaperSearchSettings = DEFAULT_SETTINGS;
   indexStore!: IndexStore;
+  editorTracker = new ActiveEditorTracker();
 
   async onload() {
     await this.loadSettings();
@@ -140,18 +143,22 @@ export default class PaperSearchPlugin extends Plugin {
       showNotice: (msg: string) => new Notice(msg),
     });
 
+    // The panel needs the last Markdown editor, not the active view (which is the panel itself).
+    this.registerEvent(this.app.workspace.on("active-leaf-change", (leaf) => this.editorTracker.onActiveLeafChange(leaf)));
+    this.app.workspace.onLayoutReady(() => this.editorTracker.seed(this.app.workspace.getActiveViewOfType(MarkdownView)));
+
     const RelatedPapersView = createRelatedPapersViewClass(ItemView);
-    this.registerView("daito-related-papers", (leaf) => new RelatedPapersView(leaf, relatedController));
+    this.registerView(
+      "daito-related-papers",
+      (leaf) => new RelatedPapersView(leaf, relatedController, this.editorTracker)
+    );
 
     // File open listener for auto-refresh
     this.registerEvent(
       this.app.workspace.on("file-open", (file) => {
         relatedController.onFileOpen(
           file ? { path: file.path } : null,
-          () => {
-            const activeView = (this.app.workspace as any).getActiveViewOfType?.("markdown");
-            return activeView?.editor?.getValue() || "";
-          }
+          () => this.editorTracker.get()?.editor?.getValue() || ""
         );
       })
     );
@@ -169,14 +176,11 @@ export default class PaperSearchPlugin extends Plugin {
       id: "find-related-papers",
       name: "Find papers related to this note",
       callback: async () => {
+        // Snapshot the editor before the panel takes focus.
+        const snap = editorSnapshot(this.editorTracker.get());
         await this.activateRelatedView();
-        const activeView = (this.app.workspace as any).getActiveViewOfType?.("markdown");
-        if (activeView?.editor) {
-          const editor = activeView.editor;
-          const text = editor.getValue();
-          const sel = editor.getSelection();
-          const cursor = editor.posToOffset(editor.getCursor());
-          await relatedController.refresh(text, cursor, sel, activeView.file?.path || "");
+        if (snap) {
+          await relatedController.refresh(snap.text, snap.cursorOffset, snap.selection, snap.filePath);
         }
       },
     });
