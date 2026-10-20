@@ -1118,6 +1118,16 @@ function openPdfUrl(attachmentKey, page) {
   const p = page && page > 0 ? Math.floor(page) : 1;
   return `zotero://open-pdf/library/items/${attachmentKey}?page=${p}`;
 }
+function openAttachmentUrl(attachmentKey) {
+  return `zotero://open/library/items/${attachmentKey}`;
+}
+function hitUrl(paper, hit) {
+  const snapshots = paper.snapshots ?? [];
+  const attKey = hit?.attachmentKey || paper.pdfs?.[0]?.attachmentKey || snapshots[0]?.attachmentKey;
+  if (!attKey) return selectItemUrl(paper.key);
+  if (snapshots.some((s) => s.attachmentKey === attKey)) return openAttachmentUrl(attKey);
+  return openPdfUrl(attKey, hit?.attachmentKey ? hit.page : 1);
+}
 
 // src/litnote.ts
 var BUILTIN_TEMPLATE = `---
@@ -1329,7 +1339,7 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
     this.plugin = plugin;
     this.setPlaceholder("Search papers by what they found, title, author, or citekey...");
     this.setInstructions([
-      { command: "\u21B5", purpose: "open PDF at page" },
+      { command: "\u21B5", purpose: "open in Zotero" },
       { command: "\u2318\u21B5", purpose: "insert citation & create note" },
       { command: "\u2325\u21B5", purpose: "open/create literature note" },
       { command: "\u21E7\u21B5", purpose: "select in Zotero" }
@@ -1485,7 +1495,7 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
       } else if (hit.page) {
         badge.setText(`p. ${hit.page}`);
       } else {
-        badge.setText("body");
+        badge.setText("web page");
       }
       snippetContainer.createSpan({ text: hit.snippet, cls: "paper-snippet-text" });
     }
@@ -1496,13 +1506,7 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
     if (!ix) return;
     const paper = ix.papers[item.paperIndex];
     const hit = item.hit;
-    const attKey = hit?.attachmentKey || paper.pdfs?.[0]?.attachmentKey;
-    const page = hit?.page || 1;
-    if (attKey) {
-      window.open(openPdfUrl(attKey, page));
-    } else {
-      window.open(selectItemUrl(paper.key));
-    }
+    window.open(hitUrl(paper, hit));
   }
   async insertCitationAndEnsureNote(paperIndex) {
     const ix = this.plugin.indexStore.getIndex();
@@ -2363,11 +2367,9 @@ var RelatedPapersController = class {
       await workspace.openFile(res.file);
     }
   }
-  /** The PDF that matched, at the matching page; the first PDF for abstract hits; the item if no PDF. */
+  /** The attachment that matched (a PDF at the matching page, or a web snapshot); see hitUrl. */
   getPdfUrl(paper, hit) {
-    const attKey = hit.attachmentKey || paper.pdfs?.[0]?.attachmentKey;
-    if (!attKey) return selectItemUrl(paper.key);
-    return openPdfUrl(attKey, hit.attachmentKey ? hit.page : 1);
+    return hitUrl(paper, hit);
   }
 };
 function createRelatedPapersViewClass(ItemViewBase) {
@@ -2462,7 +2464,7 @@ function createRelatedPapersViewClass(ItemViewBase) {
           const meta = row?.createDiv?.({ cls: "daito-related-meta" });
           const author = item.paper.authors?.[0] || "Unknown";
           const year = item.paper.year ? String(item.paper.year) : "n.d.";
-          const badge = item.hit.page ? `p. ${item.hit.page}` : "abstract";
+          const badge = item.hit.page ? `p. ${item.hit.page}` : item.hit.fromAbstract === false ? "web page" : "abstract";
           meta?.setText?.(`${author} \xB7 ${year} \xB7 [${badge}]`);
           if (item.hit.snippet) {
             const snippet = row?.createDiv?.({ cls: "daito-related-snippet" });

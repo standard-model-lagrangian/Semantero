@@ -151,11 +151,21 @@ def extract_chunks(
         return False, num_pages, []
 
     cleaned_pages = clean_document_pages(raw_pages)
+    chunks = chunk_pages(cleaned_pages, chunk_words, chunk_overlap_words, max_chunks)
+    return True, num_pages, chunks
 
+
+def chunk_pages(
+    pages: list[tuple[int, str]],
+    chunk_words: int = 300,
+    chunk_overlap_words: int = 50,
+    max_chunks: int = 150,
+) -> list[Chunk]:
+    """Split each page's text into overlapping word windows; a chunk never spans two pages."""
     chunks: list[Chunk] = []
     step = max(1, chunk_words - chunk_overlap_words)
 
-    for page_num, text in cleaned_pages:
+    for page_num, text in pages:
         words = text.split()
         if not words:
             continue
@@ -175,4 +185,4 @@ def extract_chunks(
             chunks = chunks[:max_chunks]
             break
 
-    return True, num_pages, chunks
+    return chunks

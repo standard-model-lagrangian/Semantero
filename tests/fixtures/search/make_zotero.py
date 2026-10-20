@@ -234,6 +234,16 @@ def create_minimal_zotero_db(db_path: Path):
     add_tag(5, "theory")
     add_collection(5, "Mechanics")
 
+    # Web snapshot (text/html) on the paper with no PDF; its file is tests/fixtures/search/snapshot.html
+    add_attachment(106, 5, "ATT005H", "snapshot.html", content_type="text/html")
+
+    # Trashed web snapshot on paper 1 (excluded)
+    add_attachment(107, 1, "ATT001H", "trashed.html", content_type="text/html")
+    cur.execute("INSERT INTO deletedItems (itemID, dateDeleted) VALUES (107, '2026-10-18T10:00:00')")
+
+    # Standalone web snapshot with no parent item (excluded)
+    add_attachment(108, None, "ATT000H", "standalone.html", content_type="text/html")
+
     # A standalone note (excluded)
     cur.execute("INSERT INTO items (itemID, itemTypeID, key) VALUES (6, 28, 'NOTE001')")
 

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert";
 import fs from "node:fs";
 import path from "node:path";
-import { selectItemUrl, openPdfUrl } from "../src/zotero.ts";
+import { selectItemUrl, openPdfUrl, openAttachmentUrl, hitUrl } from "../src/zotero.ts";
 import { renderTemplate } from "../src/litnote.ts";
 import { RelatedPapersController } from "../src/related.ts";
 
@@ -38,4 +38,23 @@ test("Z5 no source file builds zotero:// links by hand", () => {
     const code = fs.readFileSync(path.join(srcDir, f), "utf8");
     assert.ok(!code.includes("zotero://"), `${f} builds a zotero:// link; use src/zotero.ts`);
   }
+});
+
+test("Z6 a web-snapshot hit opens the snapshot without a page; abstract hits fall back to it", () => {
+  assert.strictEqual(openAttachmentUrl("SNAPKEY1"), "zotero://open/library/items/SNAPKEY1");
+  const both: any = { key: "PARENTKY", pdfs: [{ attachmentKey: "PDFKEY01" }], snapshots: [{ attachmentKey: "SNAPKEY1" }] };
+  // chunk from the snapshot (page 0): never an open-pdf link with a page
+  assert.strictEqual(hitUrl(both, { attachmentKey: "SNAPKEY1", page: 0 }), "zotero://open/library/items/SNAPKEY1");
+  // chunk from the PDF of the same paper still opens at its page
+  assert.strictEqual(hitUrl(both, { attachmentKey: "PDFKEY01", page: 4 }), "zotero://open-pdf/library/items/PDFKEY01?page=4");
+  // abstract hit prefers the PDF
+  assert.strictEqual(hitUrl(both, {}), "zotero://open-pdf/library/items/PDFKEY01?page=1");
+  // abstract hit on a snapshot-only paper opens the snapshot
+  const snapOnly: any = { key: "PARENTKY", pdfs: [], snapshots: [{ attachmentKey: "SNAPKEY1" }] };
+  assert.strictEqual(hitUrl(snapOnly, {}), "zotero://open/library/items/SNAPKEY1");
+  // the panel uses the same rule
+  const c = Object.create(RelatedPapersController.prototype);
+  assert.strictEqual(c.getPdfUrl(snapOnly, { attachmentKey: "SNAPKEY1", page: 0, fromAbstract: false }), "zotero://open/library/items/SNAPKEY1");
+  // papers.json from an index built before snapshots existed has no `snapshots` field
+  assert.strictEqual(hitUrl({ key: "PARENTKY" } as any, undefined), "zotero://select/library/items/PARENTKY");
 });

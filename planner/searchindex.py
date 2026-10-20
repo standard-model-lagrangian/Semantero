@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
-from . import embed, pdftext, zotlib
+from . import embed, htmltext, pdftext, zotlib
 
 
 def load_json(path: Path, default=None):
@@ -189,7 +189,8 @@ def build_index(
         "query_instruction",
         "Given a description of what a paper found or showed, retrieve that paper",
     )
-    chunker = "pages-v1"
+    # v2: web snapshots (text/html attachments) are chunked too, with page 0
+    chunker = "pages-v2"
     chunk_words = int(cfg.search.get("chunk_words", 300))
     chunk_overlap_words = int(cfg.search.get("chunk_overlap_words", 50))
     max_chunks_per_paper = int(cfg.search.get("max_chunks_per_paper", 150))
@@ -300,7 +301,7 @@ def build_index(
                 else:
                     paper_abstract_info.append((p.key, p.title, None))
 
-                for pdf in p.pdfs:
+                for pdf in p.attachments():
                     if not pdf.path.exists():
                         # Missing PDF: indexed with 0 chunks, not cached as no-text
                         pdf.hasText = True
@@ -318,7 +319,8 @@ def build_index(
                         pdf.hasText = cached_att.get("hasText", True)
                         paper_attachment_chunks[pdf.attachmentKey] = cached_att.get("chunks", [])
                     else:
-                        has_text, num_pages, extracted = pdftext.extract_chunks(
+                        extractor = htmltext if isinstance(pdf, zotlib.SnapshotAttachment) else pdftext
+                        has_text, num_pages, extracted = extractor.extract_chunks(
                             pdf.path,
                             chunk_words=chunk_words,
                             chunk_overlap_words=chunk_overlap_words,
@@ -385,7 +387,7 @@ def build_index(
             state_abstracts: dict[str, int] = {}
             state_attachments: dict[str, dict] = {}
             for p in papers:
-                for pdf in p.pdfs:
+                for pdf in p.attachments():
                     if not pdf.path.exists():
                         # Do not cache missing PDFs in state_attachments so next run retries
                         continue
@@ -415,7 +417,7 @@ def build_index(
 
                 papers_data.append(p.to_dict(abstract_row=abstract_row))
 
-                for pdf in p.pdfs:
+                for pdf in p.attachments():
                     if not pdf.path.exists():
                         continue
                     for chunk in paper_attachment_chunks.get(pdf.attachmentKey, []):

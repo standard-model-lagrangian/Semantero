@@ -4,7 +4,7 @@ import { semantic, type Hit, type LoadedIndex } from "./engine.ts";
 import { ensureLiteratureNote, type LitNoteSettings, type VaultLike, type MetadataCacheLike } from "./litnote.ts";
 import type { PaperMetadata } from "./bm25.ts";
 import { editorSnapshot, type ActiveEditorTracker } from "./editortracker.ts";
-import { openPdfUrl, selectItemUrl } from "./zotero.ts";
+import { hitUrl } from "./zotero.ts";
 
 export interface RelatedSettings extends LitNoteSettings {
   relatedLimit?: number;
@@ -358,11 +358,9 @@ export class RelatedPapersController {
     }
   }
 
-  /** The PDF that matched, at the matching page; the first PDF for abstract hits; the item if no PDF. */
+  /** The attachment that matched (a PDF at the matching page, or a web snapshot); see hitUrl. */
   getPdfUrl(paper: PaperMetadata, hit: Partial<Hit>): string {
-    const attKey = hit.attachmentKey || (paper as any).pdfs?.[0]?.attachmentKey;
-    if (!attKey) return selectItemUrl(paper.key);
-    return openPdfUrl(attKey, hit.attachmentKey ? hit.page : 1);
+    return hitUrl(paper, hit);
   }
 }
 
@@ -482,7 +480,7 @@ export function createRelatedPapersViewClass(ItemViewBase: any) {
           const meta = row?.createDiv?.({ cls: "daito-related-meta" });
           const author = item.paper.authors?.[0] || "Unknown";
           const year = item.paper.year ? String(item.paper.year) : "n.d.";
-          const badge = item.hit.page ? `p. ${item.hit.page}` : "abstract";
+          const badge = item.hit.page ? `p. ${item.hit.page}` : item.hit.fromAbstract === false ? "web page" : "abstract";
           meta?.setText?.(`${author} · ${year} · [${badge}]`);
 
           if (item.hit.snippet) {

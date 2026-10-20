@@ -10,7 +10,7 @@ import { keyword, hybridSearch, type Hit, type LoadedIndex } from "./engine.ts";
 import { embedQuery, warmUp } from "./ollama.ts";
 import { shouldRunSemantic, SemanticCoordinator } from "./rank.ts";
 import { ensureLiteratureNote, formatCitation } from "./litnote.ts";
-import { openPdfUrl, selectItemUrl } from "./zotero.ts";
+import { hitUrl, selectItemUrl } from "./zotero.ts";
 
 export interface SearchModalItem {
   hit?: Hit;
@@ -31,7 +31,7 @@ export class PaperSearchModal extends SuggestModal<SearchModalItem> {
     this.plugin = plugin;
     this.setPlaceholder("Search papers by what they found, title, author, or citekey...");
     this.setInstructions([
-      { command: "↵", purpose: "open PDF at page" },
+      { command: "↵", purpose: "open in Zotero" },
       { command: "⌘↵", purpose: "insert citation & create note" },
       { command: "⌥↵", purpose: "open/create literature note" },
       { command: "⇧↵", purpose: "select in Zotero" },
@@ -231,7 +231,7 @@ export class PaperSearchModal extends SuggestModal<SearchModalItem> {
       } else if (hit.page) {
         badge.setText(`p. ${hit.page}`);
       } else {
-        badge.setText("body");
+        badge.setText("web page");
       }
 
       snippetContainer.createSpan({ text: hit.snippet, cls: "paper-snippet-text" });
@@ -245,14 +245,8 @@ export class PaperSearchModal extends SuggestModal<SearchModalItem> {
     const paper = ix.papers[item.paperIndex];
     const hit = item.hit;
 
-    // Enter: Open PDF in Zotero at page
-    const attKey = hit?.attachmentKey || paper.pdfs?.[0]?.attachmentKey;
-    const page = hit?.page || 1;
-    if (attKey) {
-      window.open(openPdfUrl(attKey, page));
-    } else {
-      window.open(selectItemUrl(paper.key));
-    }
+    // Enter: open the matching PDF at its page, or the matching web snapshot, in Zotero
+    window.open(hitUrl(paper, hit));
   }
 
   async insertCitationAndEnsureNote(paperIndex: number) {
