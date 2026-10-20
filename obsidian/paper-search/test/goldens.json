@@ -1,0 +1,2550 @@
+[
+  {
+    "query": "viscoelasticity",
+    "queryVec": [
+      -0.14482842043476277,
+      0.1010485237595976,
+      0.5036247508442753,
+      -0.5049112482532516,
+      -0.39590983141998204,
+      0.09847552894164488,
+      0.5420052568787367,
+      -0.0053798982557193165
+    ],
+    "keywordRes": [
+      {
+        "paperIndex": 3,
+        "score": 4.511240244774477,
+        "metadataScore": 4.511240244774477,
+        "bestChunkScore": 0
+      },
+      {
+        "paperIndex": 0,
+        "score": 2.308683932722081,
+        "metadataScore": 2.308683932722081,
+        "bestChunkScore": 0
+      },
+      {
+        "paperIndex": 1,
+        "score": 1.468173833393248,
+        "metadataScore": 1.468173833393248,
+        "bestChunkScore": 0
+      }
+    ],
+    "keywordHits": [
+      {
+        "paperIndex": 3,
+        "score": 4.511240244774477,
+        "snippetText": "A continuum mechanics approach to cell viscoelasticity without experiment.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT005"
+      },
+      {
+        "paperIndex": 0,
+        "score": 2.308683932722081,
+        "snippetText": "Faster stress relaxation accelerated neuronal maturation and neural network development.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT001"
+      },
+      {
+        "paperIndex": 1,
+        "score": 1.468173833393248,
+        "snippetText": "Matrix stiffness and viscoelasticity regulate organoid morphogenesis and drug response.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT002"
+      }
+    ],
+    "semanticList": [
+      {
+        "paperIndex": 3,
+        "score": 0.5420052409172058,
+        "winningRow": 6,
+        "isAbstract": true
+      },
+      {
+        "paperIndex": 1,
+        "score": 0.5036247372627258,
+        "winningRow": 2,
+        "isAbstract": true
+      },
+      {
+        "paperIndex": 0,
+        "score": 0.10104852169752121,
+        "winningRow": 1,
+        "isAbstract": false
+      },
+      {
+        "paperIndex": 2,
+        "score": 0.09847553074359894,
+        "winningRow": 5,
+        "isAbstract": false
+      }
+    ],
+    "hybridHits": [
+      {
+        "paperIndex": 3,
+        "score": 0.03278688524590164,
+        "snippetText": "A continuum mechanics approach to cell viscoelasticity without experiment.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT005"
+      },
+      {
+        "paperIndex": 0,
+        "score": 0.03200204813108039,
+        "snippetText": "Faster stress relaxation accelerated neuronal maturation and synaptic formation.",
+        "snippetPage": 6,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT001"
+      },
+      {
+        "paperIndex": 1,
+        "score": 0.03200204813108039,
+        "snippetText": "Matrix stiffness and viscoelasticity regulate organoid morphogenesis and drug response.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT002"
+      },
+      {
+        "paperIndex": 2,
+        "score": 0.015625,
+        "snippetText": "Stiffer gels promoted chemoresistance through integrin beta 1 signaling.",
+        "snippetPage": 4,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT004A"
+      }
+    ]
+  },
+  {
+    "query": "hydrogel",
+    "queryVec": [
+      -0.0738587074910977,
+      0.49595697604941696,
+      -0.22593972886989358,
+      -0.24001533082624302,
+      0.49371574630485954,
+      -0.132657030259298,
+      0.49773977243713313,
+      0.36168693953456627
+    ],
+    "keywordRes": [
+      {
+        "paperIndex": 0,
+        "score": 4.3798564803352455,
+        "metadataScore": 4.3798564803352455,
+        "bestChunkScore": 0
+      }
+    ],
+    "keywordHits": [
+      {
+        "paperIndex": 0,
+        "score": 4.3798564803352455,
+        "snippetText": "Faster stress relaxation accelerated neuronal maturation and neural network development.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT001"
+      }
+    ],
+    "semanticList": [
+      {
+        "paperIndex": 3,
+        "score": 0.4977397620677948,
+        "winningRow": 6,
+        "isAbstract": true
+      },
+      {
+        "paperIndex": 0,
+        "score": 0.49595698714256287,
+        "winningRow": 1,
+        "isAbstract": false
+      },
+      {
+        "paperIndex": 2,
+        "score": 0.49371573328971863,
+        "winningRow": 4,
+        "isAbstract": true
+      }
+    ],
+    "hybridHits": [
+      {
+        "paperIndex": 0,
+        "score": 0.03252247488101534,
+        "snippetText": "Faster stress relaxation accelerated neuronal maturation and synaptic formation.",
+        "snippetPage": 6,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT001"
+      },
+      {
+        "paperIndex": 3,
+        "score": 0.01639344262295082,
+        "snippetText": "A continuum mechanics approach to cell viscoelasticity without experiment.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT005"
+      },
+      {
+        "paperIndex": 2,
+        "score": 0.015873015873015872,
+        "snippetText": "Engineered matrices reveal stiffness-mediated chemoresistance in patient-derived pancreatic cancer organoids.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT004A"
+      }
+    ]
+  },
+  {
+    "query": "organoids",
+    "queryVec": [
+      0.12951691230783816,
+      0.4777161939385853,
+      -0.5187577281247483,
+      -0.23689682011437868,
+      0.4219650833405675,
+      0.3246639593717794,
+      -0.17366380151428157,
+      0.34082633345394087
+    ],
+    "keywordRes": [
+      {
+        "paperIndex": 1,
+        "score": 6.815945016447365,
+        "metadataScore": 6.815945016447365,
+        "bestChunkScore": 0
+      },
+      {
+        "paperIndex": 2,
+        "score": 1.7385177338527433,
+        "metadataScore": 1.7385177338527433,
+        "bestChunkScore": 0
+      }
+    ],
+    "keywordHits": [
+      {
+        "paperIndex": 1,
+        "score": 6.815945016447365,
+        "snippetText": "Matrix stiffness and viscoelasticity regulate organoid morphogenesis and drug response.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT002"
+      },
+      {
+        "paperIndex": 2,
+        "score": 1.7385177338527433,
+        "snippetText": "Engineered matrices reveal stiffness-mediated chemoresistance in patient-derived pancreatic cancer organoids.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT004A"
+      }
+    ],
+    "semanticList": [
+      {
+        "paperIndex": 0,
+        "score": 0.47771620750427246,
+        "winningRow": 1,
+        "isAbstract": false
+      },
+      {
+        "paperIndex": 2,
+        "score": 0.421965092420578,
+        "winningRow": 4,
+        "isAbstract": true
+      },
+      {
+        "paperIndex": 3,
+        "score": 0.3408263325691223,
+        "winningRow": 7,
+        "isAbstract": false
+      }
+    ],
+    "hybridHits": [
+      {
+        "paperIndex": 2,
+        "score": 0.03225806451612903,
+        "snippetText": "Engineered matrices reveal stiffness-mediated chemoresistance in patient-derived pancreatic cancer organoids.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT004A"
+      },
+      {
+        "paperIndex": 1,
+        "score": 0.01639344262295082,
+        "snippetText": "Matrix stiffness and viscoelasticity regulate organoid morphogenesis and drug response.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT002"
+      },
+      {
+        "paperIndex": 0,
+        "score": 0.01639344262295082,
+        "snippetText": "Faster stress relaxation accelerated neuronal maturation and synaptic formation.",
+        "snippetPage": 6,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT001"
+      },
+      {
+        "paperIndex": 3,
+        "score": 0.015873015873015872,
+        "snippetText": "Constitutive equations predict frequency-dependent relaxation moduli in biopolymers.",
+        "snippetPage": 2,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT005"
+      }
+    ]
+  },
+  {
+    "query": "chemoresistance",
+    "queryVec": [
+      0.2741821679610003,
+      -0.39913927156246487,
+      0.39176730612463573,
+      -0.3279990419439934,
+      -0.4818640182975251,
+      -0.08228212355142243,
+      -0.39422462793724544,
+      -0.33176897043911513
+    ],
+    "keywordRes": [
+      {
+        "paperIndex": 2,
+        "score": 6.188077407563073,
+        "metadataScore": 6.188077407563073,
+        "bestChunkScore": 1.2809338454620645,
+        "bestChunkIndex": 2
+      }
+    ],
+    "keywordHits": [
+      {
+        "paperIndex": 2,
+        "score": 6.188077407563073,
+        "snippetText": "Engineered matrices reveal stiffness-mediated chemoresistance in patient-derived pancreatic cancer organoids.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT004A"
+      }
+    ],
+    "semanticList": [
+      {
+        "paperIndex": 1,
+        "score": 0.391767293214798,
+        "winningRow": 2,
+        "isAbstract": true
+      },
+      {
+        "paperIndex": 0,
+        "score": 0.27418217062950134,
+        "winningRow": 0,
+        "isAbstract": true
+      }
+    ],
+    "hybridHits": [
+      {
+        "paperIndex": 2,
+        "score": 0.01639344262295082,
+        "snippetText": "Engineered matrices reveal stiffness-mediated chemoresistance in patient-derived pancreatic cancer organoids.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT004A"
+      },
+      {
+        "paperIndex": 1,
+        "score": 0.01639344262295082,
+        "snippetText": "Matrix stiffness and viscoelasticity regulate organoid morphogenesis and drug response.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT002"
+      },
+      {
+        "paperIndex": 0,
+        "score": 0.016129032258064516,
+        "snippetText": "Faster stress relaxation accelerated neuronal maturation and neural network development.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT001"
+      }
+    ]
+  },
+  {
+    "query": "relaxation",
+    "queryVec": [
+      0.40730685401633393,
+      -0.191479986202735,
+      0.5937018607681783,
+      0.5919119480014648,
+      -0.19929051463930286,
+      0.21019271058201225,
+      0.10281828449700715,
+      0.011207294709762797
+    ],
+    "keywordRes": [
+      {
+        "paperIndex": 0,
+        "score": 1.0277085924861835,
+        "metadataScore": 1.0277085924861835,
+        "bestChunkScore": 0.6931471805599453,
+        "bestChunkIndex": 0
+      },
+      {
+        "paperIndex": 1,
+        "score": 0.6931471805599453,
+        "metadataScore": 0,
+        "bestChunkScore": 0.6931471805599453,
+        "bestChunkIndex": 1
+      },
+      {
+        "paperIndex": 3,
+        "score": 0.6931471805599453,
+        "metadataScore": 0,
+        "bestChunkScore": 0.6931471805599453,
+        "bestChunkIndex": 3
+      }
+    ],
+    "keywordHits": [
+      {
+        "paperIndex": 0,
+        "score": 1.0277085924861835,
+        "snippetText": "Faster stress relaxation accelerated neuronal maturation and neural network development.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT001"
+      },
+      {
+        "paperIndex": 1,
+        "score": 0.6931471805599453,
+        "snippetText": "Organoid growth required permissive matrix degradation and stress relaxation.",
+        "snippetPage": 3,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT002"
+      },
+      {
+        "paperIndex": 3,
+        "score": 0.6931471805599453,
+        "snippetText": "Constitutive equations predict frequency-dependent relaxation moduli in biopolymers.",
+        "snippetPage": 2,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT005"
+      }
+    ],
+    "semanticList": [
+      {
+        "paperIndex": 1,
+        "score": 0.5937018394470215,
+        "winningRow": 2,
+        "isAbstract": true
+      },
+      {
+        "paperIndex": 0,
+        "score": 0.40730684995651245,
+        "winningRow": 0,
+        "isAbstract": true
+      },
+      {
+        "paperIndex": 2,
+        "score": 0.2101927101612091,
+        "winningRow": 5,
+        "isAbstract": false
+      },
+      {
+        "paperIndex": 3,
+        "score": 0.10281828790903091,
+        "winningRow": 6,
+        "isAbstract": true
+      }
+    ],
+    "hybridHits": [
+      {
+        "paperIndex": 0,
+        "score": 0.03252247488101534,
+        "snippetText": "Faster stress relaxation accelerated neuronal maturation and neural network development.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT001"
+      },
+      {
+        "paperIndex": 1,
+        "score": 0.03252247488101534,
+        "snippetText": "Matrix stiffness and viscoelasticity regulate organoid morphogenesis and drug response.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT002"
+      },
+      {
+        "paperIndex": 3,
+        "score": 0.03149801587301587,
+        "snippetText": "A continuum mechanics approach to cell viscoelasticity without experiment.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT005"
+      },
+      {
+        "paperIndex": 2,
+        "score": 0.015873015873015872,
+        "snippetText": "Stiffer gels promoted chemoresistance through integrin beta 1 signaling.",
+        "snippetPage": 4,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT004A"
+      }
+    ]
+  },
+  {
+    "query": "neural",
+    "queryVec": [
+      -0.16486616261517165,
+      -0.4308546881299324,
+      -0.13134941527032906,
+      -0.2166907776419766,
+      0.0837680299927289,
+      -0.3549771584011742,
+      0.2879198253421115,
+      0.7120759316769508
+    ],
+    "keywordRes": [
+      {
+        "paperIndex": 0,
+        "score": 9.913722633363228,
+        "metadataScore": 9.913722633363228,
+        "bestChunkScore": 0
+      }
+    ],
+    "keywordHits": [
+      {
+        "paperIndex": 0,
+        "score": 9.913722633363228,
+        "snippetText": "Faster stress relaxation accelerated neuronal maturation and neural network development.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT001"
+      }
+    ],
+    "semanticList": [
+      {
+        "paperIndex": 3,
+        "score": 0.71207594871521,
+        "winningRow": 7,
+        "isAbstract": false
+      },
+      {
+        "paperIndex": 2,
+        "score": 0.08376803249120712,
+        "winningRow": 4,
+        "isAbstract": true
+      }
+    ],
+    "hybridHits": [
+      {
+        "paperIndex": 0,
+        "score": 0.01639344262295082,
+        "snippetText": "Faster stress relaxation accelerated neuronal maturation and neural network development.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT001"
+      },
+      {
+        "paperIndex": 3,
+        "score": 0.01639344262295082,
+        "snippetText": "Constitutive equations predict frequency-dependent relaxation moduli in biopolymers.",
+        "snippetPage": 2,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT005"
+      },
+      {
+        "paperIndex": 2,
+        "score": 0.016129032258064516,
+        "snippetText": "Engineered matrices reveal stiffness-mediated chemoresistance in patient-derived pancreatic cancer organoids.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT004A"
+      }
+    ]
+  },
+  {
+    "query": "stiffness",
+    "queryVec": [
+      -0.5628358544876966,
+      0.12461318626565385,
+      0.3681319150845621,
+      -0.44941586834285707,
+      0.48843660765291835,
+      0.05905301412945528,
+      0.15153016750856463,
+      0.2552893559300821
+    ],
+    "keywordRes": [
+      {
+        "paperIndex": 2,
+        "score": 4.528670664562191,
+        "metadataScore": 4.528670664562191,
+        "bestChunkScore": 0
+      },
+      {
+        "paperIndex": 1,
+        "score": 1.991222868786924,
+        "metadataScore": 1.991222868786924,
+        "bestChunkScore": 0
+      }
+    ],
+    "keywordHits": [
+      {
+        "paperIndex": 2,
+        "score": 4.528670664562191,
+        "snippetText": "Engineered matrices reveal stiffness-mediated chemoresistance in patient-derived pancreatic cancer organoids.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT004A"
+      },
+      {
+        "paperIndex": 1,
+        "score": 1.991222868786924,
+        "snippetText": "Matrix stiffness and viscoelasticity regulate organoid morphogenesis and drug response.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT002"
+      }
+    ],
+    "semanticList": [
+      {
+        "paperIndex": 2,
+        "score": 0.48843660950660706,
+        "winningRow": 4,
+        "isAbstract": true
+      },
+      {
+        "paperIndex": 1,
+        "score": 0.3681319057941437,
+        "winningRow": 2,
+        "isAbstract": true
+      },
+      {
+        "paperIndex": 3,
+        "score": 0.25528934597969055,
+        "winningRow": 7,
+        "isAbstract": false
+      },
+      {
+        "paperIndex": 0,
+        "score": 0.1246131882071495,
+        "winningRow": 1,
+        "isAbstract": false
+      }
+    ],
+    "hybridHits": [
+      {
+        "paperIndex": 2,
+        "score": 0.03278688524590164,
+        "snippetText": "Engineered matrices reveal stiffness-mediated chemoresistance in patient-derived pancreatic cancer organoids.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT004A"
+      },
+      {
+        "paperIndex": 1,
+        "score": 0.03225806451612903,
+        "snippetText": "Matrix stiffness and viscoelasticity regulate organoid morphogenesis and drug response.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT002"
+      },
+      {
+        "paperIndex": 3,
+        "score": 0.015873015873015872,
+        "snippetText": "Constitutive equations predict frequency-dependent relaxation moduli in biopolymers.",
+        "snippetPage": 2,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT005"
+      },
+      {
+        "paperIndex": 0,
+        "score": 0.015625,
+        "snippetText": "Faster stress relaxation accelerated neuronal maturation and synaptic formation.",
+        "snippetPage": 6,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT001"
+      }
+    ]
+  },
+  {
+    "query": "biopolymers",
+    "queryVec": [
+      -0.2710929566846254,
+      0.5277484599077678,
+      -0.3035586220071614,
+      -0.47798017639041324,
+      0.0592010011784008,
+      -0.2502553949876396,
+      0.49271530930471036,
+      -0.13592788014123075
+    ],
+    "keywordRes": [
+      {
+        "paperIndex": 3,
+        "score": 1.791759469228055,
+        "metadataScore": 0,
+        "bestChunkScore": 1.791759469228055,
+        "bestChunkIndex": 3
+      }
+    ],
+    "keywordHits": [
+      {
+        "paperIndex": 3,
+        "score": 1.791759469228055,
+        "snippetText": "Constitutive equations predict frequency-dependent relaxation moduli in biopolymers.",
+        "snippetPage": 2,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT005"
+      }
+    ],
+    "semanticList": [
+      {
+        "paperIndex": 0,
+        "score": 0.5277484655380249,
+        "winningRow": 1,
+        "isAbstract": false
+      },
+      {
+        "paperIndex": 3,
+        "score": 0.4927152991294861,
+        "winningRow": 6,
+        "isAbstract": true
+      },
+      {
+        "paperIndex": 2,
+        "score": 0.05920100212097168,
+        "winningRow": 4,
+        "isAbstract": true
+      }
+    ],
+    "hybridHits": [
+      {
+        "paperIndex": 3,
+        "score": 0.03252247488101534,
+        "snippetText": "A continuum mechanics approach to cell viscoelasticity without experiment.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT005"
+      },
+      {
+        "paperIndex": 0,
+        "score": 0.01639344262295082,
+        "snippetText": "Faster stress relaxation accelerated neuronal maturation and synaptic formation.",
+        "snippetPage": 6,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT001"
+      },
+      {
+        "paperIndex": 2,
+        "score": 0.015873015873015872,
+        "snippetText": "Engineered matrices reveal stiffness-mediated chemoresistance in patient-derived pancreatic cancer organoids.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT004A"
+      }
+    ]
+  },
+  {
+    "query": "mechanics",
+    "queryVec": [
+      0.47479933376489103,
+      0.5243547922754395,
+      -0.5226282492435671,
+      -0.11924167407356567,
+      -0.3204206722448172,
+      0.14616839837914905,
+      0.134872398755729,
+      -0.2646386383320909
+    ],
+    "keywordRes": [
+      {
+        "paperIndex": 3,
+        "score": 6.510650744620754,
+        "metadataScore": 6.510650744620754,
+        "bestChunkScore": 0
+      }
+    ],
+    "keywordHits": [
+      {
+        "paperIndex": 3,
+        "score": 6.510650744620754,
+        "snippetText": "A continuum mechanics approach to cell viscoelasticity without experiment.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT005"
+      }
+    ],
+    "semanticList": [
+      {
+        "paperIndex": 0,
+        "score": 0.5243548154830933,
+        "winningRow": 1,
+        "isAbstract": false
+      },
+      {
+        "paperIndex": 2,
+        "score": 0.14616839587688446,
+        "winningRow": 5,
+        "isAbstract": false
+      },
+      {
+        "paperIndex": 3,
+        "score": 0.13487239181995392,
+        "winningRow": 6,
+        "isAbstract": true
+      }
+    ],
+    "hybridHits": [
+      {
+        "paperIndex": 3,
+        "score": 0.032266458495966696,
+        "snippetText": "A continuum mechanics approach to cell viscoelasticity without experiment.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT005"
+      },
+      {
+        "paperIndex": 0,
+        "score": 0.01639344262295082,
+        "snippetText": "Faster stress relaxation accelerated neuronal maturation and synaptic formation.",
+        "snippetPage": 6,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT001"
+      },
+      {
+        "paperIndex": 2,
+        "score": 0.016129032258064516,
+        "snippetText": "Stiffer gels promoted chemoresistance through integrin beta 1 signaling.",
+        "snippetPage": 4,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT004A"
+      }
+    ]
+  },
+  {
+    "query": "constitutive",
+    "queryVec": [
+      -0.448614143033257,
+      0.09330939311385952,
+      -0.5788411749013939,
+      0.013822707684669804,
+      -0.63295768711111,
+      0.12100373842190593,
+      0.14194575218841451,
+      0.13915674568212716
+    ],
+    "keywordRes": [
+      {
+        "paperIndex": 3,
+        "score": 1.791759469228055,
+        "metadataScore": 0,
+        "bestChunkScore": 1.791759469228055,
+        "bestChunkIndex": 3
+      }
+    ],
+    "keywordHits": [
+      {
+        "paperIndex": 3,
+        "score": 1.791759469228055,
+        "snippetText": "Constitutive equations predict frequency-dependent relaxation moduli in biopolymers.",
+        "snippetPage": 2,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT005"
+      }
+    ],
+    "semanticList": [
+      {
+        "paperIndex": 3,
+        "score": 0.1419457495212555,
+        "winningRow": 6,
+        "isAbstract": true
+      },
+      {
+        "paperIndex": 2,
+        "score": 0.12100373953580856,
+        "winningRow": 5,
+        "isAbstract": false
+      },
+      {
+        "paperIndex": 0,
+        "score": 0.09330939501523972,
+        "winningRow": 1,
+        "isAbstract": false
+      },
+      {
+        "paperIndex": 1,
+        "score": 0.01382270734757185,
+        "winningRow": 3,
+        "isAbstract": false
+      }
+    ],
+    "hybridHits": [
+      {
+        "paperIndex": 3,
+        "score": 0.03278688524590164,
+        "snippetText": "A continuum mechanics approach to cell viscoelasticity without experiment.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT005"
+      },
+      {
+        "paperIndex": 2,
+        "score": 0.016129032258064516,
+        "snippetText": "Stiffer gels promoted chemoresistance through integrin beta 1 signaling.",
+        "snippetPage": 4,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT004A"
+      },
+      {
+        "paperIndex": 0,
+        "score": 0.015873015873015872,
+        "snippetText": "Faster stress relaxation accelerated neuronal maturation and synaptic formation.",
+        "snippetPage": 6,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT001"
+      },
+      {
+        "paperIndex": 1,
+        "score": 0.015625,
+        "snippetText": "Organoid growth required permissive matrix degradation and stress relaxation.",
+        "snippetPage": 3,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT002"
+      }
+    ]
+  },
+  {
+    "query": "roth",
+    "queryVec": [
+      -0.5698596874675262,
+      -0.5265843748141854,
+      0.002468308764388338,
+      -0.3188202557973253,
+      0.188585892646073,
+      -0.12897357234354315,
+      -0.3473567463323761,
+      0.35136996777663343
+    ],
+    "keywordRes": [
+      {
+        "paperIndex": 0,
+        "score": 5.375278407684165,
+        "metadataScore": 5.375278407684165,
+        "bestChunkScore": 0
+      }
+    ],
+    "keywordHits": [
+      {
+        "paperIndex": 0,
+        "score": 5.375278407684165,
+        "snippetText": "Faster stress relaxation accelerated neuronal maturation and neural network development.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT001"
+      }
+    ],
+    "semanticList": [
+      {
+        "paperIndex": 3,
+        "score": 0.3513699769973755,
+        "winningRow": 7,
+        "isAbstract": false
+      },
+      {
+        "paperIndex": 2,
+        "score": 0.18858589231967926,
+        "winningRow": 4,
+        "isAbstract": true
+      },
+      {
+        "paperIndex": 1,
+        "score": 0.0024683086667209864,
+        "winningRow": 2,
+        "isAbstract": true
+      }
+    ],
+    "hybridHits": [
+      {
+        "paperIndex": 0,
+        "score": 0.01639344262295082,
+        "snippetText": "Faster stress relaxation accelerated neuronal maturation and neural network development.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT001"
+      },
+      {
+        "paperIndex": 3,
+        "score": 0.01639344262295082,
+        "snippetText": "Constitutive equations predict frequency-dependent relaxation moduli in biopolymers.",
+        "snippetPage": 2,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT005"
+      },
+      {
+        "paperIndex": 2,
+        "score": 0.016129032258064516,
+        "snippetText": "Engineered matrices reveal stiffness-mediated chemoresistance in patient-derived pancreatic cancer organoids.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT004A"
+      },
+      {
+        "paperIndex": 1,
+        "score": 0.015873015873015872,
+        "snippetText": "Matrix stiffness and viscoelasticity regulate organoid morphogenesis and drug response.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT002"
+      }
+    ]
+  },
+  {
+    "query": "lesavage",
+    "queryVec": [
+      -0.3677562321868933,
+      0.128999648160595,
+      0.5490428374913995,
+      -0.03354070285456357,
+      0.0274243402262595,
+      0.6313357164903997,
+      0.35494761564385396,
+      -0.14218557278784794
+    ],
+    "keywordRes": [
+      {
+        "paperIndex": 1,
+        "score": 5.375278407684165,
+        "metadataScore": 5.375278407684165,
+        "bestChunkScore": 0
+      }
+    ],
+    "keywordHits": [
+      {
+        "paperIndex": 1,
+        "score": 5.375278407684165,
+        "snippetText": "Matrix stiffness and viscoelasticity regulate organoid morphogenesis and drug response.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT002"
+      }
+    ],
+    "semanticList": [
+      {
+        "paperIndex": 2,
+        "score": 0.6313357353210449,
+        "winningRow": 5,
+        "isAbstract": false
+      },
+      {
+        "paperIndex": 1,
+        "score": 0.549042820930481,
+        "winningRow": 2,
+        "isAbstract": true
+      },
+      {
+        "paperIndex": 3,
+        "score": 0.35494762659072876,
+        "winningRow": 6,
+        "isAbstract": true
+      },
+      {
+        "paperIndex": 0,
+        "score": 0.12899965047836304,
+        "winningRow": 1,
+        "isAbstract": false
+      }
+    ],
+    "hybridHits": [
+      {
+        "paperIndex": 1,
+        "score": 0.03252247488101534,
+        "snippetText": "Matrix stiffness and viscoelasticity regulate organoid morphogenesis and drug response.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT002"
+      },
+      {
+        "paperIndex": 2,
+        "score": 0.01639344262295082,
+        "snippetText": "Stiffer gels promoted chemoresistance through integrin beta 1 signaling.",
+        "snippetPage": 4,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT004A"
+      },
+      {
+        "paperIndex": 3,
+        "score": 0.015873015873015872,
+        "snippetText": "A continuum mechanics approach to cell viscoelasticity without experiment.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT005"
+      },
+      {
+        "paperIndex": 0,
+        "score": 0.015625,
+        "snippetText": "Faster stress relaxation accelerated neuronal maturation and synaptic formation.",
+        "snippetPage": 6,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT001"
+      }
+    ]
+  },
+  {
+    "query": "wang",
+    "queryVec": [
+      -0.19645516474869087,
+      -0.36215150350692626,
+      -0.44916407157912175,
+      0.42599187291070895,
+      0.41634366207724166,
+      0.14216679894784234,
+      -0.3235724040631334,
+      0.38572227498754785
+    ],
+    "keywordRes": [
+      {
+        "paperIndex": 2,
+        "score": 5.375278407684165,
+        "metadataScore": 5.375278407684165,
+        "bestChunkScore": 0
+      }
+    ],
+    "keywordHits": [
+      {
+        "paperIndex": 2,
+        "score": 5.375278407684165,
+        "snippetText": "Engineered matrices reveal stiffness-mediated chemoresistance in patient-derived pancreatic cancer organoids.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT004A"
+      }
+    ],
+    "semanticList": [
+      {
+        "paperIndex": 1,
+        "score": 0.42599186301231384,
+        "winningRow": 3,
+        "isAbstract": false
+      },
+      {
+        "paperIndex": 2,
+        "score": 0.41634365916252136,
+        "winningRow": 4,
+        "isAbstract": true
+      },
+      {
+        "paperIndex": 3,
+        "score": 0.385722279548645,
+        "winningRow": 7,
+        "isAbstract": false
+      }
+    ],
+    "hybridHits": [
+      {
+        "paperIndex": 2,
+        "score": 0.03252247488101534,
+        "snippetText": "Engineered matrices reveal stiffness-mediated chemoresistance in patient-derived pancreatic cancer organoids.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT004A"
+      },
+      {
+        "paperIndex": 1,
+        "score": 0.01639344262295082,
+        "snippetText": "Organoid growth required permissive matrix degradation and stress relaxation.",
+        "snippetPage": 3,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT002"
+      },
+      {
+        "paperIndex": 3,
+        "score": 0.015873015873015872,
+        "snippetText": "Constitutive equations predict frequency-dependent relaxation moduli in biopolymers.",
+        "snippetPage": 2,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT005"
+      }
+    ]
+  },
+  {
+    "query": "johnson",
+    "queryVec": [
+      -0.15121272139433792,
+      0.3199342842132834,
+      -0.1595320739257878,
+      0.6037260751585587,
+      -0.4457008227371917,
+      0.4296351343027336,
+      -0.2305861358525588,
+      0.22008083099779427
+    ],
+    "keywordRes": [
+      {
+        "paperIndex": 3,
+        "score": 6.518054132152453,
+        "metadataScore": 6.518054132152453,
+        "bestChunkScore": 0
+      }
+    ],
+    "keywordHits": [
+      {
+        "paperIndex": 3,
+        "score": 6.518054132152453,
+        "snippetText": "A continuum mechanics approach to cell viscoelasticity without experiment.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT005"
+      }
+    ],
+    "semanticList": [
+      {
+        "paperIndex": 1,
+        "score": 0.6037260890007019,
+        "winningRow": 3,
+        "isAbstract": false
+      },
+      {
+        "paperIndex": 2,
+        "score": 0.4296351373195648,
+        "winningRow": 5,
+        "isAbstract": false
+      },
+      {
+        "paperIndex": 0,
+        "score": 0.31993427872657776,
+        "winningRow": 1,
+        "isAbstract": false
+      },
+      {
+        "paperIndex": 3,
+        "score": 0.22008083760738373,
+        "winningRow": 7,
+        "isAbstract": false
+      }
+    ],
+    "hybridHits": [
+      {
+        "paperIndex": 3,
+        "score": 0.032018442622950824,
+        "snippetText": "Constitutive equations predict frequency-dependent relaxation moduli in biopolymers.",
+        "snippetPage": 2,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT005"
+      },
+      {
+        "paperIndex": 1,
+        "score": 0.01639344262295082,
+        "snippetText": "Organoid growth required permissive matrix degradation and stress relaxation.",
+        "snippetPage": 3,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT002"
+      },
+      {
+        "paperIndex": 2,
+        "score": 0.016129032258064516,
+        "snippetText": "Stiffer gels promoted chemoresistance through integrin beta 1 signaling.",
+        "snippetPage": 4,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT004A"
+      },
+      {
+        "paperIndex": 0,
+        "score": 0.015873015873015872,
+        "snippetText": "Faster stress relaxation accelerated neuronal maturation and synaptic formation.",
+        "snippetPage": 6,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT001"
+      }
+    ]
+  },
+  {
+    "query": "bauer",
+    "queryVec": [
+      -0.587749692370264,
+      0.22608692757677615,
+      0.010266766925002294,
+      0.15272951505246773,
+      0.5161730641975489,
+      0.06932339082988274,
+      -0.46178645639837745,
+      -0.3090569413459097
+    ],
+    "keywordRes": [
+      {
+        "paperIndex": 0,
+        "score": 5.078483894376451,
+        "metadataScore": 5.078483894376451,
+        "bestChunkScore": 0
+      }
+    ],
+    "keywordHits": [
+      {
+        "paperIndex": 0,
+        "score": 5.078483894376451,
+        "snippetText": "Faster stress relaxation accelerated neuronal maturation and neural network development.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT001"
+      }
+    ],
+    "semanticList": [
+      {
+        "paperIndex": 2,
+        "score": 0.5161730647087097,
+        "winningRow": 4,
+        "isAbstract": true
+      },
+      {
+        "paperIndex": 0,
+        "score": 0.22608692944049835,
+        "winningRow": 1,
+        "isAbstract": false
+      },
+      {
+        "paperIndex": 1,
+        "score": 0.15272951126098633,
+        "winningRow": 3,
+        "isAbstract": false
+      }
+    ],
+    "hybridHits": [
+      {
+        "paperIndex": 0,
+        "score": 0.03252247488101534,
+        "snippetText": "Faster stress relaxation accelerated neuronal maturation and synaptic formation.",
+        "snippetPage": 6,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT001"
+      },
+      {
+        "paperIndex": 2,
+        "score": 0.01639344262295082,
+        "snippetText": "Engineered matrices reveal stiffness-mediated chemoresistance in patient-derived pancreatic cancer organoids.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT004A"
+      },
+      {
+        "paperIndex": 1,
+        "score": 0.015873015873015872,
+        "snippetText": "Organoid growth required permissive matrix degradation and stress relaxation.",
+        "snippetPage": 3,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT002"
+      }
+    ]
+  },
+  {
+    "query": "heilshorn",
+    "queryVec": [
+      -0.5178233566628401,
+      -0.30341242057312984,
+      0.4916598907492289,
+      -0.25047615038401844,
+      0.33943955121982006,
+      0.3236729211059408,
+      -0.07597687699804118,
+      0.33102306509622753
+    ],
+    "keywordRes": [
+      {
+        "paperIndex": 1,
+        "score": 5.078483894376451,
+        "metadataScore": 5.078483894376451,
+        "bestChunkScore": 0
+      }
+    ],
+    "keywordHits": [
+      {
+        "paperIndex": 1,
+        "score": 5.078483894376451,
+        "snippetText": "Matrix stiffness and viscoelasticity regulate organoid morphogenesis and drug response.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT002"
+      }
+    ],
+    "semanticList": [
+      {
+        "paperIndex": 1,
+        "score": 0.49165987968444824,
+        "winningRow": 2,
+        "isAbstract": true
+      },
+      {
+        "paperIndex": 2,
+        "score": 0.3394395411014557,
+        "winningRow": 4,
+        "isAbstract": true
+      },
+      {
+        "paperIndex": 3,
+        "score": 0.33102306723594666,
+        "winningRow": 7,
+        "isAbstract": false
+      }
+    ],
+    "hybridHits": [
+      {
+        "paperIndex": 1,
+        "score": 0.03278688524590164,
+        "snippetText": "Matrix stiffness and viscoelasticity regulate organoid morphogenesis and drug response.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT002"
+      },
+      {
+        "paperIndex": 2,
+        "score": 0.016129032258064516,
+        "snippetText": "Engineered matrices reveal stiffness-mediated chemoresistance in patient-derived pancreatic cancer organoids.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT004A"
+      },
+      {
+        "paperIndex": 3,
+        "score": 0.015873015873015872,
+        "snippetText": "Constitutive equations predict frequency-dependent relaxation moduli in biopolymers.",
+        "snippetPage": 2,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT005"
+      }
+    ]
+  },
+  {
+    "query": "roth2023tunable",
+    "queryVec": [
+      0.41784787185971334,
+      0.41857114958053876,
+      -0.007321341827130769,
+      -0.2359951877664652,
+      -0.20304914954437672,
+      -0.3712924038702568,
+      0.47731901343533806,
+      0.43305146476685985
+    ],
+    "keywordRes": [
+      {
+        "paperIndex": 0,
+        "score": 5.375278407684165,
+        "metadataScore": 5.375278407684165,
+        "bestChunkScore": 0
+      }
+    ],
+    "keywordHits": [
+      {
+        "paperIndex": 0,
+        "score": 5.375278407684165,
+        "snippetText": "Faster stress relaxation accelerated neuronal maturation and neural network development.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT001"
+      }
+    ],
+    "semanticList": [
+      {
+        "paperIndex": 3,
+        "score": 0.47731900215148926,
+        "winningRow": 6,
+        "isAbstract": true
+      },
+      {
+        "paperIndex": 0,
+        "score": 0.4185711443424225,
+        "winningRow": 1,
+        "isAbstract": false
+      }
+    ],
+    "hybridHits": [
+      {
+        "paperIndex": 0,
+        "score": 0.03252247488101534,
+        "snippetText": "Faster stress relaxation accelerated neuronal maturation and synaptic formation.",
+        "snippetPage": 6,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT001"
+      },
+      {
+        "paperIndex": 3,
+        "score": 0.01639344262295082,
+        "snippetText": "A continuum mechanics approach to cell viscoelasticity without experiment.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT005"
+      }
+    ]
+  },
+  {
+    "query": "lesavage2022next",
+    "queryVec": [
+      -0.07744330156401376,
+      -0.3574998921036449,
+      0.520040775037418,
+      -0.35265432561597404,
+      -0.4200634452497668,
+      0.3989659345246866,
+      -0.2355459886440352,
+      -0.28333699617066493
+    ],
+    "keywordRes": [
+      {
+        "paperIndex": 1,
+        "score": 5.375278407684165,
+        "metadataScore": 5.375278407684165,
+        "bestChunkScore": 0
+      }
+    ],
+    "keywordHits": [
+      {
+        "paperIndex": 1,
+        "score": 5.375278407684165,
+        "snippetText": "Matrix stiffness and viscoelasticity regulate organoid morphogenesis and drug response.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT002"
+      }
+    ],
+    "semanticList": [
+      {
+        "paperIndex": 1,
+        "score": 0.52004075050354,
+        "winningRow": 2,
+        "isAbstract": true
+      },
+      {
+        "paperIndex": 2,
+        "score": 0.3989659249782562,
+        "winningRow": 5,
+        "isAbstract": false
+      }
+    ],
+    "hybridHits": [
+      {
+        "paperIndex": 1,
+        "score": 0.03278688524590164,
+        "snippetText": "Matrix stiffness and viscoelasticity regulate organoid morphogenesis and drug response.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT002"
+      },
+      {
+        "paperIndex": 2,
+        "score": 0.016129032258064516,
+        "snippetText": "Stiffer gels promoted chemoresistance through integrin beta 1 signaling.",
+        "snippetPage": 4,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT004A"
+      }
+    ]
+  },
+  {
+    "query": "wang2024engineered",
+    "queryVec": [
+      -0.41828100035260707,
+      -0.5268774212109519,
+      -0.40512601712031304,
+      0.10534157964623087,
+      0.22200729434294164,
+      -0.15923293492388904,
+      0.365305069165856,
+      -0.40512601712031304
+    ],
+    "keywordRes": [
+      {
+        "paperIndex": 2,
+        "score": 5.375278407684165,
+        "metadataScore": 5.375278407684165,
+        "bestChunkScore": 0
+      }
+    ],
+    "keywordHits": [
+      {
+        "paperIndex": 2,
+        "score": 5.375278407684165,
+        "snippetText": "Engineered matrices reveal stiffness-mediated chemoresistance in patient-derived pancreatic cancer organoids.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT004A"
+      }
+    ],
+    "semanticList": [
+      {
+        "paperIndex": 3,
+        "score": 0.3653050661087036,
+        "winningRow": 6,
+        "isAbstract": true
+      },
+      {
+        "paperIndex": 2,
+        "score": 0.22200728952884674,
+        "winningRow": 4,
+        "isAbstract": true
+      },
+      {
+        "paperIndex": 1,
+        "score": 0.10534157603979111,
+        "winningRow": 3,
+        "isAbstract": false
+      }
+    ],
+    "hybridHits": [
+      {
+        "paperIndex": 2,
+        "score": 0.03252247488101534,
+        "snippetText": "Engineered matrices reveal stiffness-mediated chemoresistance in patient-derived pancreatic cancer organoids.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT004A"
+      },
+      {
+        "paperIndex": 3,
+        "score": 0.01639344262295082,
+        "snippetText": "A continuum mechanics approach to cell viscoelasticity without experiment.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT005"
+      },
+      {
+        "paperIndex": 1,
+        "score": 0.015873015873015872,
+        "snippetText": "Organoid growth required permissive matrix degradation and stress relaxation.",
+        "snippetPage": 3,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT002"
+      }
+    ]
+  },
+  {
+    "query": "johnson2020theoretical",
+    "queryVec": [
+      0.6898189775359858,
+      -0.22599173927629046,
+      -0.10024515535886444,
+      0.09162908692328349,
+      -0.06263321574843367,
+      -0.23044648673369608,
+      -0.6285461936458017,
+      0.050335978755236085
+    ],
+    "keywordRes": [
+      {
+        "paperIndex": 3,
+        "score": 5.375278407684165,
+        "metadataScore": 5.375278407684165,
+        "bestChunkScore": 0
+      }
+    ],
+    "keywordHits": [
+      {
+        "paperIndex": 3,
+        "score": 5.375278407684165,
+        "snippetText": "A continuum mechanics approach to cell viscoelasticity without experiment.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT005"
+      }
+    ],
+    "semanticList": [
+      {
+        "paperIndex": 0,
+        "score": 0.6898189783096313,
+        "winningRow": 0,
+        "isAbstract": true
+      },
+      {
+        "paperIndex": 1,
+        "score": 0.09162908792495728,
+        "winningRow": 3,
+        "isAbstract": false
+      },
+      {
+        "paperIndex": 3,
+        "score": 0.05033597722649574,
+        "winningRow": 7,
+        "isAbstract": false
+      }
+    ],
+    "hybridHits": [
+      {
+        "paperIndex": 3,
+        "score": 0.032266458495966696,
+        "snippetText": "Constitutive equations predict frequency-dependent relaxation moduli in biopolymers.",
+        "snippetPage": 2,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT005"
+      },
+      {
+        "paperIndex": 0,
+        "score": 0.01639344262295082,
+        "snippetText": "Faster stress relaxation accelerated neuronal maturation and neural network development.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT001"
+      },
+      {
+        "paperIndex": 1,
+        "score": 0.016129032258064516,
+        "snippetText": "Organoid growth required permissive matrix degradation and stress relaxation.",
+        "snippetPage": 3,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT002"
+      }
+    ]
+  },
+  {
+    "query": "faster stress relaxation",
+    "queryVec": [
+      -0.17076351330295672,
+      0.15036577717698993,
+      -0.0689238572292942,
+      0.21364532934129057,
+      0.591143158193087,
+      -0.41026460313999336,
+      -0.5401953880519736,
+      -0.29708045272777944
+    ],
+    "keywordRes": [
+      {
+        "paperIndex": 0,
+        "score": 4.327235870688838,
+        "metadataScore": 4.327235870688838,
+        "bestChunkScore": 2.9185426348628614,
+        "bestChunkIndex": 0
+      },
+      {
+        "paperIndex": 1,
+        "score": 1.6376087894007965,
+        "metadataScore": 0,
+        "bestChunkScore": 1.6376087894007965,
+        "bestChunkIndex": 1
+      },
+      {
+        "paperIndex": 3,
+        "score": 0.6931471805599453,
+        "metadataScore": 0,
+        "bestChunkScore": 0.6931471805599453,
+        "bestChunkIndex": 3
+      }
+    ],
+    "keywordHits": [
+      {
+        "paperIndex": 0,
+        "score": 4.327235870688838,
+        "snippetText": "Faster stress relaxation accelerated neuronal maturation and neural network development.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT001"
+      },
+      {
+        "paperIndex": 1,
+        "score": 1.6376087894007965,
+        "snippetText": "Organoid growth required permissive matrix degradation and stress relaxation.",
+        "snippetPage": 3,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT002"
+      },
+      {
+        "paperIndex": 3,
+        "score": 0.6931471805599453,
+        "snippetText": "Constitutive equations predict frequency-dependent relaxation moduli in biopolymers.",
+        "snippetPage": 2,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT005"
+      }
+    ],
+    "semanticList": [
+      {
+        "paperIndex": 2,
+        "score": 0.5911431312561035,
+        "winningRow": 4,
+        "isAbstract": true
+      },
+      {
+        "paperIndex": 1,
+        "score": 0.2136453241109848,
+        "winningRow": 3,
+        "isAbstract": false
+      },
+      {
+        "paperIndex": 0,
+        "score": 0.15036576986312866,
+        "winningRow": 1,
+        "isAbstract": false
+      }
+    ],
+    "hybridHits": [
+      {
+        "paperIndex": 0,
+        "score": 0.032266458495966696,
+        "snippetText": "Faster stress relaxation accelerated neuronal maturation and synaptic formation.",
+        "snippetPage": 6,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT001"
+      },
+      {
+        "paperIndex": 1,
+        "score": 0.03225806451612903,
+        "snippetText": "Organoid growth required permissive matrix degradation and stress relaxation.",
+        "snippetPage": 3,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT002"
+      },
+      {
+        "paperIndex": 2,
+        "score": 0.01639344262295082,
+        "snippetText": "Engineered matrices reveal stiffness-mediated chemoresistance in patient-derived pancreatic cancer organoids.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT004A"
+      },
+      {
+        "paperIndex": 3,
+        "score": 0.015873015873015872,
+        "snippetText": "Constitutive equations predict frequency-dependent relaxation moduli in biopolymers.",
+        "snippetPage": 2,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT005"
+      }
+    ]
+  },
+  {
+    "query": "cancer organoids matrix stiffness",
+    "queryVec": [
+      -0.18998938352070985,
+      0.1706335286967069,
+      -0.06744152455901334,
+      -0.3930199458235494,
+      0.3305595632354547,
+      -0.5305504522883242,
+      0.4806605893984928,
+      -0.39241201117355534
+    ],
+    "keywordRes": [
+      {
+        "paperIndex": 1,
+        "score": 14.824182839759132,
+        "metadataScore": 14.824182839759132,
+        "bestChunkScore": 1.2809338454620645,
+        "bestChunkIndex": 1
+      },
+      {
+        "paperIndex": 2,
+        "score": 8.005706132267678,
+        "metadataScore": 8.005706132267678,
+        "bestChunkScore": 0
+      }
+    ],
+    "keywordHits": [
+      {
+        "paperIndex": 1,
+        "score": 14.824182839759132,
+        "snippetText": "Matrix stiffness and viscoelasticity regulate organoid morphogenesis and drug response.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT002"
+      },
+      {
+        "paperIndex": 2,
+        "score": 8.005706132267678,
+        "snippetText": "Engineered matrices reveal stiffness-mediated chemoresistance in patient-derived pancreatic cancer organoids.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT004A"
+      }
+    ],
+    "semanticList": [
+      {
+        "paperIndex": 3,
+        "score": 0.4806605875492096,
+        "winningRow": 6,
+        "isAbstract": true
+      },
+      {
+        "paperIndex": 2,
+        "score": 0.33055955171585083,
+        "winningRow": 4,
+        "isAbstract": true
+      },
+      {
+        "paperIndex": 0,
+        "score": 0.17063352465629578,
+        "winningRow": 1,
+        "isAbstract": false
+      }
+    ],
+    "hybridHits": [
+      {
+        "paperIndex": 2,
+        "score": 0.03225806451612903,
+        "snippetText": "Engineered matrices reveal stiffness-mediated chemoresistance in patient-derived pancreatic cancer organoids.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT004A"
+      },
+      {
+        "paperIndex": 1,
+        "score": 0.01639344262295082,
+        "snippetText": "Matrix stiffness and viscoelasticity regulate organoid morphogenesis and drug response.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT002"
+      },
+      {
+        "paperIndex": 3,
+        "score": 0.01639344262295082,
+        "snippetText": "A continuum mechanics approach to cell viscoelasticity without experiment.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT005"
+      },
+      {
+        "paperIndex": 0,
+        "score": 0.015873015873015872,
+        "snippetText": "Faster stress relaxation accelerated neuronal maturation and synaptic formation.",
+        "snippetPage": 6,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT001"
+      }
+    ]
+  },
+  {
+    "query": "engineered matrices chemoresistance",
+    "queryVec": [
+      0.3525391350136663,
+      -0.69722845353744,
+      0.3235141962640015,
+      0.15202962491998873,
+      0.004433692647068994,
+      0.2331928509728911,
+      -0.3248951824983345,
+      0.31915318710295004
+    ],
+    "keywordRes": [
+      {
+        "paperIndex": 2,
+        "score": 23.499738475145804,
+        "metadataScore": 23.499738475145804,
+        "bestChunkScore": 1.2809338454620645,
+        "bestChunkIndex": 2
+      }
+    ],
+    "keywordHits": [
+      {
+        "paperIndex": 2,
+        "score": 23.499738475145804,
+        "snippetText": "Engineered matrices reveal stiffness-mediated chemoresistance in patient-derived pancreatic cancer organoids.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT004A"
+      }
+    ],
+    "semanticList": [
+      {
+        "paperIndex": 0,
+        "score": 0.3525391221046448,
+        "winningRow": 0,
+        "isAbstract": true
+      },
+      {
+        "paperIndex": 1,
+        "score": 0.3235141932964325,
+        "winningRow": 2,
+        "isAbstract": true
+      },
+      {
+        "paperIndex": 3,
+        "score": 0.31915318965911865,
+        "winningRow": 7,
+        "isAbstract": false
+      },
+      {
+        "paperIndex": 2,
+        "score": 0.23319284617900848,
+        "winningRow": 5,
+        "isAbstract": false
+      }
+    ],
+    "hybridHits": [
+      {
+        "paperIndex": 2,
+        "score": 0.032018442622950824,
+        "snippetText": "Stiffer gels promoted chemoresistance through integrin beta 1 signaling.",
+        "snippetPage": 4,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT004A"
+      },
+      {
+        "paperIndex": 0,
+        "score": 0.01639344262295082,
+        "snippetText": "Faster stress relaxation accelerated neuronal maturation and neural network development.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT001"
+      },
+      {
+        "paperIndex": 1,
+        "score": 0.016129032258064516,
+        "snippetText": "Matrix stiffness and viscoelasticity regulate organoid morphogenesis and drug response.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT002"
+      },
+      {
+        "paperIndex": 3,
+        "score": 0.015873015873015872,
+        "snippetText": "Constitutive equations predict frequency-dependent relaxation moduli in biopolymers.",
+        "snippetPage": 2,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT005"
+      }
+    ]
+  },
+  {
+    "query": "cellular viscoelasticity models",
+    "queryVec": [
+      0.5424068428862417,
+      0.10247568141602471,
+      0.49361584074079456,
+      -0.12711066030551005,
+      -0.4744576153998592,
+      0.19620521648075287,
+      0.3970958685068432,
+      0.11911418364146746
+    ],
+    "keywordRes": [
+      {
+        "paperIndex": 3,
+        "score": 15.773728337065112,
+        "metadataScore": 15.773728337065112,
+        "bestChunkScore": 0
+      },
+      {
+        "paperIndex": 0,
+        "score": 2.308683932722081,
+        "metadataScore": 2.308683932722081,
+        "bestChunkScore": 0
+      },
+      {
+        "paperIndex": 1,
+        "score": 1.468173833393248,
+        "metadataScore": 1.468173833393248,
+        "bestChunkScore": 0
+      }
+    ],
+    "keywordHits": [
+      {
+        "paperIndex": 3,
+        "score": 15.773728337065112,
+        "snippetText": "A continuum mechanics approach to cell viscoelasticity without experiment.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT005"
+      },
+      {
+        "paperIndex": 0,
+        "score": 2.308683932722081,
+        "snippetText": "Faster stress relaxation accelerated neuronal maturation and neural network development.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT001"
+      },
+      {
+        "paperIndex": 1,
+        "score": 1.468173833393248,
+        "snippetText": "Matrix stiffness and viscoelasticity regulate organoid morphogenesis and drug response.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT002"
+      }
+    ],
+    "semanticList": [
+      {
+        "paperIndex": 0,
+        "score": 0.5424068570137024,
+        "winningRow": 0,
+        "isAbstract": true
+      },
+      {
+        "paperIndex": 1,
+        "score": 0.4936158359050751,
+        "winningRow": 2,
+        "isAbstract": true
+      },
+      {
+        "paperIndex": 3,
+        "score": 0.39709585905075073,
+        "winningRow": 6,
+        "isAbstract": true
+      },
+      {
+        "paperIndex": 2,
+        "score": 0.19620521366596222,
+        "winningRow": 5,
+        "isAbstract": false
+      }
+    ],
+    "hybridHits": [
+      {
+        "paperIndex": 0,
+        "score": 0.03252247488101534,
+        "snippetText": "Faster stress relaxation accelerated neuronal maturation and neural network development.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT001"
+      },
+      {
+        "paperIndex": 3,
+        "score": 0.032266458495966696,
+        "snippetText": "A continuum mechanics approach to cell viscoelasticity without experiment.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT005"
+      },
+      {
+        "paperIndex": 1,
+        "score": 0.03200204813108039,
+        "snippetText": "Matrix stiffness and viscoelasticity regulate organoid morphogenesis and drug response.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT002"
+      },
+      {
+        "paperIndex": 2,
+        "score": 0.015625,
+        "snippetText": "Stiffer gels promoted chemoresistance through integrin beta 1 signaling.",
+        "snippetPage": 4,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT004A"
+      }
+    ]
+  },
+  {
+    "query": "integrin signaling",
+    "queryVec": [
+      0.028517814589844183,
+      0.016653218906475656,
+      0.4732509115922267,
+      0.43222672707261817,
+      -0.5155586446046269,
+      0.5249713335517652,
+      -0.15101441690190426,
+      -0.15466759338138805
+    ],
+    "keywordRes": [
+      {
+        "paperIndex": 2,
+        "score": 3.58351893845611,
+        "metadataScore": 0,
+        "bestChunkScore": 3.58351893845611,
+        "bestChunkIndex": 2
+      }
+    ],
+    "keywordHits": [
+      {
+        "paperIndex": 2,
+        "score": 3.58351893845611,
+        "snippetText": "Stiffer gels promoted chemoresistance through integrin beta 1 signaling.",
+        "snippetPage": 4,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT004A"
+      }
+    ],
+    "semanticList": [
+      {
+        "paperIndex": 2,
+        "score": 0.5249713063240051,
+        "winningRow": 5,
+        "isAbstract": false
+      },
+      {
+        "paperIndex": 1,
+        "score": 0.4732509255409241,
+        "winningRow": 2,
+        "isAbstract": true
+      },
+      {
+        "paperIndex": 0,
+        "score": 0.028517814353108406,
+        "winningRow": 0,
+        "isAbstract": true
+      }
+    ],
+    "hybridHits": [
+      {
+        "paperIndex": 2,
+        "score": 0.03278688524590164,
+        "snippetText": "Stiffer gels promoted chemoresistance through integrin beta 1 signaling.",
+        "snippetPage": 4,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT004A"
+      },
+      {
+        "paperIndex": 1,
+        "score": 0.016129032258064516,
+        "snippetText": "Matrix stiffness and viscoelasticity regulate organoid morphogenesis and drug response.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT002"
+      },
+      {
+        "paperIndex": 0,
+        "score": 0.015873015873015872,
+        "snippetText": "Faster stress relaxation accelerated neuronal maturation and neural network development.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT001"
+      }
+    ]
+  },
+  {
+    "query": "human neural maturation",
+    "queryVec": [
+      -0.2984534103331214,
+      0.3467230037219134,
+      0.08910219880132109,
+      -0.3192946837808867,
+      0.4143110587347597,
+      0.3874139522206089,
+      -0.2013298887859739,
+      0.5643965589414365
+    ],
+    "keywordRes": [
+      {
+        "paperIndex": 0,
+        "score": 19.323953035693485,
+        "metadataScore": 19.323953035693485,
+        "bestChunkScore": 1.2809338454620645,
+        "bestChunkIndex": 0
+      }
+    ],
+    "keywordHits": [
+      {
+        "paperIndex": 0,
+        "score": 19.323953035693485,
+        "snippetText": "Faster stress relaxation accelerated neuronal maturation and neural network development.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT001"
+      }
+    ],
+    "semanticList": [
+      {
+        "paperIndex": 3,
+        "score": 0.5643965601921082,
+        "winningRow": 7,
+        "isAbstract": false
+      },
+      {
+        "paperIndex": 2,
+        "score": 0.4143110513687134,
+        "winningRow": 4,
+        "isAbstract": true
+      },
+      {
+        "paperIndex": 0,
+        "score": 0.3467229902744293,
+        "winningRow": 1,
+        "isAbstract": false
+      },
+      {
+        "paperIndex": 1,
+        "score": 0.08910220116376877,
+        "winningRow": 2,
+        "isAbstract": true
+      }
+    ],
+    "hybridHits": [
+      {
+        "paperIndex": 0,
+        "score": 0.032266458495966696,
+        "snippetText": "Faster stress relaxation accelerated neuronal maturation and synaptic formation.",
+        "snippetPage": 6,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT001"
+      },
+      {
+        "paperIndex": 3,
+        "score": 0.01639344262295082,
+        "snippetText": "Constitutive equations predict frequency-dependent relaxation moduli in biopolymers.",
+        "snippetPage": 2,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT005"
+      },
+      {
+        "paperIndex": 2,
+        "score": 0.016129032258064516,
+        "snippetText": "Engineered matrices reveal stiffness-mediated chemoresistance in patient-derived pancreatic cancer organoids.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT004A"
+      },
+      {
+        "paperIndex": 1,
+        "score": 0.015625,
+        "snippetText": "Matrix stiffness and viscoelasticity regulate organoid morphogenesis and drug response.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT002"
+      }
+    ]
+  },
+  {
+    "query": "permissive matrix degradation",
+    "queryVec": [
+      -0.16487823049711667,
+      0.17915840514751444,
+      0.41727884828912665,
+      0.34311596594837773,
+      0.436573734476564,
+      0.12554408687846272,
+      0.30002078867694415,
+      -0.5937144217817641
+    ],
+    "keywordRes": [
+      {
+        "paperIndex": 1,
+        "score": 4.864452783918175,
+        "metadataScore": 1.991222868786924,
+        "bestChunkScore": 4.864452783918175,
+        "bestChunkIndex": 1
+      }
+    ],
+    "keywordHits": [
+      {
+        "paperIndex": 1,
+        "score": 4.864452783918175,
+        "snippetText": "Organoid growth required permissive matrix degradation and stress relaxation.",
+        "snippetPage": 3,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT002"
+      }
+    ],
+    "semanticList": [
+      {
+        "paperIndex": 2,
+        "score": 0.43657374382019043,
+        "winningRow": 4,
+        "isAbstract": true
+      },
+      {
+        "paperIndex": 1,
+        "score": 0.41727885603904724,
+        "winningRow": 2,
+        "isAbstract": true
+      },
+      {
+        "paperIndex": 3,
+        "score": 0.3000207841396332,
+        "winningRow": 6,
+        "isAbstract": true
+      },
+      {
+        "paperIndex": 0,
+        "score": 0.17915840446949005,
+        "winningRow": 1,
+        "isAbstract": false
+      }
+    ],
+    "hybridHits": [
+      {
+        "paperIndex": 1,
+        "score": 0.03252247488101534,
+        "snippetText": "Matrix stiffness and viscoelasticity regulate organoid morphogenesis and drug response.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT002"
+      },
+      {
+        "paperIndex": 2,
+        "score": 0.01639344262295082,
+        "snippetText": "Engineered matrices reveal stiffness-mediated chemoresistance in patient-derived pancreatic cancer organoids.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT004A"
+      },
+      {
+        "paperIndex": 3,
+        "score": 0.015873015873015872,
+        "snippetText": "A continuum mechanics approach to cell viscoelasticity without experiment.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT005"
+      },
+      {
+        "paperIndex": 0,
+        "score": 0.015625,
+        "snippetText": "Faster stress relaxation accelerated neuronal maturation and synaptic formation.",
+        "snippetPage": 6,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT001"
+      }
+    ]
+  },
+  {
+    "query": "continuum mechanics",
+    "queryVec": [
+      -0.32624745090811763,
+      -0.1296364110379112,
+      0.37097326777738465,
+      0.03954583705838763,
+      -0.45387576404577606,
+      0.3571904140074677,
+      0.20884218162629173,
+      0.6003071757039834
+    ],
+    "keywordRes": [
+      {
+        "paperIndex": 3,
+        "score": 9.4377825507854,
+        "metadataScore": 9.4377825507854,
+        "bestChunkScore": 0
+      }
+    ],
+    "keywordHits": [
+      {
+        "paperIndex": 3,
+        "score": 9.4377825507854,
+        "snippetText": "A continuum mechanics approach to cell viscoelasticity without experiment.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT005"
+      }
+    ],
+    "semanticList": [
+      {
+        "paperIndex": 3,
+        "score": 0.6003071665763855,
+        "winningRow": 7,
+        "isAbstract": false
+      },
+      {
+        "paperIndex": 1,
+        "score": 0.37097325921058655,
+        "winningRow": 2,
+        "isAbstract": true
+      },
+      {
+        "paperIndex": 2,
+        "score": 0.35719040036201477,
+        "winningRow": 5,
+        "isAbstract": false
+      }
+    ],
+    "hybridHits": [
+      {
+        "paperIndex": 3,
+        "score": 0.03278688524590164,
+        "snippetText": "Constitutive equations predict frequency-dependent relaxation moduli in biopolymers.",
+        "snippetPage": 2,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT005"
+      },
+      {
+        "paperIndex": 1,
+        "score": 0.016129032258064516,
+        "snippetText": "Matrix stiffness and viscoelasticity regulate organoid morphogenesis and drug response.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT002"
+      },
+      {
+        "paperIndex": 2,
+        "score": 0.015873015873015872,
+        "snippetText": "Stiffer gels promoted chemoresistance through integrin beta 1 signaling.",
+        "snippetPage": 4,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT004A"
+      }
+    ]
+  },
+  {
+    "query": "drug response organoid",
+    "queryVec": [
+      0.3226622324851836,
+      -0.5178504260393383,
+      0.1687539590152028,
+      -0.42536489080091705,
+      0.10935407401035947,
+      -0.07098843399857323,
+      0.40599349973151644,
+      0.4862904871377751
+    ],
+    "keywordRes": [
+      {
+        "paperIndex": 1,
+        "score": 12.386556556039299,
+        "metadataScore": 12.386556556039299,
+        "bestChunkScore": 1.2809338454620645,
+        "bestChunkIndex": 1
+      },
+      {
+        "paperIndex": 2,
+        "score": 1.7385177338527433,
+        "metadataScore": 1.7385177338527433,
+        "bestChunkScore": 0
+      }
+    ],
+    "keywordHits": [
+      {
+        "paperIndex": 1,
+        "score": 12.386556556039299,
+        "snippetText": "Matrix stiffness and viscoelasticity regulate organoid morphogenesis and drug response.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT002"
+      },
+      {
+        "paperIndex": 2,
+        "score": 1.7385177338527433,
+        "snippetText": "Engineered matrices reveal stiffness-mediated chemoresistance in patient-derived pancreatic cancer organoids.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT004A"
+      }
+    ],
+    "semanticList": [
+      {
+        "paperIndex": 3,
+        "score": 0.48629048466682434,
+        "winningRow": 7,
+        "isAbstract": false
+      },
+      {
+        "paperIndex": 0,
+        "score": 0.32266223430633545,
+        "winningRow": 0,
+        "isAbstract": true
+      },
+      {
+        "paperIndex": 1,
+        "score": 0.1687539517879486,
+        "winningRow": 2,
+        "isAbstract": true
+      },
+      {
+        "paperIndex": 2,
+        "score": 0.10935407131910324,
+        "winningRow": 4,
+        "isAbstract": true
+      }
+    ],
+    "hybridHits": [
+      {
+        "paperIndex": 1,
+        "score": 0.032266458495966696,
+        "snippetText": "Matrix stiffness and viscoelasticity regulate organoid morphogenesis and drug response.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT002"
+      },
+      {
+        "paperIndex": 2,
+        "score": 0.031754032258064516,
+        "snippetText": "Engineered matrices reveal stiffness-mediated chemoresistance in patient-derived pancreatic cancer organoids.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT004A"
+      },
+      {
+        "paperIndex": 3,
+        "score": 0.01639344262295082,
+        "snippetText": "Constitutive equations predict frequency-dependent relaxation moduli in biopolymers.",
+        "snippetPage": 2,
+        "isAbstract": false,
+        "winningAttachmentKey": "ATT005"
+      },
+      {
+        "paperIndex": 0,
+        "score": 0.016129032258064516,
+        "snippetText": "Faster stress relaxation accelerated neuronal maturation and neural network development.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT001"
+      }
+    ]
+  },
+  {
+    "query": "tunable hydrogel",
+    "queryVec": [
+      0.2191922359446067,
+      0.10988987833997865,
+      0.27961286836806376,
+      0.15609250896795085,
+      -0.020093209148990966,
+      -0.04867021771644478,
+      0.6656609931522446,
+      -0.6256625814895748
+    ],
+    "keywordRes": [
+      {
+        "paperIndex": 0,
+        "score": 8.759712960670491,
+        "metadataScore": 8.759712960670491,
+        "bestChunkScore": 0
+      }
+    ],
+    "keywordHits": [
+      {
+        "paperIndex": 0,
+        "score": 8.759712960670491,
+        "snippetText": "Faster stress relaxation accelerated neuronal maturation and neural network development.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT001"
+      }
+    ],
+    "semanticList": [
+      {
+        "paperIndex": 3,
+        "score": 0.6656609773635864,
+        "winningRow": 6,
+        "isAbstract": true
+      },
+      {
+        "paperIndex": 1,
+        "score": 0.27961286902427673,
+        "winningRow": 2,
+        "isAbstract": true
+      },
+      {
+        "paperIndex": 0,
+        "score": 0.219192236661911,
+        "winningRow": 0,
+        "isAbstract": true
+      }
+    ],
+    "hybridHits": [
+      {
+        "paperIndex": 0,
+        "score": 0.032266458495966696,
+        "snippetText": "Faster stress relaxation accelerated neuronal maturation and neural network development.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT001"
+      },
+      {
+        "paperIndex": 3,
+        "score": 0.01639344262295082,
+        "snippetText": "A continuum mechanics approach to cell viscoelasticity without experiment.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT005"
+      },
+      {
+        "paperIndex": 1,
+        "score": 0.016129032258064516,
+        "snippetText": "Matrix stiffness and viscoelasticity regulate organoid morphogenesis and drug response.",
+        "isAbstract": true,
+        "winningAttachmentKey": "ATT002"
+      }
+    ]
+  }
+]

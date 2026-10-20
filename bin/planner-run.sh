@@ -5,6 +5,10 @@
 ROOT="${0:A:h:h}"
 cd "$ROOT" || exit 1
 
+# launchd starts jobs with a minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin), which hides Homebrew tools
+# such as pdftotext (poppler) and ollama. Add the Homebrew prefixes.
+export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:$PATH"
+
 if "$ROOT/.venv/bin/python" -c 'import tomllib' 2>/dev/null; then
   exec "$ROOT/.venv/bin/python" -m planner "$@"
 fi
