@@ -49,8 +49,16 @@ export function cleanMarkdown(text: string): string {
   // 10. Wikilinks without alias: [[target]] -> target
   s = s.replace(/\[\[([^\]\n]+)\]\]/g, "$1");
 
-  // 11. Remove Markdown markers: #, >, -, *, _, backticks
-  s = s.replace(/[#>\-*_`]/g, " ");
+  // 11. Remove Markdown markers only where they are markup, so N-cadherin and snake_case survive:
+  //     rules, heading/quote/list/task markers at line starts, then paired emphasis and code spans.
+  s = s.replace(/^[ \t]*([-*_])([ \t]*\1){2,}[ \t]*$/gm, " ");
+  s = s.replace(/^[ \t]*#{1,6}[ \t]+/gm, "");
+  s = s.replace(/^[ \t]*(>[ \t]?)+/gm, "");
+  s = s.replace(/^[ \t]*([-*+]|\d+[.)])[ \t]+(\[[ xX]\][ \t]+)?/gm, "");
+  s = s.replace(/(\*\*|__|~~|==)(?=\S)([^\n]*?\S)\1/g, "$2");
+  s = s.replace(/\*(?=\S)([^*\n]*?\S)\*/g, "$1");
+  s = s.replace(/(^|[^\w])_(?=\S)([^_\n]*?\S)_(?!\w)/g, "$1$2");
+  s = s.replace(/`+([^`\n]*?)`+/g, "$1");
 
   // 12. Collapse whitespace
   s = s.replace(/\s+/g, " ").trim();

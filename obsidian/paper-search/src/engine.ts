@@ -111,6 +111,8 @@ export function semantic(
   if (!ix.vectors || ix.vectors.length === 0 || ix.totalRows === 0) {
     return [];
   }
+  // A query embedded with different dims than the index cannot be compared.
+  if (qVec.length !== ix.dims) return [];
 
   const limit = opts?.limit ?? 10;
   const exclude = opts?.exclude;
@@ -121,7 +123,8 @@ export function semantic(
   const { tokens } = tokenize(query);
 
   // Per-paper tracking
-  const paperMaxScore = new Float32Array(ix.papers.length);
+  // Float64: dot products are summed in doubles, and Float32 rounding would merge close scores.
+  const paperMaxScore = new Float64Array(ix.papers.length);
   const paperWinningRow = new Int32Array(ix.papers.length);
   paperWinningRow.fill(-1);
 

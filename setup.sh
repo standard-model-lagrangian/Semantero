@@ -1,0 +1,1 @@
+setup-search.sh

@@ -602,6 +602,23 @@ class TestSearchIndex(unittest.TestCase):
         # Full rebuild occurred: everything re-embedded
         self.assertTrue(mock_embed.call_count > 0)
 
+    def test_rebuild_preserves_watcher_fingerprint(self):
+        """The watcher's fingerprint in state.json survives full and dims-change rebuilds."""
+        from planner import searchindex
+
+        searchindex.build_index(self.cfg, full=True, embed_fn=self.fake_embed)
+        state_file = self.data_dir / "search" / "state.json"
+        state = json.loads(state_file.read_text())
+        state["fingerprint"] = "fp-123"
+        state_file.write_text(json.dumps(state))
+
+        searchindex.build_index(self.cfg, full=True, embed_fn=self.fake_embed)
+        self.assertEqual(json.loads(state_file.read_text()).get("fingerprint"), "fp-123")
+
+        self.cfg.search["dims"] = 16  # state no longer reusable: everything re-embedded
+        searchindex.build_index(self.cfg, full=False, embed_fn=self.fake_embed)
+        self.assertEqual(json.loads(state_file.read_text()).get("fingerprint"), "fp-123")
+
     # 26. Atomic write never leaves partial index
     def test_atomic_write_never_leaves_partial_index(self):
         import json

@@ -273,3 +273,81 @@ test("X6 onload returns before load finishes and search returns loading row", as
   assert.strictEqual(store.isReady(), true);
   assert.notStrictEqual(store.getIndex(), null);
 });
+
+// --- 20 Oct review: vectors size, dims and malformed-index retries ---
+
+function filesWith(adapter: FakeIndexAdapter, overrides: { manifest?: any; chunks?: string; vectors?: ArrayBuffer } = {}) {
+  const sample = createSampleFiles();
+  adapter.files.set(".planner/search/manifest.json", JSON.stringify({ ...sample.manifest, ...overrides.manifest }));
+  adapter.files.set(".planner/search/papers.json", JSON.stringify(sample.papers));
+  adapter.files.set(".planner/search/chunks.json", overrides.chunks ?? JSON.stringify(sample.chunks));
+  adapter.files.set(".planner/search/vectors.f32", overrides.vectors ?? sample.vectors);
+}
+
+test("X7 vectors.f32 truncated at a row boundary -> keyword-only and one notice", async () => {
+  const adapter = new FakeIndexAdapter();
+  filesWith(adapter, { vectors: new Float32Array(12).fill(0.5).buffer }); // 3 of 4 rows
+  const store = new IndexStore(adapter, ".planner/search");
+  assert.strictEqual(await store.load(), true);
+  assert.strictEqual(store.getIndex()!.vectors, null);
+  assert.strictEqual(adapter.notices.filter((n) => n.includes("keyword-only")).length, 1);
+  await store.load();
+  assert.strictEqual(adapter.notices.filter((n) => n.includes("keyword-only")).length, 1, "notice shown once");
+});
+
+test("X8 vectors.f32 with extra whole rows -> keyword-only", async () => {
+  const adapter = new FakeIndexAdapter();
+  filesWith(adapter, { vectors: new Float32Array(20).fill(0.5).buffer }); // 5 rows, 4 expected
+  const store = new IndexStore(adapter, ".planner/search");
+  await store.load();
+  assert.strictEqual(store.getIndex()!.vectors, null);
+});
+
+test("X9 dims mismatch (manifest dims vs file size, or invalid dims) -> keyword-only", async () => {
+  for (const dims of [8, 2, 0, -4, "4", 2.5]) {
+    const adapter = new FakeIndexAdapter();
+    filesWith(adapter, { manifest: { dims } }); // file holds 4 rows x 4 dims
+    const store = new IndexStore(adapter, ".planner/search");
+    assert.strictEqual(await store.load(), true, `dims=${dims}`);
+    assert.strictEqual(store.getIndex()!.vectors, null, `dims=${dims}`);
+    assert.strictEqual(adapter.notices.filter((n) => n.includes("keyword-only")).length, 1, `dims=${dims}`);
+  }
+});
+
+test("X10 a correct vectors.f32 still loads", async () => {
+  const adapter = new FakeIndexAdapter();
+  filesWith(adapter);
+  const store = new IndexStore(adapter, ".planner/search");
+  await store.load();
+  assert.strictEqual(store.getIndex()!.vectors!.length, 16);
+  assert.deepStrictEqual(adapter.notices, []);
+});
+
+test("X11 a malformed chunks.json is not re-read every 10 s for the same content_hash", async () => {
+  const adapter = new FakeIndexAdapter();
+  filesWith(adapter);
+  let now = 100000;
+  const store = new IndexStore(adapter, ".planner/search", () => now);
+  await store.load();
+  const goodId = store.getIndex()!.id;
+
+  filesWith(adapter, { manifest: { content_hash: "hash_bad" }, chunks: "{ malformed" });
+  const chunks = ".planner/search/chunks.json";
+  const before = adapter.getReadCount(chunks);
+  now += 11000;
+  await store.ensureFresh();
+  assert.strictEqual(adapter.getReadCount(chunks), before + 1);
+  for (let i = 0; i < 5; i++) {
+    now += 11000;
+    await store.ensureFresh();
+  }
+  assert.strictEqual(adapter.getReadCount(chunks), before + 1, "failed content_hash remembered");
+  assert.strictEqual(store.getIndex()!.id, goodId, "previous index kept");
+  assert.strictEqual(adapter.notices.filter((n) => n.includes("malformed")).length, 1);
+
+  // A new build (new content_hash) is tried again and loads.
+  filesWith(adapter, { manifest: { content_hash: "hash_fixed" } });
+  now += 11000;
+  assert.strictEqual(await store.ensureFresh(), true);
+  assert.notStrictEqual(store.getIndex()!.id, goodId);
+});

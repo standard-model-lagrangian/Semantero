@@ -200,9 +200,13 @@ def build_index(cfg, full: bool = False, limit: int | None = None, embed_fn=None
             prev_vecs: array.array | None = None
             prev_chunks_by_row: dict[int, dict] = {}
 
+            # The watcher records its Zotero fingerprint in state.json; keep it across rebuilds.
+            old_state = load_json(search_dir / "state.json") if search_dir.exists() else None
+            watcher_fingerprint = old_state.get("fingerprint") if isinstance(old_state, dict) else None
+
             if not full and search_dir.exists():
                 prev_manifest = load_json(search_dir / "manifest.json")
-                state_data = load_json(search_dir / "state.json")
+                state_data = old_state
                 if (
                     state_data
                     and state_data.get("model") == model
@@ -439,6 +443,8 @@ def build_index(cfg, full: bool = False, limit: int | None = None, embed_fn=None
                 "abstracts": state_abstracts,
                 "attachments": state_attachments,
             }
+            if watcher_fingerprint is not None:
+                state_data["fingerprint"] = watcher_fingerprint
 
             # Write files to search.tmp
             tmp_dir.mkdir(parents=True, exist_ok=True)

@@ -110,6 +110,51 @@ function escapeYamlString(val: string): string {
     .replace(/\r?\n/g, " ");
 }
 
+const PLACEHOLDER_RE = /\{\{\s*([a-zA-Z0-9_-]+)\s*\}\}/g;
+
+/** A plain (unquoted) YAML scalar that would parse differently, or not at all, without quotes. */
+function needsYamlQuotes(val: string): boolean {
+  return (
+    val === "" ||
+    /^[\s\-?:,\[\]{}#&*!|>'"%@`]/.test(val) ||
+    /\s$/.test(val) ||
+    /:(\s|$)/.test(val) ||
+    /\s#/.test(val) ||
+    /^(true|false|yes|no|on|off|null|~)$/i.test(val)
+  );
+}
+
+/**
+ * Renders one frontmatter line. A placeholder inside "..." is escaped for double quotes, inside
+ * '...' for single quotes; elsewhere it goes in as-is (line breaks become spaces). A `key: value`
+ * line whose unquoted value came from a placeholder is then quoted once if YAML needs it.
+ * List items and lines without placeholders are left alone.
+ */
+function renderFrontmatterLine(line: string, lookup: (name: string) => string): string {
+  PLACEHOLDER_RE.lastIndex = 0;
+  if (!PLACEHOLDER_RE.test(line)) return line;
+
+  const substitute = (text: string, offset: number): string =>
+    text.replace(PLACEHOLDER_RE, (_m, name: string, pos: number) => {
+      const before = line.slice(0, offset + pos);
+      const inDouble = (before.replace(/\\./g, "").match(/"/g) || []).length % 2 === 1;
+      const inSingle = !inDouble && (before.match(/'/g) || []).length % 2 === 1;
+      const val = lookup(name);
+      if (inDouble) return escapeYamlString(val);
+      if (inSingle) return val.replace(/\r?\n/g, " ").replace(/'/g, "''");
+      return val.replace(/\r?\n/g, " ");
+    });
+
+  const kv = line.match(/^(\s*[^\s\-#][^:]*:)(\s*)(.*)$/);
+  // Values already quoted, flow collections and block scalars are left to the per-placeholder rules.
+  if (kv && !/^(["'\[|>]|\{(?!\{))/.test(kv[3])) {
+    const [, key, , rest] = kv;
+    const value = substitute(rest, line.length - rest.length);
+    return needsYamlQuotes(value) ? `${key} "${escapeYamlString(value)}"` : `${key} ${value}`;
+  }
+  return substitute(line, 0);
+}
+
 export function renderTemplate(
   templateText: string,
   paper: PaperMetadata,
@@ -149,50 +194,25 @@ export function renderTemplate(
     bodyText = templateText.slice(fmMatch[0].length);
   }
 
-  // Render frontmatter with YAML escaping
-  if (hasFrontmatter) {
-    const fmLines = frontmatterText.split(/\r?\n/);
-    const renderedFmLines = fmLines.map((line) => {
-      // Find all placeholders on this line
-      return line.replace(/\{\{\s*([a-zA-Z0-9_-]+)\s*\}\}/g, (_match, name) => {
-        const val = rawValues[name];
-        if (val === undefined) {
-          options?.onUnknownPlaceholder?.(name);
-          return "";
-        }
-        return escapeYamlString(val);
-      });
-    });
-
-    // Handle placeholders that weren't double-quoted in frontmatter:
-    // If a line is `key: {{placeholder}}` and placeholder was expanded without quotes,
-    // ensure quotes if contains colon or special yaml chars.
-    const quotedFmLines = renderedFmLines.map((line) => {
-      const colonIdx = line.indexOf(":");
-      if (colonIdx > 0) {
-        const key = line.slice(0, colonIdx).trim();
-        const rawRest = line.slice(colonIdx + 1).trim();
-        // If not quoted and has content
-        if (rawRest && !rawRest.startsWith('"') && !rawRest.startsWith("[") && !rawRest.startsWith("{")) {
-          // If it contains quotes or colons or was a substituted string, wrap in quotes
-          return `${line.slice(0, colonIdx + 1)} "${escapeYamlString(rawRest)}"`;
-        }
-      }
-      return line;
-    });
-
-    frontmatterText = quotedFmLines.join("\n");
-  }
-
-  // Render body without escaping (single pass)
-  const renderedBody = bodyText.replace(/\{\{\s*([a-zA-Z0-9_-]+)\s*\}\}/g, (_match, name) => {
+  const lookup = (name: string): string => {
     const val = rawValues[name];
     if (val === undefined) {
       options?.onUnknownPlaceholder?.(name);
       return "";
     }
     return val;
-  });
+  };
+
+  // Render frontmatter with YAML escaping, applied exactly once per value
+  if (hasFrontmatter) {
+    frontmatterText = frontmatterText
+      .split(/\r?\n/)
+      .map((line) => renderFrontmatterLine(line, lookup))
+      .join("\n");
+  }
+
+  // Render body without escaping (single pass)
+  const renderedBody = bodyText.replace(PLACEHOLDER_RE, (_match, name) => lookup(name));
 
   if (hasFrontmatter) {
     return `---\n${frontmatterText}\n---\n${renderedBody}`;
@@ -281,7 +301,12 @@ export async function ensureLiteratureNote(
   } catch (err: any) {
     // If file already exists (race condition with another tool), treat as existing
     if (err.message && err.message.toLowerCase().includes("exist")) {
-      const f = vault.getAbstractFileByPath ? vault.getAbstractFileByPath(filePath) : null;
+      // On a case-insensitive disk the other file may differ from ours only in case.
+      const lower = filePath.toLowerCase();
+      const f =
+        (vault.getAbstractFileByPath ? vault.getAbstractFileByPath(filePath) : null) ||
+        vault.getFiles().find((x) => (x.path || "").toLowerCase() === lower) ||
+        findLiteratureNote(vault, metadataCache, paper.citekey);
       return { file: f, created: false };
     }
     // Creation error: show notice and do not fail caller

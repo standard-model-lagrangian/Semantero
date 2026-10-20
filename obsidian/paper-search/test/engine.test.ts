@@ -311,3 +311,19 @@ test("E7 deterministic ties: equal scores are ordered by paper index", () => {
   // Deterministic order across multiple calls
   assert.deepStrictEqual(hits1, hits2);
 });
+
+test("E8 per-paper max scores keep double precision (no Float32 rounding of dot products)", () => {
+  const papers = [0, 1].map((i) => ({ key: `K${i}`, citekey: `p${i}`, title: `P${i}`, authors: [], year: 2020, abstract: "", journal: null, doi: null, tags: [], collections: [], abstractRow: i })) as any;
+  // Row 1 scores 1 + 2^-30, row 0 scores exactly 1. Float32 would round both to 1 and tie-break to paper 0.
+  const vectors = new Float32Array([1, 0, 1, 2 ** -30]);
+  const ix = IndexStore.precomputeIndex({}, papers, [], vectors, 2, 1);
+  const hits = semantic(ix, new Float32Array([1, 1]), "");
+  assert.deepStrictEqual(hits.map((h) => h.paper), [1, 0]);
+  assert.strictEqual(hits[0].score, 1 + 2 ** -30);
+});
+
+test("E9 a query vector whose length differs from the index dims gives no semantic hits", () => {
+  const papers = [{ key: "K", citekey: "p", title: "P", authors: [], year: 2020, abstract: "", journal: null, doi: null, tags: [], collections: [], abstractRow: 0 }] as any;
+  const ix = IndexStore.precomputeIndex({}, papers, [], new Float32Array([1, 1, 1, 1]), 4, 1);
+  assert.deepStrictEqual(semantic(ix, new Float32Array([1, 1]), ""), []);
+});

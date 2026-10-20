@@ -228,8 +228,8 @@ test("I4 semantic results merge in after 250 ms quiet and typing at 100 ms produ
     },
   };
 
-  // Type at 100 ms intervals: "s", "st", "sti", "stiff", "stiff gels"
-  const strokes = ["s", "st", "sti", "stiff", "stiff gels"];
+  // Type at 100 ms intervals: "s", "st", "sti", "stiff", "stiff gels "
+  const strokes = ["s", "st", "sti", "stiff", "stiff gels "];
   for (const q of strokes) {
     await controller.getSuggestions(q, fakeSuggest);
     clock.advance(100);
@@ -257,7 +257,7 @@ test("I5 outdated semantic responses are dropped", async () => {
 
   const embedder = {
     async embedQuery(text: string) {
-      if (text === "stiff g") {
+      if (text === "stiff gel ") {
         return new Promise<Float32Array>((res) => {
           resolveFirst = res;
         });
@@ -287,15 +287,15 @@ test("I5 outdated semantic responses are dropped", async () => {
     },
   };
 
-  // 1. Query "stiff g"
-  await controller.getSuggestions("stiff g", fakeSuggest);
+  // 1. Query "stiff gel "
+  await controller.getSuggestions("stiff gel ", fakeSuggest);
   clock.advance(250);
 
-  // 2. Query "stiff gels" (advances sequence)
-  await controller.getSuggestions("stiff gels", fakeSuggest);
+  // 2. Query "stiff gels " (advances sequence)
+  await controller.getSuggestions("stiff gels ", fakeSuggest);
   clock.advance(250);
 
-  // 3. Resolve "stiff gels" (the newer query) first
+  // 3. Resolve "stiff gels " (the newer query) first
   const v = new Float32Array(4);
   v.fill(1.0);
   resolveSecond!(v);
@@ -303,7 +303,7 @@ test("I5 outdated semantic responses are dropped", async () => {
 
   assert.strictEqual(refreshHistory.length, 1);
 
-  // 4. Resolve "stiff g" (outdated)
+  // 4. Resolve "stiff gel " (outdated)
   resolveFirst!(v);
   await new Promise((r) => setImmediate(r));
 
@@ -528,7 +528,7 @@ test("I11 rows render title cut at 80 chars, first author · year, and snippet w
   const snippetChild1 = container1.children.find((c: any) => c.className === "daito-suggest-snippet");
 
   assert.ok(titleChild1);
-  assert.strictEqual(titleChild1.text.length, 78); // 77 + 1 ("…")
+  assert.strictEqual(titleChild1.text.length, 80); // 79 + "…"
   assert.ok(titleChild1.text.endsWith("…"));
 
   assert.ok(metaChild1);

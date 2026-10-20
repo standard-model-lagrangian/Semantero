@@ -192,3 +192,20 @@ test("R4b cursor sentence survives large removed blocks before or after the curs
     assert.ok(out.includes("MITOCHONDRIA TRANSFER"), "cursor sentence missing");
   }
 });
+
+test("R3b clean-up keeps hyphens and underscores inside words; markers only at line starts or as emphasis pairs", () => {
+  assert.strictEqual(
+    cleanMarkdown("N-cadherin in cell-free extracts of snake_case_gene and [[roth_2023]] data."),
+    "N-cadherin in cell-free extracts of snake_case_gene and roth_2023 data."
+  );
+  assert.strictEqual(
+    cleanMarkdown("## Results\n> quoted - with a dash\n- item one\n* item two\n+ item three\n1. numbered\n- [ ] task"),
+    "Results quoted - with a dash item one item two item three numbered task"
+  );
+  assert.strictEqual(
+    cleanMarkdown("An *italic* and **bold**, _under_ and __strong__, ~~gone~~ and ==marked== and `code`."),
+    "An italic and bold, under and strong, gone and marked and code."
+  );
+  assert.strictEqual(cleanMarkdown("Ratio 3 * 4 and 2*x stay; #hashtag stays."), "Ratio 3 * 4 and 2*x stay; #hashtag stays.");
+  assert.strictEqual(cleanMarkdown("Above\n\n---\n\nBelow"), "Above Below");
+});

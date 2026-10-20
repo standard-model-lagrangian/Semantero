@@ -114,77 +114,72 @@ export function isExcludedContext(
   }
 
   const textBeforeCursor = lineText.slice(0, ch);
-
-  const hasBacktick = textBeforeCursor.includes("`");
-  const hasDollar = textBeforeCursor.includes("$");
-  const hasBracket = textBeforeCursor.includes("[[");
-
-  if (!hasBacktick && !hasDollar && !hasBracket) {
+  if (!/[`$]|\[\[/.test(textBeforeCursor)) {
     return false;
   }
 
-  // 2. Inline code: odd number of backticks before cursor on the line
-  if (hasBacktick) {
-    let backtickCount = 0;
-    for (let i = 0; i < textBeforeCursor.length; i++) {
-      if (textBeforeCursor[i] === "`") {
-        backtickCount++;
+  // 2. One left-to-right scan. Inside a code span only its closing backtick run counts,
+  //    so `$PATH` or `[[x` inside closed code changes nothing.
+  let codeRun = 0; // length of the backtick run that opened the current code span, 0 = none
+  let inSingleMath = false;
+  let inDoubleMath = false;
+  let openLinks = 0;
+  let i = 0;
+  while (i < textBeforeCursor.length) {
+    const c = textBeforeCursor[i];
+
+    if (c === "`" && !inSingleMath && !inDoubleMath) {
+      let run = 1;
+      while (textBeforeCursor[i + run] === "`") run++;
+      if (codeRun === 0) codeRun = run;
+      else if (run === codeRun) codeRun = 0;
+      i += run;
+      continue;
+    }
+    if (codeRun > 0) {
+      i++;
+      continue;
+    }
+
+    if (c === "\\") {
+      i += 2; // escaped character, e.g. \$
+      continue;
+    }
+
+    if (c === "$") {
+      if (textBeforeCursor[i + 1] === "$" && !inSingleMath) {
+        inDoubleMath = !inDoubleMath;
+        i += 2;
+        continue;
+      }
+      if (inSingleMath) {
+        inSingleMath = false;
+      } else if (!inDoubleMath) {
+        // `$` opens inline math only when followed by a non-space, non-digit ($5 is currency).
+        const next = lineText[i + 1];
+        if (next !== undefined && !/[\s\d]/.test(next)) inSingleMath = true;
+      }
+      i++;
+      continue;
+    }
+
+    if (!inSingleMath && !inDoubleMath) {
+      if (c === "[" && textBeforeCursor[i + 1] === "[") {
+        openLinks++;
+        i += 2;
+        continue;
+      }
+      if (c === "]" && textBeforeCursor[i + 1] === "]" && openLinks > 0) {
+        openLinks--;
+        i += 2;
+        continue;
       }
     }
-    if (backtickCount % 2 === 1) {
-      return true;
-    }
+    i++;
   }
 
-  // 3. Inline math / display math: single unescaped $ or display $$
-  if (hasDollar) {
-    let inSingleMath = false;
-    let inDoubleMath = false;
-    for (let i = 0; i < textBeforeCursor.length; i++) {
-      if (textBeforeCursor[i] === "$") {
-        // Check if preceded by an odd number of backslashes (escaped \$)
-        let backslashCount = 0;
-        let j = i - 1;
-        while (j >= 0 && textBeforeCursor[j] === "\\") {
-          backslashCount++;
-          j--;
-        }
-        if (backslashCount % 2 === 1) {
-          // Escaped: ignore
-          continue;
-        }
-
-        // Check if double $$
-        if (
-          i + 1 < textBeforeCursor.length &&
-          textBeforeCursor[i + 1] === "$"
-        ) {
-          inDoubleMath = !inDoubleMath;
-          i++; // skip second $
-          continue;
-        }
-
-        // Single unescaped $
-        inSingleMath = !inSingleMath;
-      }
-    }
-    if (inSingleMath || inDoubleMath) {
-      return true;
-    }
-  }
-
-  // 4. Unclosed [[ or ![[
-  if (hasBracket) {
-    const lastBracketOpen = textBeforeCursor.lastIndexOf("[[");
-    if (lastBracketOpen !== -1) {
-      const lastBracketClose = textBeforeCursor.lastIndexOf("]]");
-      if (lastBracketClose === -1 || lastBracketClose < lastBracketOpen) {
-        return true;
-      }
-    }
-  }
-
-  return false;
+  // An unclosed code span, inline/display math or [[ link before the cursor excludes it.
+  return codeRun > 0 || inSingleMath || inDoubleMath || openLinks > 0;
 }
 
 /**

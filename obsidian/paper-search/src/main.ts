@@ -59,6 +59,8 @@ export const DEFAULT_SETTINGS: PaperSearchSettings = {
 export default class PaperSearchPlugin extends Plugin {
   settings: PaperSearchSettings = DEFAULT_SETTINGS;
   indexStore!: IndexStore;
+  /** Once-per-session literature-note notices, shared by the modal, @@ and the panel. */
+  litNoteNotices = new Set<string>();
   editorTracker = new ActiveEditorTracker();
 
   async onload() {
@@ -114,6 +116,7 @@ export default class PaperSearchPlugin extends Plugin {
       metadataCache: this.app.metadataCache,
       settings: this.settings,
       showNotice: (msg: string) => new Notice(msg),
+      sessionNotices: this.litNoteNotices,
     });
 
     const PaperSearchSuggest = createPaperSearchSuggestClass(EditorSuggest);
@@ -141,6 +144,7 @@ export default class PaperSearchPlugin extends Plugin {
       metadataCache: this.app.metadataCache,
       settings: this.settings,
       showNotice: (msg: string) => new Notice(msg),
+      sessionNotices: this.litNoteNotices,
     });
 
     // The panel needs the last Markdown editor, not the active view (which is the panel itself).

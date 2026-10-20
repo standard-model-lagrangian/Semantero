@@ -1,10 +1,11 @@
 import { keyword, hybridSearch } from "./engine.ts";
 import { findTrigger, isExcludedContext, formatCitation } from "./cite.ts";
+import { shouldRunSemantic } from "./rank.ts";
 import { ensureLiteratureNote, type LitNoteSettings, type VaultLike, type MetadataCacheLike } from "./litnote.ts";
 import type { PaperMetadata } from "./bm25.ts";
 
 export interface SuggestionItem {
-  type: "paper" | "hint" | "loading";
+  type: "paper" | "hint" | "loading" | "footer";
   paper?: PaperMetadata;
   snippet?: string;
   source?: "keyword" | "semantic" | "hybrid";
@@ -123,6 +124,7 @@ export interface InlineSuggestSettings extends LitNoteSettings {
   inlineTrigger?: string;
   inlineLimit?: number;
   inlineShowSnippet?: boolean;
+  minCharsSemantic?: number;
 }
 
 export interface EmbedderLike {
@@ -154,7 +156,9 @@ export class InlineSuggestController {
   private debounceTimer: any = null;
   private currentSeq = 0;
   private ollamaDownNotified = false;
-  private sessionNotices = new Set<string>();
+  /** content_hash (or load id) of the index the query cache was filled from. */
+  private cacheVersion: unknown = undefined;
+  private sessionNotices: Set<string>;
   showNotice?: (msg: string) => void;
   setTimeoutFn: (fn: () => void, ms: number) => any;
   clearTimeoutFn: (id: any) => void;
@@ -168,7 +172,10 @@ export class InlineSuggestController {
     showNotice?: (msg: string) => void;
     setTimeoutFn?: (fn: () => void, ms: number) => any;
     clearTimeoutFn?: (id: any) => void;
+    /** Shared with the search modal so once-per-session notices really show once. */
+    sessionNotices?: Set<string>;
   }) {
+    this.sessionNotices = options.sessionNotices ?? new Set<string>();
     this.indexStore = options.indexStore;
     this.embedder = options.embedder;
     this.vault = options.vault;
@@ -184,13 +191,14 @@ export class InlineSuggestController {
     lineText: string,
     sections?: any[]
   ): { start: { line: number; ch: number }; end: { line: number; ch: number }; query: string } | null {
-    if (isExcludedContext(sections, cursor.line, lineText, cursor.ch)) {
-      return null;
-    }
-
+    // findTrigger first: it is cheap and rejects almost every keystroke.
     const trigger = this.settings.inlineTrigger || "@@";
     const res = findTrigger(lineText, cursor.ch, trigger);
     if (!res) return null;
+
+    if (isExcludedContext(sections, cursor.line, lineText, cursor.ch)) {
+      return null;
+    }
 
     return {
       start: { line: cursor.line, ch: res.start },
@@ -225,14 +233,19 @@ export class InlineSuggestController {
       return [{ type: "hint", message: "Type to search your papers" }];
     }
 
-    // 3. Cached results (adapter fallback or repeated query)
+    // 3. Cached results (adapter fallback or repeated query), dropped when the index changes
+    const index = this.indexStore.getIndex();
+    const version = index?.manifest?.content_hash ?? index?.manifest?.built_at ?? index?.id;
+    if (version !== this.cacheVersion) {
+      this.queryCache.clear();
+      this.cacheVersion = version;
+    }
     if (this.queryCache.has(query)) {
       return this.queryCache.get(query)!;
     }
 
     // 4. Keyword search
     const limit = this.settings.inlineLimit || 8;
-    const index = this.indexStore.getIndex();
     const kwHits = keyword(index, query, limit);
     const initialItems: SuggestionItem[] = kwHits.map((h) => ({
       type: "paper",
@@ -242,11 +255,7 @@ export class InlineSuggestController {
       score: h.score,
     }));
 
-    // Check semantic gating: at least 2 complete tokens or >= 12 chars
-    const tokens = query.trim().split(/\s+/);
-    const isGated = tokens.length >= 2 || query.length >= 12;
-
-    if (isGated && this.embedder) {
+    if (shouldRunSemantic(query, this.settings.minCharsSemantic ?? 12) && this.embedder) {
       const seq = this.currentSeq;
       this.debounceTimer = this.setTimeoutFn(async () => {
         this.debounceTimer = null;
@@ -258,7 +267,7 @@ export class InlineSuggestController {
           }
 
           if (!qVec) {
-            this.handleOllamaDown(initialItems, suggestInstance, query);
+            this.handleOllamaDown(initialItems, suggestInstance);
             return;
           }
 
@@ -274,7 +283,7 @@ export class InlineSuggestController {
           refreshSuggestions(suggestInstance, mergedItems, query, this.queryCache);
         } catch {
           if (seq !== this.currentSeq) return; // failure of an outdated request
-          this.handleOllamaDown(initialItems, suggestInstance, query);
+          this.handleOllamaDown(initialItems, suggestInstance);
         }
       }, 250);
     }
@@ -282,17 +291,15 @@ export class InlineSuggestController {
     return initialItems;
   }
 
-  private handleOllamaDown(
-    items: SuggestionItem[],
-    suggestInstance?: FakeSuggestLike,
-    query?: string
-  ): void {
+  /** Keyword-only results with one footer row. Never cached, so the next query retries semantic. */
+  private handleOllamaDown(items: SuggestionItem[], suggestInstance?: FakeSuggestLike): void {
     if (!this.ollamaDownNotified) {
       this.ollamaDownNotified = true;
       this.showNotice?.("Paper search: Ollama is not running. Using keyword-only search.");
     }
-    const withSemanticOff = items.map((it) => ({ ...it, semanticOff: true }));
-    refreshSuggestions(suggestInstance, withSemanticOff, query, this.queryCache);
+    const withSemanticOff: SuggestionItem[] = items.map((it) => ({ ...it, semanticOff: true }));
+    withSemanticOff.push({ type: "footer", message: "Semantic search unavailable" });
+    refreshSuggestions(suggestInstance, withSemanticOff);
   }
 
   async selectSuggestion(
@@ -307,7 +314,7 @@ export class InlineSuggestController {
     }
   ): Promise<void> {
     if (item.type !== "paper" || !item.paper) {
-      // Loading or hint row does nothing when selected (I8)
+      // Loading, hint or footer row does nothing when selected (I8)
       return;
     }
 
@@ -354,6 +361,12 @@ export class InlineSuggestController {
       return;
     }
 
+    if (item.type === "footer") {
+      const row = el.createDiv?.({ cls: "daito-suggest-footer" }) || el;
+      row.setText?.(item.message || "Semantic search unavailable");
+      return;
+    }
+
     if (item.type === "hint") {
       const row = el.createDiv?.({ cls: "daito-suggest-hint" }) || el;
       row.setText?.(item.message || "Type to search your papers");
@@ -366,7 +379,7 @@ export class InlineSuggestController {
       // Title cut at 80 characters (I11)
       let title = item.paper.title || "Untitled";
       if (title.length > 80) {
-        title = title.slice(0, 77) + "…";
+        title = title.slice(0, 79) + "…";
       }
       const titleEl = container.createDiv?.({ cls: "daito-suggest-title" });
       titleEl?.setText?.(title);
@@ -385,11 +398,6 @@ export class InlineSuggestController {
         const snippetEl = container.createDiv?.({ cls: "daito-suggest-snippet" });
         snippetEl?.setText?.(item.snippet);
       }
-
-      if (item.semanticOff) {
-        const footer = container.createDiv?.({ cls: "daito-suggest-footer" });
-        footer?.setText?.("Semantic search unavailable");
-      }
     }
   }
 }
@@ -404,6 +412,12 @@ export function createPaperSearchSuggestClass(BaseClass: any) {
     constructor(app: any, controller: InlineSuggestController) {
       super(app);
       this.controller = controller;
+      // Tab inserts like Enter (spec 1c) instead of indenting the line.
+      this.scope?.register?.([], "Tab", (evt: KeyboardEvent) => {
+        if (typeof this.suggestions?.useSelectedItem !== "function") return true;
+        this.suggestions.useSelectedItem(evt);
+        return false;
+      });
     }
 
     onTrigger(cursor: any, editor: any, file: any) {

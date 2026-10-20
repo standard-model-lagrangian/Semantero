@@ -85,7 +85,7 @@ const flush = () => new Promise((r) => setImmediate(r));
 
 test("IR1 backspacing to a shorter query before the pause cancels the longer query's semantic run", async () => {
   const { clock, embedder, suggestions, controller, suggest } = setup();
-  await controller.getSuggestions("stiff gels", suggest);
+  await controller.getSuggestions("stiff gels ", suggest);
   clock.advance(100);
   await controller.getSuggestions("stif", suggest); // below the semantic gate
   clock.advance(500);
@@ -96,7 +96,7 @@ test("IR1 backspacing to a shorter query before the pause cancels the longer que
 
 test("IR2 a response that arrives after the query changed is ignored, even below the gate", async () => {
   const { clock, embedder, suggestions, controller, suggest } = setup();
-  await controller.getSuggestions("stiff gels", suggest);
+  await controller.getSuggestions("stiff gels ", suggest);
   clock.advance(260); // embed request in flight
   assert.strictEqual(embedder.calls.length, 1);
   await controller.getSuggestions("stif", suggest);
@@ -107,13 +107,13 @@ test("IR2 a response that arrives after the query changed is ignored, even below
 
 test("IR3 closing the list cancels both a pending timer and an in-flight request", async () => {
   const { clock, embedder, suggestions, controller, suggest } = setup();
-  await controller.getSuggestions("stiff gels", suggest);
+  await controller.getSuggestions("stiff gels ", suggest);
   clock.advance(50);
   controller.cancel();
   clock.advance(500);
   assert.strictEqual(embedder.calls.length, 0, "timer cleared on close");
 
-  await controller.getSuggestions("stiff gels", suggest);
+  await controller.getSuggestions("stiff gels ", suggest);
   clock.advance(260);
   controller.cancel();
   embedder.calls[0].resolve(new Float32Array(4).fill(1));
@@ -123,9 +123,9 @@ test("IR3 closing the list cancels both a pending timer and an in-flight request
 
 test("IR4 a late failure of an older query does not overwrite the current list", async () => {
   const { clock, embedder, suggestions, controller, suggest } = setup();
-  await controller.getSuggestions("stiff gel", suggest);
+  await controller.getSuggestions("stiff gel ", suggest);
   clock.advance(260); // request #1 in flight
-  await controller.getSuggestions("stiff gels", suggest);
+  await controller.getSuggestions("stiff gels ", suggest);
   clock.advance(260); // request #2 in flight
   embedder.calls[1].resolve(new Float32Array(4).fill(1));
   await flush();
@@ -139,7 +139,7 @@ test("IR4 a late failure of an older query does not overwrite the current list",
 
 test("IR5 a failure of the CURRENT query still falls back to keyword results with semantic off", async () => {
   const { clock, embedder, suggestions, controller, suggest } = setup();
-  await controller.getSuggestions("stiff gels", suggest);
+  await controller.getSuggestions("stiff gels ", suggest);
   clock.advance(260);
   embedder.calls[0].reject(new Error("Connection refused"));
   await flush();

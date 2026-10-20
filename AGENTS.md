@@ -27,16 +27,16 @@ Audit trail & decisions log: [DECISIONS_AND_GAPS.md](DECISIONS_AND_GAPS.md).
 ### 2. Paper Search & Literature Discovery Layer
 - **Local Hybrid Search Engine**: Precomputed inverted-index BM25 with prefix expansion (top-64 candidate selection via dual binary search) and dense vector search (`qwen3-embedding:0.6b` via local Ollama). Scoring combines signals via Reciprocal Rank Fusion ($k=60$).
 - **Obsidian Paper Search Plugin** (`obsidian/paper-search`):
-  - **Search Modal (`PaperSearchModal`)**: Instant paper search. `Enter` opens PDF in Zotero; `Mod+Enter` inserts `[[citekey]]` citation and creates a literature note from template; `Mod+Shift+Enter` ensures literature note exists and opens it.
+  - **Search Modal (`PaperSearchModal`)**: Instant paper search. `Enter` opens the PDF in Zotero at the matching page; `Cmd+Enter` inserts the citation (default `[[{{citekey}}]]`) and ensures the literature note exists; `Alt+Enter` opens the literature note, creating it if needed; `Shift+Enter` selects the item in Zotero.
   - **Inline Citations (`@@`)**: `EditorSuggest` autocompletion triggered anywhere in prose. Strictly excluded within code spans, math blocks, unclosed wikilinks, or frontmatter. Inserts citation in a single editor undo transaction and asynchronously creates the literature note.
   - **Literature Notes (`src/litnote.ts`)**: Idempotent generation of `<folder>/<citekey>.md` using custom or built-in templates. Handles YAML frontmatter escaping, path traversal protection, and safe character normalisation.
   - **Related Papers Panel (`RelatedPapersView`)**: Sidebar pane extracting the active note's passage/cursor section, cleans markdown formatting, shortens to $\le 2000$ characters at sentence boundaries, and retrieves relevant papers using calibrated instruction embedding. Hides already-cited papers by default with toggle to inspect them.
 - **Incremental Zotero Watcher** (`planner/zotwatch.py`, `planner search watch-run`):
   - Triggered via launchd (`com.planner.zotero-watch.plist`) on changes to `~/Zotero/zotero.sqlite`.
-  - Computes `content_hash` over papers, chunks, and vector binary bytes.
-  - Skips disk writes and preserves file modification times when no changes occur (B12 budget: 0.2 ms execution).
+  - Waits for `zotero.sqlite` to be quiet for 20 s, then compares a fingerprint of the library with `state.json` → `fingerprint`; unchanged means no build and no writes. The fingerprint is recorded only after a successful build.
+  - The index builder (`planner/searchindex.py`) computes `content_hash` over papers, chunks, and vector bytes, and writes nothing when it is unchanged.
   - Retries missing PDF attachments on subsequent runs when files appear on disk.
-  - Concurrency protected by shared advisory lock `search.lock`.
+  - Concurrency protected by the shared advisory lock `.planner/search.lock` (also taken by the morning job's `search index`).
 
 ---
 
@@ -69,7 +69,7 @@ eval/                   related.toml (ground-truth evaluation dataset for relate
 DECISIONS_AND_GAPS.md   Complete audit log of edge-cases, formats, UI decisions, and B1–B14 budgets
 CHECK.md                Manual smoke testing and verification checklist (M1–M12)
 Vault side:             .planner/days/*.json (sidecars), threads.json, thread_fixes.json, state.json, health.json
-                        .planner/search/ (manifest.json, papers.json, chunks.json, vectors.f32, search.lock)
+                        .planner/search/ (manifest.json, papers.json, chunks.json, vectors.f32, state.json), .planner/search.lock
                         Reviews/YYYY-Www.md, Templates/Daily.md, Threads.md
 logs/                   morning.log, weekly.log, zotero-watch.log (git-ignored)
 ```
@@ -91,7 +91,7 @@ Run from the project folder with `.venv/bin/python -m planner …`:
 | `show [--threads] [--date D]` | inspect extracted data |
 | `weekly --dry-run --force` | generate a review and print it, write nothing |
 | `morning [--force]` | the daily run; `--force` reruns today |
-| `search index [--rebuild]` | build or update the local Zotero paper search index |
+| `search index [--full]` | build or update the local Zotero paper search index |
 | `search watch-run` | watcher execution step invoked by launchd on sqlite changes |
 | `compare DIR…`, `models groq`, `prompt D` | evaluation and debugging |
 | `--model SPEC`, `--data DIR` (global) | override extraction model or data folder (for comparisons) |

@@ -29,6 +29,7 @@ export interface ClipboardLike {
 
 export type RelatedPanelState =
   | "empty"
+  | "index-loading"
   | "loading"
   | "needs-ollama"
   | "too-short"
@@ -66,7 +67,7 @@ export class RelatedPapersController {
   private currentSeq = 0;
   private autoRefreshTimer: any = null;
   private ollamaDownNotified = false;
-  private sessionNotices = new Set<string>();
+  private sessionNotices: Set<string>;
 
   onStateChange?: (state: RelatedPanelState) => void;
 
@@ -79,7 +80,10 @@ export class RelatedPapersController {
     showNotice?: (msg: string) => void;
     setTimeoutFn?: (fn: () => void, ms: number) => any;
     clearTimeoutFn?: (id: any) => void;
+    /** Shared with the search modal so once-per-session notices really show once. */
+    sessionNotices?: Set<string>;
   }) {
+    this.sessionNotices = options.sessionNotices ?? new Set<string>();
     this.indexStore = options.indexStore;
     this.embedder = options.embedder;
     this.vault = options.vault;
@@ -95,6 +99,17 @@ export class RelatedPapersController {
     this.onStateChange?.(newState);
   }
 
+  /** Drop results and any in-flight refresh; the panel shows its empty state. */
+  private resetToEmpty(): void {
+    this.currentSeq++;
+    this.allHits = [];
+    this.citedKeysSet = new Set();
+    this.showHiddenCited = false;
+    this.lastRefreshedPath = "";
+    this.lastRefreshedPassage = "";
+    this.setState("empty");
+  }
+
   onFileOpen(
     file: { path: string } | null,
     getTextFn?: () => string,
@@ -102,6 +117,7 @@ export class RelatedPapersController {
     selection = ""
   ): void {
     const filePath = file?.path || "";
+    const switched = filePath !== this.activeFilePath;
     this.activeFilePath = filePath;
 
     if (this.autoRefreshTimer) {
@@ -109,10 +125,11 @@ export class RelatedPapersController {
       this.autoRefreshTimer = null;
     }
 
-    if (!file) {
-      this.setState("empty");
-      return;
+    // Results (or a pending refresh) belong to the previous note.
+    if (!file || switched) {
+      this.resetToEmpty();
     }
+    if (!file) return;
 
     // Default relatedAutoRefresh = false: Opening files triggers ZERO embed calls (P5)
     if (!this.settings.relatedAutoRefresh) {
@@ -149,6 +166,7 @@ export class RelatedPapersController {
     // For auto-refresh: reopening same file with same passage gives no new call (P6)
     if (
       isAuto &&
+      (this.state === "results" || this.state === "nothing-close") &&
       filePath === this.lastRefreshedPath &&
       passage === this.lastRefreshedPassage
     ) {
@@ -157,6 +175,12 @@ export class RelatedPapersController {
 
     const seq = ++this.currentSeq;
     const pathAtStart = filePath;
+
+    // Still loading the index: say so, and don't blame Ollama or spend its notice.
+    if (!this.indexStore.isReady()) {
+      this.setState("index-loading");
+      return;
+    }
     this.setState("loading");
 
     try {
@@ -164,18 +188,20 @@ export class RelatedPapersController {
       const qVec = await this.embedder.embedQuery(passage, instruction);
 
       // Switching notes mid-refresh or older refresh arriving drops response (P3, P4)
-      if (seq !== this.currentSeq || this.activeFilePath !== pathAtStart) {
+      if (seq !== this.currentSeq) return;
+      if (this.activeFilePath !== pathAtStart) {
+        this.resetToEmpty();
+        return;
+      }
+
+      const ix = this.indexStore.isReady() ? this.indexStore.getIndex() : null;
+      if (!ix) {
+        this.setState("index-loading");
         return;
       }
 
       if (!qVec) {
         this.handleOllamaDown();
-        return;
-      }
-
-      const ix = this.indexStore.getIndex();
-      if (!ix) {
-        this.setState("empty");
         return;
       }
 
@@ -186,21 +212,24 @@ export class RelatedPapersController {
         minScore,
       });
 
-      if (candidates.length === 0) {
-        this.setState("nothing-close");
-        return;
-      }
-
-      this.citedKeysSet = citedKeys(noteText);
+      this.citedKeysSet = new Set([...citedKeys(noteText)].map((k) => k.toLowerCase()));
       this.allHits = candidates;
+      this.showHiddenCited = false;
       this.lastRefreshedPath = pathAtStart;
       this.lastRefreshedPassage = passage;
-      this.setState("results");
+      this.settleResultsState();
     } catch {
       if (seq === this.currentSeq && this.activeFilePath === pathAtStart) {
-        this.handleOllamaDown();
+        if (this.indexStore.isReady()) this.handleOllamaDown();
+        else this.setState("index-loading");
       }
     }
+  }
+
+  /** "results" when something uncited (or the revealed cited ones) is listed, else "nothing-close". */
+  private settleResultsState(): void {
+    const { items } = this.getDisplayItems();
+    this.setState(items.length > 0 ? "results" : "nothing-close");
   }
 
   private handleOllamaDown(): void {
@@ -225,9 +254,8 @@ export class RelatedPapersController {
 
     for (const h of this.allHits) {
       const paper = ix.papers[h.paper];
-      const isCited =
-        this.citedKeysSet.has(paper.citekey) ||
-        (paper.citekey && this.citedKeysSet.has(paper.citekey.toLowerCase()));
+      // citedKeysSet holds lower-cased keys.
+      const isCited = !!paper.citekey && this.citedKeysSet.has(paper.citekey.toLowerCase());
 
       const item: DisplayResultItem = { hit: h, paper, isCited };
       if (isCited) {
@@ -255,7 +283,8 @@ export class RelatedPapersController {
 
   toggleShowHidden(): void {
     this.showHiddenCited = !this.showHiddenCited;
-    this.setState(this.state);
+    if (this.state === "results" || this.state === "nothing-close") this.settleResultsState();
+    else this.setState(this.state);
   }
 
   async handleCiteAction(
@@ -382,6 +411,14 @@ export function createRelatedPapersViewClass(ItemViewBase: any) {
         return;
       }
 
+      if (this.controller.state === "index-loading") {
+        body.createEl?.("div", {
+          cls: "daito-related-loading",
+          text: "Loading paper index…",
+        });
+        return;
+      }
+
       if (this.controller.state === "loading") {
         body.createEl?.("div", {
           cls: "daito-related-loading",
@@ -411,10 +448,11 @@ export function createRelatedPapersViewClass(ItemViewBase: any) {
           cls: "daito-related-empty",
           text: "Nothing close in your library",
         });
-        return;
+        // Every close match is already cited: still offer to reveal them.
+        if (this.controller.getDisplayItems().hiddenCount === 0) return;
       }
 
-      if (this.controller.state === "results") {
+      if (this.controller.state === "results" || this.controller.state === "nothing-close") {
         const { items, hiddenCount, showHidden } = this.controller.getDisplayItems();
 
         for (const item of items) {

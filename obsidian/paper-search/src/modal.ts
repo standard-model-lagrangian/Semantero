@@ -272,7 +272,7 @@ export class PaperSearchModal extends SuggestModal<SearchModalItem> {
       this.app.metadataCache,
       paper,
       this.plugin.settings,
-      { showNotice: (m) => new Notice(m) }
+      { showNotice: (m) => new Notice(m), sessionNotices: this.plugin.litNoteNotices }
     );
   }
 
@@ -286,7 +286,7 @@ export class PaperSearchModal extends SuggestModal<SearchModalItem> {
       this.app.metadataCache,
       paper,
       this.plugin.settings,
-      { showNotice: (m) => new Notice(m) }
+      { showNotice: (m) => new Notice(m), sessionNotices: this.plugin.litNoteNotices }
     );
 
     if (res.file) {

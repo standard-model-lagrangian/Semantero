@@ -1,4 +1,5 @@
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import assert from "node:assert";
 import {
   findLiteratureNote,
@@ -66,81 +67,129 @@ test("L2 existing note by frontmatter citekey with different file name", () => {
   assert.strictEqual(found.path, "CustomNoteTitle.md");
 });
 
-test("L3 creates <folder>/<citekey>.md from template for 3 paper variations", async () => {
+// L3 renders a copy of the user's real template (~/Documents/Obsidian Vault/Zotero Template.md,
+// copied into test/fixtures/litnote; the vault itself is never read) and compares whole files.
+const LITNOTE_FIXTURES = new URL("./fixtures/litnote/", import.meta.url);
+
+test("L3 creates <folder>/<citekey>.md from the real template, matching expected files", async () => {
   const vault = new FakeVault();
   const settings = {
     createLiteratureNotes: true,
     literatureNoteFolder: "Literature",
     literatureNoteTemplate: "Zotero Template.md",
   };
+  vault.addFile("Zotero Template.md", readFileSync(new URL("zotero-template.md", LITNOTE_FIXTURES), "utf8"));
 
-  const templateText = `---
-citekey: "{{citekey}}"
-title: "{{title}}"
-authors: "{{authors}}"
-year: "{{year}}"
-journal: "{{journal}}"
+  const base = { doi: null, journal: null, year: 2023, tags: [], collections: [] };
+  const papers: PaperMetadata[] = [
+    {
+      ...base,
+      key: "K1",
+      citekey: "roth2023",
+      title: "Faster stress relaxation in viscoelastic hydrogels",
+      authors: ["Roth", "Bauer"],
+      abstract: "Hydrogels with faster stress relaxation promote spreading.",
+    },
+    {
+      ...base,
+      key: "K2",
+      citekey: "lesavage2024",
+      title: 'Mitochondrial "transfer": a review\nwith C:\\ paths',
+      authors: ["LeSavage", "O'Brien: J."],
+      abstract: null,
+    },
+    {
+      ...base,
+      key: "K3",
+      citekey: "smith-2020_x",
+      title: "N-cadherin in cell-free systems",
+      authors: [],
+      year: null,
+      abstract: "Line one.\nLine two with {{title}} kept literally.",
+    },
+  ];
+
+  for (const p of papers) {
+    const res = await ensureLiteratureNote(vault, null, p, settings);
+    assert.strictEqual(res.created, true);
+    assert.strictEqual(res.file.path, `Literature/${p.citekey}.md`);
+    const expected = readFileSync(new URL(`expected/${p.citekey}.md`, LITNOTE_FIXTURES), "utf8");
+    assert.strictEqual(res.file.content, expected, `${p.citekey}.md`);
+  }
+});
+
+test("L3b unquoted frontmatter placeholders are escaped once; list items and plain values untouched", () => {
+  const template = `---
+citekey: {{citekey}}
+title: {{title}}
+quoted: "{{title}}"
+tags: literature, to-read
+year: {{year}}
+authors:
+  - {{authors}}
 ---
-# {{title}}
-
-{{abstractNote}}
-`;
-  vault.addFile("Zotero Template.md", templateText);
-
-  // Paper 1: with abstract
-  const p1: PaperMetadata = {
-    key: "K1",
+body`;
+  const paper: PaperMetadata = {
+    key: "K",
     citekey: "roth2023",
-    title: "Paper 1 Title",
-    authors: ["Roth", "Bauer"],
+    title: 'A "quoted" \\ title: part',
+    authors: ["Roth: A"],
     year: 2023,
-    journal: "Science Advances",
-    doi: "10.1126/test",
-    tags: [],
-    collections: [],
-    abstract: "Abstract text for paper 1.",
-  };
-  const res1 = await ensureLiteratureNote(vault, null, p1, settings);
-  assert.strictEqual(res1.created, true);
-  assert.strictEqual(res1.file.path, "Literature/roth2023.md");
-  assert.ok(res1.file.content.includes("Abstract text for paper 1."));
-
-  // Paper 2: without abstract
-  const p2: PaperMetadata = {
-    key: "K2",
-    citekey: "lesavage2022",
-    title: "Paper 2 Title",
-    authors: ["LeSavage"],
-    year: 2022,
-    journal: "Nature",
-    doi: null,
-    tags: [],
-    collections: [],
-    abstract: null,
-  };
-  const res2 = await ensureLiteratureNote(vault, null, p2, settings);
-  assert.strictEqual(res2.created, true);
-  assert.strictEqual(res2.file.path, "Literature/lesavage2022.md");
-
-  // Paper 3: without journal or year
-  const p3: PaperMetadata = {
-    key: "K3",
-    citekey: "smithPreprint",
-    title: "Paper 3 Title",
-    authors: ["Smith"],
-    year: null,
     journal: null,
     doi: null,
     tags: [],
     collections: [],
     abstract: null,
   };
-  const res3 = await ensureLiteratureNote(vault, null, p3, settings);
-  assert.strictEqual(res3.created, true);
-  assert.strictEqual(res3.file.path, "Literature/smithPreprint.md");
-  const parsed3 = parseSimpleYamlFrontmatter(res3.file.content);
-  assert.strictEqual(parsed3.year, "");
-  assert.strictEqual(parsed3.journal, "");
+  const out = renderTemplate(template, paper);
+  const lines = out.split("\n");
+  assert.ok(lines.includes("citekey: roth2023"), out);
+  assert.ok(lines.includes('title: "A \\"quoted\\" \\\\ title: part"'), out);
+  assert.ok(lines.includes('quoted: "A \\"quoted\\" \\\\ title: part"'), out);
+  assert.ok(lines.includes("tags: literature, to-read"), out);
+  assert.ok(lines.includes("year: 2023"), out);
+  assert.ok(lines.includes("  - Roth: A"), out);
+});
+
+test("L3c the Nunjucks notice shows once per session across separate calls sharing the session set", async () => {
+  const vault = new FakeVault();
+  vault.addFile("Zotero Template.md", "{% if x %}{{title}}{% endif %}");
+  const notices: string[] = [];
+  const sessionNotices = new Set<string>();
+  const mk = (citekey: string): PaperMetadata =>
+    ({ key: citekey, citekey, title: "T", authors: [], year: null, journal: null, doi: null, tags: [], collections: [], abstract: null }) as any;
+  for (const k of ["a1", "a2", "a3"]) {
+    await ensureLiteratureNote(vault, null, mk(k), { createLiteratureNotes: true }, { showNotice: (m) => notices.push(m), sessionNotices });
+  }
+  assert.strictEqual(notices.length, 1);
+});
+
+test("L3d the search modal passes the plugin's session notice set to ensureLiteratureNote", () => {
+  const src = readFileSync(new URL("../src/modal.ts", import.meta.url), "utf8");
+  const calls = src.split("ensureLiteratureNote(").slice(1);
+  assert.ok(calls.length >= 2);
+  for (const c of calls) {
+    const args = c.slice(0, c.indexOf(");"));
+    assert.ok(args.includes("sessionNotices: this.plugin.litNoteNotices"), args);
+  }
+});
+
+test("L3e create race on a case-insensitive disk returns the existing file found case-insensitively", async () => {
+  class CaseInsensitiveRaceVault extends FakeVault {
+    async create(filePath: string, content: string): Promise<any> {
+      // Another tool wrote literature/ROTH2023.md just before us; the disk refuses our create.
+      this.addFile("literature/ROTH2023.md", "Theirs");
+      throw new Error(`File already exists: ${filePath}`);
+    }
+  }
+  const vault = new CaseInsensitiveRaceVault();
+  const paper = { key: "K", citekey: "roth2023", title: "T", authors: [], year: null, journal: null, doi: null, tags: [], collections: [], abstract: null } as any;
+  const notices: string[] = [];
+  const res = await ensureLiteratureNote(vault, null, paper, { createLiteratureNotes: true, literatureNoteFolder: "Literature" }, { showNotice: (m) => notices.push(m) });
+  assert.strictEqual(res.created, false);
+  assert.ok(res.file, "existing file returned");
+  assert.strictEqual(res.file.content, "Theirs");
+  assert.deepStrictEqual(notices, []);
 });
 
 test("L4 YAML escaping handles quotes, colons, and line breaks in frontmatter", () => {
