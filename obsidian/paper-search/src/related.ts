@@ -367,7 +367,9 @@ export class RelatedPapersController {
 /**
  * Creates the Obsidian ItemView subclass for Related Papers panel.
  */
-export function createRelatedPapersViewClass(ItemViewBase: any) {
+export function createRelatedPapersViewClass(
+  ItemViewBase: any
+): new (leaf: any, controller: RelatedPapersController, tracker: ActiveEditorTracker) => any {
   return class RelatedPapersView extends ItemViewBase {
     controller: RelatedPapersController;
     tracker: ActiveEditorTracker;

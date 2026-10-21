@@ -103,7 +103,7 @@ def read_library(zotero_dir: Path | str) -> list[Paper]:
     try:
         try:
             shutil.copy2(db_path, tmp_path)
-        except Exception as e:
+        except Exception:
             time.sleep(2.0)
             try:
                 shutil.copy2(db_path, tmp_path)

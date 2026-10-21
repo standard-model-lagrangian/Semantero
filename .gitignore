@@ -8,3 +8,5 @@ __pycache__/
 node_modules/
 obsidian/paper-search/test/fixtures/synthetic_index/
 obsidian/paper-search/data.json
+.ruff_cache/
+.claude/

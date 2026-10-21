@@ -8,7 +8,7 @@ export interface SuggestionItem {
   type: "paper" | "hint" | "loading" | "footer";
   paper?: PaperMetadata;
   snippet?: string;
-  source?: "keyword" | "semantic" | "hybrid";
+  source?: "keyword" | "semantic" | "both";
   score?: number;
   message?: string;
   semanticOff?: boolean;
@@ -18,6 +18,7 @@ export interface FakeSuggestLike {
   suggestions?: {
     setSuggestions?(items: SuggestionItem[]): void;
     setSelectedItem?(index: number, evt?: unknown): void;
+    useSelectedItem?(evt: unknown): void;
     selectedItem?: number;
     values?: SuggestionItem[];
   };
@@ -134,12 +135,6 @@ export interface EmbedderLike {
 export interface IndexStoreLike {
   isReady(): boolean;
   getIndex(): any;
-  getVectors(): Float32Array | null;
-  getDims(): number;
-  getRowToChunk(): Int32Array | null;
-  getRowToPaper(): Int32Array | null;
-  getRowIsAbstract(): Uint8Array | null;
-  getPaperChunkRows(): Int32Array[] | null;
   /** Throttled check that swaps in a newer index from disk; optional so fakes can omit it. */
   ensureFresh?(): Promise<boolean>;
 }
@@ -416,8 +411,11 @@ export class InlineSuggestController {
 /**
  * Creates the Obsidian EditorSuggest subclass given the Obsidian EditorSuggest base class.
  */
-export function createPaperSearchSuggestClass(BaseClass: any) {
+export function createPaperSearchSuggestClass(
+  BaseClass: any
+): new (app: any, controller: InlineSuggestController) => any {
   return class PaperSearchSuggest extends BaseClass {
+    declare suggestions: FakeSuggestLike["suggestions"];
     controller: InlineSuggestController;
 
     constructor(app: any, controller: InlineSuggestController) {

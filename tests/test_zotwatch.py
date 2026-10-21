@@ -3,7 +3,6 @@ import io
 import json
 import os
 import plistlib
-import shutil
 import sqlite3
 import tempfile
 import time

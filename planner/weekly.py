@@ -1,10 +1,9 @@
 """Sunday review: digest the week for Claude, write the review note, apply thread cleanup."""
-import re
 from collections import Counter, defaultdict
 from datetime import date, timedelta
 from pathlib import Path
 
-from . import brief, fixes
+from . import fixes
 from .config import ROOT
 from .extract import thread_id
 from .stats import PROGRESS, WORK, has_done_section

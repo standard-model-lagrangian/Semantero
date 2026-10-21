@@ -1,0 +1,6 @@
+target-version = "py311"
+extend-exclude = ["obsidian", ".venv"]
+
+[lint]
+# Pyflakes (unused imports/variables, undefined names) and syntax errors only.
+select = ["F", "E9"]

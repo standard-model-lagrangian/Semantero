@@ -5,7 +5,7 @@ export interface VaultLike {
   getFiles(): any[];
   read(file: any): Promise<string>;
   create(path: string, content: string): Promise<any>;
-  createFolder?(path: string): Promise<void>;
+  createFolder?(path: string): Promise<unknown>;
   getAbstractFileByPath?(path: string): any;
 }
 

@@ -2,8 +2,10 @@
 
 A personal planning and research productivity layer over Obsidian notes and Zotero. The owner writes messy notes in plain text; this project handles structuring, project tracking, and literature discovery out of sight.
 
-Full design rationale: [SPEC.md](SPEC.md), [SEARCH_SPEC.md](SEARCH_SPEC.md), [INTEGRATION_SPEC.md](INTEGRATION_SPEC.md).
-Audit trail & decisions log: [DECISIONS_AND_GAPS.md](DECISIONS_AND_GAPS.md).
+Design records (implemented; read for rationale, not as a to-do list): [docs/SPEC.md](docs/SPEC.md), [docs/SEARCH_SPEC.md](docs/SEARCH_SPEC.md), [docs/INTEGRATION_SPEC.md](docs/INTEGRATION_SPEC.md).
+Decisions log: [docs/DECISIONS_AND_GAPS.md](docs/DECISIONS_AND_GAPS.md). Manual checklist: [docs/MANUAL_CHECKS.md](docs/MANUAL_CHECKS.md).
+
+**Before committing: `make check`** (ruff, tsc, both test suites, and a check that the committed `main.js` matches `src/`).
 
 ---
 
@@ -66,9 +68,10 @@ prompts/                extract.md (per-note extraction), weekly.md (review)
 bin/                    planner-run.sh: launchd entrypoint; falls back to any Python 3.11+ if .venv is broken
 launchd/                com.planner.morning.plist, com.planner.weekly.plist, com.planner.zotero-watch.plist
 config.toml             vault paths, models, schedule, brief tuning, threads config, search config
-eval/                   related.toml (ground-truth evaluation dataset for related papers)
-DECISIONS_AND_GAPS.md   Complete audit log of edge-cases, formats, UI decisions, and B1–B14 budgets
-CHECK.md                Manual smoke testing and verification checklist (M1–M12)
+eval/                   queries.toml, related.toml (ground-truth evaluation datasets for search and related papers)
+tests/                  Python unit tests (unittest); fixtures/search/ holds a tiny fake Zotero library and index
+docs/                   design specs, decisions log (B1–B14 budgets), manual checklist (M1–M12)
+Makefile                `make check` / `make test` / `make typecheck` / `make lint`
 Vault side:             .planner/days/*.json (sidecars), threads.json, thread_fixes.json, state.json, health.json
                         .planner/search/ (manifest.json, papers.json, chunks.json, vectors.f32, state.json), .planner/search.lock
                         Reviews/YYYY-Www.md, Templates/Daily.md, Threads.md
@@ -102,7 +105,8 @@ Run from `obsidian/paper-search`:
 
 | Command | Effect |
 |---|---|
-| `npm test` | Run all 98 unit tests in `test/*.test.ts` via Node native test runner |
+| `npm test` | Run all unit tests in `test/*.test.ts` via Node native test runner |
+| `npm run typecheck` | `tsc --noEmit` over `src/` (esbuild does not typecheck) |
 | `npm run build` | Build production `main.js` via esbuild |
 | `DAITO_LIVE=1 DAITO_PERF=1 node --test test/perf.test.ts` | Benchmark budgets B1–B14 with live Ollama & synthetic index |
 | `node scripts/eval-related.ts --index <dir> --vault <copy> --toml eval/related.toml` | Evaluate Hit@5 and calibrate `relatedMinScore` |
@@ -111,6 +115,8 @@ Run from `obsidian/paper-search`:
 
 ## Rules for changes and testing
 
+- **Test first.** New behaviour or a bug fix starts with a failing test (`tests/` for Python, `obsidian/paper-search/test/` for the plugin), then the code. Tests use temp dirs, fixtures and fakes only — no network, no live Ollama unless gated by `DAITO_LIVE=1`.
+- **Rebuild `main.js` after changing `src/`** and commit it with the change; `make check` fails if it is stale.
 - **Never test against the real vault or real Zotero.** Performance tests use the synthetic index generator (`make-synthetic-index.ts`) or in-memory fakes (`test/fakes.ts`). Evaluation of related papers uses a temporary scratch copy in `/tmp/`.
 - **The brief is delimited by `%% planner:start %%` / `%% planner:end %%`.** Only text between the markers is ever replaced. The block is stripped before extraction and hashing. A brief deleted by the owner stays deleted (`state.json` → `brief_inserted`).
 - **Never overwrite an existing review** without `--force`: it holds the owner's answers.

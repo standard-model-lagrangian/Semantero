@@ -2,7 +2,7 @@
 
 Find a paper in your Zotero library from inside Obsidian by typing what it found or showed, with results updating as you type. You don't need to remember the methods, the title or the authors.
 
-Status: proposal, not built. Companion to [SPEC.md](SPEC.md) (the planner). Same repository, same rules: see [AGENTS.md](AGENTS.md).
+Status: implemented; kept as the design record. Companion to [SPEC.md](SPEC.md) (the planner). Same repository, same rules: see [AGENTS.md](../AGENTS.md).
 
 ## Principles
 

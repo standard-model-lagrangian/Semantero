@@ -148,3 +148,13 @@ obsidian/paper-search/  Obsidian plugin (TypeScript)
 launchd/                macOS launchd plist definitions
 config.toml             Vault paths, model settings, and search parameters
 ```
+
+## Contributing
+
+Read [AGENTS.md](AGENTS.md) first: it has the layout, commands and the rules that keep the owner's vault safe. Design rationale lives in [docs/](docs/).
+
+```bash
+make check
+```
+
+That runs ruff, `tsc --noEmit`, the Python (`unittest`) and plugin (`node --test`) suites, and fails if the committed `obsidian/paper-search/main.js` is out of date with `src/`. Changes are test-first: add the failing test, then the fix. Tests never touch a real vault, Zotero library or Ollama.

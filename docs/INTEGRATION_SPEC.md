@@ -6,7 +6,7 @@ How paper search fits into everyday writing in Obsidian. Three proposals:
 2. **Cite while writing**: type `@@` in any note to search papers inline and insert a citation.
 3. **Related papers panel**: a right-sidebar list of papers close to what you're writing, refreshed when you ask.
 
-Status: proposal, not built. Builds on [SEARCH_SPEC.md](SEARCH_SPEC.md) (index, ranking, evaluation) and follows [AGENTS.md](AGENTS.md).
+Status: implemented; kept as the design record (decisions made while building it are in [DECISIONS_AND_GAPS.md](DECISIONS_AND_GAPS.md)). Builds on [SEARCH_SPEC.md](SEARCH_SPEC.md) (index, ranking, evaluation) and follows [AGENTS.md](../AGENTS.md).
 
 ## Principles
 

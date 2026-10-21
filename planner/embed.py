@@ -61,7 +61,7 @@ def embed(
                 if e.code == 404 or "not found" in err_body.lower() or "not found" in str(e).lower():
                     raise RuntimeError(f"Ollama model '{model}' not found. Run: ollama pull {model}") from e
                 raise
-            except (urllib.error.URLError, TimeoutError, OSError) as e:
+            except (urllib.error.URLError, TimeoutError, OSError):
                 attempts += 1
                 if attempts > max_retries:
                     raise

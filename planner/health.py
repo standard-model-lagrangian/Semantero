@@ -11,7 +11,6 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-from pathlib import Path
 
 from .config import ROOT
 from .llm import OPENAI_COMPAT, SECRETS, LLMError, list_models

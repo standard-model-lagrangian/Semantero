@@ -2,7 +2,6 @@ import json
 import os
 import subprocess
 import tempfile
-import time
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -136,7 +135,7 @@ class TestPdfText(unittest.TestCase):
         cleaned_pages = pdftext.clean_document_pages(raw_pages)
         for page_num, text in cleaned_pages:
             self.assertNotIn("Journal of Biomaterials Research", text)
-            self.assertIn(f"Unique line page", text)
+            self.assertIn("Unique line page", text)
 
     # 8. Strips references after 60 percent
     def test_strips_references_after_60_percent(self):
@@ -246,7 +245,7 @@ class TestEmbed(unittest.TestCase):
         from planner import embed
 
         def make_resp(req, *args, **kwargs):
-            import io, json
+            import json
             body = json.loads(req.data.decode("utf-8"))
             n = len(body["input"])
             resp_data = {"embeddings": [[1.0] * 8 for _ in range(n)]}
@@ -370,7 +369,6 @@ class TestEmbed(unittest.TestCase):
     # 19. Live test ollama roundtrip (DAITO_LIVE=1)
     @unittest.skipUnless(os.environ.get("DAITO_LIVE") == "1", "Requires DAITO_LIVE=1")
     def test_live_ollama_roundtrip(self):
-        import math
         from planner import embed
 
         texts = [
@@ -465,6 +463,10 @@ class TestSearchIndex(unittest.TestCase):
         papers = json.loads((search_dir / "papers.json").read_text())
         chunks = json.loads((search_dir / "chunks.json").read_text())
         vec_bytes = (search_dir / "vectors.f32").read_bytes()
+
+        self.assertTrue(res["changed"])
+        self.assertEqual(res["papers"], len(papers))
+        self.assertEqual(res["chunks"], len(chunks))
 
         self.assertEqual(manifest["format"], 1)
         self.assertEqual(manifest["dims"], 8)
@@ -621,7 +623,6 @@ class TestSearchIndex(unittest.TestCase):
 
     # 26. Atomic write never leaves partial index
     def test_atomic_write_never_leaves_partial_index(self):
-        import json
         from planner import searchindex
 
         # Build initial valid index
