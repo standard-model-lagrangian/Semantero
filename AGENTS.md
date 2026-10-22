@@ -122,7 +122,7 @@ Run from the project folder with `.venv/bin/python -m planner …`:
 | `make record-conformance` | re-record `conformance/cases.json` (a deliberate commit) |
 | `make fixtures` | rebuild `launcher-core/test/fixtures/notes_small` from `tests/fixtures/notes/vault_small` |
 | `node launcher-core/scripts/eval.ts --vault <dir> [--scope all\|papers\|notes\|compare] [--keyword-only]` | evaluate against `eval/queries.toml` (`expect_note` for notes) |
-| `make app` / `make install-app` | build / install `Daito Search.app` (needs Xcode) |
+| `make app` / `make install-app` | build / install `Daito Search.app` (Command Line Tools suffice; full Xcode adds the Spotlight action's App Intents metadata) |
 | `make bench-app` | spike S1: JavaScriptCore vs Accelerate on your vault |
 | `make app-selftest` | builds the app and drives its real panel with synthetic keys (typing, arrows, ↵/⌘↵/⌘⇧↵, ⌘K, Esc, ⌘L, scopes); prints pass/fail |
 

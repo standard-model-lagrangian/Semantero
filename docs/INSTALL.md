@@ -8,8 +8,8 @@ daito is one repository with two ways to use it. Pick one; you can switch later 
 |---|---|---|
 | What you get | Paper search inside Obsidian: `⌘⇧0` pop-up over your Zotero library, `@@` inline citations, literature notes, related-papers panel. Index kept fresh in the background | Everything in Obsidian only, **plus** your vault's notes indexed, and **Daito Search**: press **⌥Space in any app** to search papers *and* notes, paste the PDF into Mail/Teams/an LLM, copy citations, drag files; also in Spotlight |
 | Runs | Obsidian plugin + one background watcher | The same, plus a menu-bar app and the notes index |
-| You need | Zotero (+ Better BibTeX), Obsidian, Homebrew, Python 3.11+, poppler; Ollama optional | The same, plus macOS 26, full **Xcode**, Node.js |
-| Setup time | ~5 minutes | ~15 minutes (mostly the Xcode download) |
+| You need | Zotero (+ Better BibTeX), Obsidian, Homebrew, Python 3.11+, poppler; Ollama optional | The same, plus macOS 26, Node.js, and Apple's free **Command Line Tools**. Full Xcode is optional: see [Do I need Xcode?](#do-i-need-xcode) |
+| Setup time | ~5 minutes | ~10 minutes (longer if you also download Xcode) |
 | Code used | `planner/` (paper index, watcher), `obsidian/paper-search/` | also `planner/notesindex.py`, `launcher-core/`, `macos/` |
 
 The planner (daily brief, weekly review) is a separate, optional add-on for either setup: [tier 4](#tier-4-the-planner-daily-brief-threads-weekly-review).
@@ -31,10 +31,11 @@ notes and `planner doctor` doesn't expect a notes index. You don't need Xcode or
 ### Global
 
 1. Do **Obsidian only** above first.
-2. Install the extra tools: full Xcode from the App Store, then
-   `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`; Node with `brew install node`. Optional but
-   recommended: Xcode → Settings → Accounts → add your Apple ID (stable signing, so macOS remembers the app's
-   permissions across updates).
+2. Install the extra tools: Node with `brew install node`, and Apple's Command Line Tools with
+   `xcode-select --install` (Homebrew usually installed them already). Full Xcode is optional: it adds the Spotlight
+   "Search Everything" action and an easy stable signature. See [Do I need Xcode?](#do-i-need-xcode). If you install it,
+   also run `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` and, recommended, Xcode → Settings →
+   Accounts → add your Apple ID.
 3. Turn on the notes index and list your private notes, in the git-ignored `config.local.toml` (create it if
    `setup-search.sh` didn't). **Do this before step 4**: excluded notes are never read.
 
@@ -78,7 +79,7 @@ Tier 1 is the **Obsidian only** setup; tiers 1–3 are **Global**; tier 4 (the p
 |---|---|---|---|
 | **1. Paper search in Obsidian** | `⌘⇧0` search pop-up over your Zotero library, `@@` inline citations, literature notes, related-papers panel; index kept fresh by a background watcher | Obsidian plugin + `com.planner.zotero-watch` (launchd) | Zotero, Obsidian, Homebrew, Python 3.11+, poppler, Ollama (optional) |
 | **2. Notes index** | Your vault's Markdown notes searchable too (the index the launcher uses) | `planner notes index` | Tier 1's Python setup |
-| **3. Launcher app** | **⌥Space from any app** → glass panel over papers *and* notes; open, paste the PDF into Mail/Teams/LLMs, copy citations, drag files; Spotlight entries and a Spotlight action | `Daito Search.app` (menu bar) | Tiers 1–2, full Xcode, Node + npm |
+| **3. Launcher app** | **⌥Space from any app** → glass panel over papers *and* notes; open, paste the PDF into Mail/Teams/LLMs, copy citations, drag files; Spotlight entries and a Spotlight action | `Daito Search.app` (menu bar) | Tiers 1–2, Command Line Tools (full Xcode optional), Node + npm |
 | **4. Planner** (owner's setup) | Daily brief in today's note, `Threads.md`, weekly review, evening reminder | `com.planner.morning` (every 5 min), `com.planner.weekly` (launchd) | Tier 1's Python, API keys (Groq, Anthropic) |
 
 Everything runs locally. The only network calls are the planner's model calls (tier 4) and Ollama on `127.0.0.1`.
@@ -95,9 +96,10 @@ Everything runs locally. The only network calls are the planner's model calls (t
 | Python | 3.11+ (3.15 here) | 1+ | `brew install python` | Standard library only, plus `anthropic` for tier 4. The setup script makes `.venv` |
 | poppler (`pdftotext`) | current | 1+ | `brew install poppler` | PDF text extraction |
 | [Ollama](https://ollama.com) + `qwen3-embedding:0.6b` | current | 1+ (optional) | `brew install ollama && brew services start ollama && ollama pull qwen3-embedding:0.6b` | Semantic search. Without it everything falls back to keyword search and fills in vectors once it's running |
-| Xcode (full app, not just Command Line Tools) | 26 or later (27.1 here) | 3 | Mac App Store | Swift Testing, `appintentsmetadataprocessor` (Spotlight action) and signing. Then `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` |
+| Command Line Tools (Swift compiler + macOS SDK) | for macOS 26 SDK | 3 | `xcode-select --install` | Enough to build and run the app. See [Do I need Xcode?](#do-i-need-xcode) |
+| Xcode (full app) | 26 or later (27.1 here) | 3 (optional), contributors | Mac App Store | Only for: the Spotlight "Search Everything" action (`appintentsmetadataprocessor`), the Swift test suite, and an easy stable signature. Then `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` |
 | Node.js + npm | 26 (26.4 here) | 3, and contributors | `brew install node` | Builds `launcher-core/dist/ranker.js` (the app's ranking engine) and runs the TypeScript tests. Older Node versions are untested |
-| Apple ID in Xcode (free "Personal Team") | — | 3 (recommended) | Xcode → Settings → Accounts → **+** | A stable signature, so macOS remembers the app's permissions across rebuilds |
+| Apple ID in Xcode (free "Personal Team") | — | 3 (recommended, needs Xcode) | Xcode → Settings → Accounts → **+** | A stable signature, so macOS remembers the app's permissions across rebuilds |
 | Groq and Anthropic API keys | — | 4 | their consoles | In `secrets.toml` (git-ignored, `chmod 600`) |
 
 > **Path gotcha.** If you clone into a folder whose name has spaces or a trailing space, always quote it. The owner's
@@ -184,8 +186,7 @@ its file name matches a Zotero citekey.
 ## Tier 3: the launcher app (Daito Search.app)
 
 ```bash
-# once: full Xcode, then
-sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+# once: Command Line Tools (xcode-select --install) or full Xcode (see "Do I need Xcode?" below), and Node
 (cd launcher-core && npm install)          # tools for building the ranking engine
 make install-app                           # builds, signs and copies to /Applications
 # or, notes index + app in one go (checks the notes index is enabled first):  make install-global
@@ -204,6 +205,23 @@ On first launch:
 **Signing.** `make install-app` signs with the first "Apple Development" identity in your keychain, or with
 `$DAITO_SIGN_IDENTITY`, or ad hoc (`signing with: -`). With an ad hoc signature, macOS forgets permissions 1 and 2 at
 every reinstall. Adding your Apple ID in Xcode creates a free development identity and fixes that.
+
+### Do I need Xcode?
+
+The app ships as source, so it is built on your Mac. What each tool is actually needed for:
+
+| Needed for | Command Line Tools only (`xcode-select --install`) | Full Xcode |
+|---|---|---|
+| Building and running the app: the ⌥Space panel, every action (open, paste file, paste passage, copy, Finder, Quick Look, drag), notes + papers search | **Yes, enough**. Checked: the app compiles and links with the Command Line Tools alone | yes |
+| Paper and note titles in Spotlight (⌘Space) | **Yes**: plain Core Spotlight, no extra build step | yes |
+| The Spotlight **"Search Everything"** action (⌘Space → type it → Tab → query) | **No**. Spotlight only sees the action if a metadata file is generated at build time by `appintentsmetadataprocessor`, which ships only with Xcode. Without it `make install-app` prints a warning and builds the app without that one action | yes |
+| A stable signature, so macOS keeps the Documents and Accessibility permissions across updates | Possible, untested: create a self-signed *Code Signing* certificate in Keychain Access (Certificate Assistant) and build with `DAITO_SIGN_IDENTITY="<its name>" make install-app`. Otherwise the app is signed ad hoc and the two permissions are asked for again after every update | Easy: add your Apple ID (free) in Xcode → Settings → Accounts |
+| The Swift test suite (`make test-swift`, `make check`): contributors only | **No**: Swift's test frameworks aren't in the Command Line Tools | yes |
+
+Caveat: the Command-Line-Tools-only path was checked by compiling the app, not by a full `make install-global` run on a
+Mac without Xcode. If a step fails there, the error names the missing tool; please report it. A ready-built app on
+GitHub Releases would remove the need for any build tools, but it would have to be notarized (a paid Apple Developer
+account) to open without macOS's "unidentified developer" warning, so it isn't offered.
 
 **Updating the app** (the running copy isn't replaced in place):
 
@@ -275,4 +293,5 @@ updates the notes index on every run. Logs go to `logs/morning.log` and `logs/we
 | Outlook on the web shows "Something went wrong while the document preview was being created" | The pasted file is correct (verified byte-for-byte in Firefox); it's Outlook's previewer. Download it to check, or compare with Outlook's own Attach button |
 | Launcher uses lots of memory | It settles at ~100–150 MB a few seconds after start or after an index change (more for bigger libraries). A watchdog reloads if it is ever over 350 MB while hidden. Activity Monitor's "Memory" is the right number |
 | `planner doctor` flags the notes index | The message says the fix: `planner notes index` (missing or stale), `--full` (model changed), or start Ollama (degraded) |
-| `make check` fails on a fresh clone | Run `make dev-setup` (npm packages for both TypeScript projects and the Python venv); `make test-swift` needs full Xcode |
+| `make check` fails on a fresh clone | Run `make dev-setup` (npm packages for both TypeScript projects and the Python venv); `make test-swift` needs full Xcode (the app itself doesn't) |
+| `make install-app` warns "App Intents metadata not generated" | Full Xcode isn't installed or selected. The app works; only the Spotlight "Search Everything" action is missing. See [Do I need Xcode?](#do-i-need-xcode) |

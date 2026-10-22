@@ -66,7 +66,7 @@ make dev-setup     # .venv (+ requirements), npm install in obsidian/paper-searc
 make check         # ruff, tsc ×2, all four test suites, committed bundles up to date
 ```
 
-`make check` needs full Xcode for `test-swift`. Everything else runs with the Command Line Tools.
+`make check` needs full Xcode for `test-swift` (Swift Testing) and for the App Intents metadata in `make app`. Everything else, including building and running the app itself, works with the Command Line Tools. Keep it that way: users of the Global setup are told Xcode is optional ([INSTALL.md](INSTALL.md#do-i-need-xcode)).
 
 | Command | What |
 |---|---|

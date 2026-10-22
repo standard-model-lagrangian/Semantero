@@ -7,7 +7,7 @@ A personal research and productivity layer combining **Obsidian** notes and **Zo
 | **Obsidian only** | **Global** |
 |---|---|
 | Search your Zotero library from inside Obsidian (`⌘⇧0`), `@@` citations, literature notes, related papers | All of that, plus your notes indexed and **Daito Search**: **⌥Space in any app** searches papers *and* notes, pastes the PDF into Mail/Teams/an LLM, copies citations; also in Spotlight |
-| `./setup-search.sh`, enable the plugin. No Xcode needed | Obsidian only first, then `[notes] enabled = true` in `config.local.toml` and `make install-global` (needs Xcode, Node, macOS 26) |
+| `./setup-search.sh`, enable the plugin. No Xcode needed | Obsidian only first, then `[notes] enabled = true` in `config.local.toml` and `make install-global` (needs macOS 26, Node and Apple's free Command Line Tools; full Xcode only adds the Spotlight "Search Everything" action: [details](docs/INSTALL.md#do-i-need-xcode)) |
 
 Step-by-step for both, and how to switch: **[docs/INSTALL.md](docs/INSTALL.md#choose-your-setup)**. All documentation: [docs/](docs/README.md).
 
@@ -106,7 +106,7 @@ A menu-bar app that searches your Zotero library **and** your Obsidian notes fro
 - Papers and their literature notes appear as one row. Private notes can be excluded by glob and are never read.
 - Paper and note titles also appear in Spotlight (⌘Space), plus a "Search Everything" Spotlight action.
 
-Install: the **Global** setup in [docs/INSTALL.md](docs/INSTALL.md#global) (needs Xcode).
+Install: the **Global** setup in [docs/INSTALL.md](docs/INSTALL.md#global). Xcode is optional ([what it adds](docs/INSTALL.md#do-i-need-xcode)).
 Design: [docs/LAUNCHER_SPEC.md](docs/LAUNCHER_SPEC.md).
 
 ---

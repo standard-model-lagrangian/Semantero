@@ -22,7 +22,7 @@ cp "$ROOT/launcher-core/dist/ranker.js" "$ROOT/launcher-core/shortcuts.json" "$A
 
 # App Intents metadata (Spotlight action). Needs the Xcode toolchain; a failure only disables the Spotlight action.
 if ! bash scripts/appintents-metadata.sh "$APP"; then
-  echo "warning: App Intents metadata not generated; the Spotlight action will not appear (see docs/DECISIONS_AND_GAPS.md, S3)" >&2
+  echo "warning: App Intents metadata not generated (needs full Xcode); the app works, only the Spotlight \"Search Everything\" action is missing. See docs/INSTALL.md, \"Do I need Xcode?\"" >&2
 fi
 
 IDENTITY="${DAITO_SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null | awk -F'"' '/Apple Development/ {print $2; exit}')}"
