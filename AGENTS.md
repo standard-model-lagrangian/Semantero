@@ -3,9 +3,11 @@
 A personal planning and research productivity layer over Obsidian notes and Zotero. The owner writes messy notes in plain text; this project handles structuring, project tracking, and literature discovery out of sight.
 
 Design records (implemented; read for rationale, not as a to-do list): [docs/SPEC.md](docs/SPEC.md), [docs/SEARCH_SPEC.md](docs/SEARCH_SPEC.md), [docs/INTEGRATION_SPEC.md](docs/INTEGRATION_SPEC.md).
+Launcher (implemented; manual checks and the Spotlight spikes outstanding, see the log in DECISIONS_AND_GAPS.md): [docs/LAUNCHER_SPEC.md](docs/LAUNCHER_SPEC.md), a native macOS app (glass panel + Spotlight) over papers and vault notes; manual checklist [macos/CHECK.md](macos/CHECK.md).
 Decisions log: [docs/DECISIONS_AND_GAPS.md](docs/DECISIONS_AND_GAPS.md). Manual checklist: [docs/MANUAL_CHECKS.md](docs/MANUAL_CHECKS.md).
+**Install tiers and tools: [docs/INSTALL.md](docs/INSTALL.md). Architecture, commands, workflows and gotchas: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).** Index of all docs: [docs/README.md](docs/README.md).
 
-**Before committing: `make check`** (ruff, tsc, both test suites, and a check that the committed `main.js` matches `src/`).
+**Before committing: `make check`** (ruff, tsc ×2, the Python, plugin, launcher-core and Swift suites, and a check that the committed `main.js` and `launcher-core/dist/ranker.js` match their sources). Fresh clone: `make dev-setup` first.
 
 ---
 
@@ -25,6 +27,11 @@ Decisions log: [docs/DECISIONS_AND_GAPS.md](docs/DECISIONS_AND_GAPS.md). Manual 
 - **Weekly review** (`planner weekly`, Sundays 21:00, Claude Haiku 5.5): writes `Reviews/YYYY-Www.md` with what happened, patterns, calibration, ≤3 questions (the owner answers inline; next review reads the answers), Focus bullets and thread cleanup.
 - **Thread cleanup**: the review's merges and reassignments go into `.planner/thread_fixes.json`, applied over the raw sidecars whenever they're read.
 - **Health checks** (`planner doctor`, also every morning, no model calls): vault access, future-dated notes, `secrets.toml` mode, launchd jobs, venv/SDK, Groq model still listed, Anthropic model lifecycle, Ollama model present, search index, Zotero watch job status, notes that fell back to local.
+
+### 3. Launcher (one hotkey, papers + notes, any app)
+- **Notes index** (`planner/mdtext.py`, `planner/notesindex.py`): every Markdown note in the vault (minus `[notes].exclude` globs, dot-folders, `Templates/**` by default) becomes a `papers.json` entry in `.planner/notes/`, with heading sections as chunks, in the same format as the paper index so the same engine ranks both. Kept fresh on every 5-minute launchd tick (`_notes_tick` in `__main__.py`, non-blocking lock). Personal exclusions go in git-ignored `config.local.toml`.
+- **`launcher-core/`** (TypeScript, no Node/DOM in `src/`): merges the two corpora (keyword lists interleave by rank, semantic lists by raw cosine, RRF), collapses a paper with its literature note into one row, and returns `ResultVM`s (paths, URLs, citations, action ids). Bundled to `dist/ranker.js` (committed) and run by the app in JavaScriptCore. `conformance/cases.json` is the contract every ranker must meet.
+- **`macos/`** (SwiftPM, no dependencies): `DaitoSearchKit` (testable: `JSCRanker`, `AcceleratedRanker`, query controller, action executor, index reloader, Spotlight donor) and `DaitoSearch` (menu bar app: non-activating glass panel, settings, App Intents). `make install-app` builds and installs it. Debug aids: `DAITO_SELFTEST=<json>` (see `make app-selftest`), `DAITO_DEBUG=1` (reloads, compactions, watchdog), `DAITO_SHOW_PANEL="<query>"`, `DAITO_SNAPSHOT=<png>` (saves the panel view; needs no screen permission). The ranker choice (JavaScriptCore + Accelerate vector pass) is recorded in `docs/DECISIONS_AND_GAPS.md`.
 
 ### 2. Paper Search & Literature Discovery Layer
 - **Local Hybrid Search Engine**: Precomputed inverted-index BM25 with prefix expansion (top-64 candidate selection via dual binary search) and dense vector search (`qwen3-embedding:0.6b` via local Ollama). Scoring combines signals via Reciprocal Rank Fusion ($k=60$).
@@ -62,8 +69,12 @@ Decisions log: [docs/DECISIONS_AND_GAPS.md](docs/DECISIONS_AND_GAPS.md). Manual 
 ```
 planner/                __main__ (CLI), extract, threads, fixes, stats, brief, weekly, health, llm, vault, config
                         searchindex.py (Zotero index builder), htmltext.py (snapshot text), zotwatch.py (incremental watcher)
+                        mdtext.py (Markdown cleaning/sections/chunks), notesindex.py (vault notes index)
 obsidian/paper-search/  Obsidian plugin: src/ (engine, indexstore, bm25, modal, inline, litnote, passage, related)
                         test/ (unit & perf benchmarks), scripts/ (make-synthetic-index, eval-related)
+launcher-core/          launcher ranking core: src/ (corpora, merge, query, vm, paths, urls, cite, actions, api), shortcuts.json,
+                        conformance/, dist/ranker.js (committed), scripts/ (eval, record-conformance, make-bench-vault)
+macos/                  Swift package: Sources/DaitoSearchKit, Sources/DaitoSearch (app), Sources/DaitoBench (spike S1), Tests/, scripts/, CHECK.md
 prompts/                extract.md (per-note extraction), weekly.md (review)
 bin/                    planner-run.sh: launchd entrypoint; falls back to any Python 3.11+ if .venv is broken
 launchd/                com.planner.morning.plist, com.planner.weekly.plist, com.planner.zotero-watch.plist
@@ -74,6 +85,7 @@ docs/                   design specs, decisions log (B1–B14 budgets), manual c
 Makefile                `make check` / `make test` / `make typecheck` / `make lint`
 Vault side:             .planner/days/*.json (sidecars), threads.json, thread_fixes.json, state.json, health.json
                         .planner/search/ (manifest.json, papers.json, chunks.json, vectors.f32, state.json), .planner/search.lock
+                        .planner/notes/ (same files, one entry per note), .planner/notes.lock
                         Reviews/YYYY-Www.md, Templates/Daily.md, Threads.md
 logs/                   morning.log, weekly.log, zotero-watch.log (git-ignored)
 ```
@@ -97,8 +109,22 @@ Run from the project folder with `.venv/bin/python -m planner …`:
 | `morning [--force]` | the daily run; `--force` reruns today |
 | `search index [--full]` | build or update the local Zotero paper search index |
 | `search watch-run` | watcher execution step invoked by launchd on sqlite changes |
+| `notes index [--full]` | build or update the vault notes search index (also runs on every launchd tick) |
+| `notes stats` | notes per kind, chunks, literature notes matched, excluded, model, age |
 | `compare DIR…`, `models groq`, `prompt D` | evaluation and debugging |
 | `--model SPEC`, `--data DIR` (global) | override extraction model or data folder (for comparisons) |
+
+### Launcher
+| Command | Effect |
+|---|---|
+| `make test-launcher` / `make test-swift` | `launcher-core` tests (TZ=UTC) / Swift Testing suite (`make test-swift-tsan` for Thread Sanitizer) |
+| `cd launcher-core && npm run build` | rebuild the committed `dist/ranker.js` (`make check` fails if stale) |
+| `make record-conformance` | re-record `conformance/cases.json` (a deliberate commit) |
+| `make fixtures` | rebuild `launcher-core/test/fixtures/notes_small` from `tests/fixtures/notes/vault_small` |
+| `node launcher-core/scripts/eval.ts --vault <dir> [--scope all\|papers\|notes\|compare] [--keyword-only]` | evaluate against `eval/queries.toml` (`expect_note` for notes) |
+| `make app` / `make install-app` | build / install `Daito Search.app` (needs Xcode) |
+| `make bench-app` | spike S1: JavaScriptCore vs Accelerate on your vault |
+| `make app-selftest` | builds the app and drives its real panel with synthetic keys (typing, arrows, ↵/⌘↵/⌘⇧↵, ⌘K, Esc, ⌘L, scopes); prints pass/fail |
 
 ### Obsidian Plugin Tests & Benchmarks
 Run from `obsidian/paper-search`:
@@ -125,6 +151,11 @@ Run from `obsidian/paper-search`:
 - **No default hotkeys in plugin code.** Command registrations do not bind default keys; hotkeys belong in `.obsidian/hotkeys.json`. On load, `checkHotkeyConflict` flags clashes with existing commands.
 - **Internal Obsidian APIs** (`chooser`, `suggestions.setSuggestions`) are accessed only through adapter wrappers with tested fallbacks (test I6).
 - **Python model calls:** Anthropic goes through the official SDK (`planner/llm.py`). Groq and other OpenAI-compatible hosts use stdlib HTTP.
+- **One ranking implementation.** Ranking lives in `obsidian/paper-search/src/` (no Obsidian imports there; test T1 enforces it). `launcher-core` and the app reuse it; never port ranking logic into Swift without the conformance suite passing (see LAUNCHER_SPEC.md, "Ranker decision").
+- **Rebuild `launcher-core/dist/ranker.js` after changing `launcher-core/src/` or the shared core,** commit it, and re-record `conformance/cases.json` only when results change on purpose (`make record-conformance`, review the diff).
+- **Index writers never leave a half-written index and never shrink it by accident.** Writes go to `<name>.tmp/` then swap. A vault scan that can't read a folder raises (`VaultUnreadable`) instead of writing a smaller index. Anything the 5-minute tick runs must not raise and must take a non-blocking lock.
+- **Personal data never enters the repo** (it is public). No real note titles, vault contents or paths in docs, tests or fixtures. Private exclusions live in `config.local.toml`, keys in `secrets.toml` (both git-ignored). Set `[notes].exclude` **before** the notes index first runs on a vault.
+- **The launcher app:** JavaScriptCore calls stay in `autoreleasepool`s and engines are built off the query actor; the JIT entitlement and `JSCRanker.configureProcess()` are required for its speed and memory budgets. Anything drawn over the panel's glass must be opaque and outside the `GlassEffectContainer`. Run `make app-selftest` after any change to the panel or key handling. Details: DEVELOPMENT.md → Gotchas.
 - **After changing a plist:** `launchctl bootout gui/$(id -u)/<label>`, copy it to `~/Library/LaunchAgents/`, then `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/<label>.plist`.
 
 ---

@@ -2,6 +2,8 @@
 
 A personal research and productivity layer combining **Obsidian** notes and **Zotero** literature.
 
+**Install guide (pick a tier: Obsidian only, notes, the launcher app, the planner): [docs/INSTALL.md](docs/INSTALL.md).** All documentation: [docs/](docs/README.md).
+
 This repository includes **Daito Paper Search**: a local, hybrid paper search engine and Obsidian plugin that gives you instant Zotero search, inline citation autocompletion (`@@`), automatic literature note generation, and context-aware related paper recommendations.
 
 ---
@@ -84,6 +86,24 @@ cd daito
 
 ---
 
+## Daito Search: the launcher (macOS 26, optional)
+
+A menu-bar app that searches your Zotero library **and** your Obsidian notes from any app:
+
+- **⌥Space** opens a floating glass panel. Results update as you type (keyword at once, semantic after a pause), with
+  the matching passage and page.
+- **↵** opens the paper in Zotero at that page, or the note in Obsidian. **⌘↵** pastes the PDF itself into the app you
+  were in (Mail, Teams, an LLM chat). **⌘⇧↵** pastes the passage with its citation. **⌘K** lists every action: copy
+  file, path, citation or `[[wikilink]]`, show in Finder, Quick Look, open the literature note. Rows also drag out as
+  files.
+- Papers and their literature notes appear as one row. Private notes can be excluded by glob and are never read.
+- Paper and note titles also appear in Spotlight (⌘Space), plus a "Search Everything" Spotlight action.
+
+Install: [docs/INSTALL.md, tier 3](docs/INSTALL.md#tier-3-the-launcher-app-daito-searchapp) (needs Xcode).
+Design: [docs/LAUNCHER_SPEC.md](docs/LAUNCHER_SPEC.md).
+
+---
+
 ## Features & Shortcuts
 
 ### Instant Paper Search (`Cmd+Shift+0` / `Mod+Shift+0`)
@@ -145,8 +165,14 @@ obsidian/paper-search/  Obsidian plugin (TypeScript)
   ├── src/inline.ts     Inline @@ citation suggestion controller
   ├── src/related.ts    Related papers sidebar panel
   └── src/litnote.ts    Safe literature note generator
-launchd/                macOS launchd plist definitions
-config.toml             Vault paths, model settings, and search parameters
+  ├── mdtext.py         Markdown notes → clean text, heading sections, chunks
+  └── notesindex.py     Vault notes index (.planner/notes/), same format as the paper index
+obsidian/paper-search/  Obsidian plugin (TypeScript); its src/{engine,bm25,rank,text,...}.ts is the shared ranking core
+launcher-core/          Launcher ranking + view models (TypeScript) → dist/ranker.js, run by the app in JavaScriptCore
+macos/                  Daito Search.app (Swift package: DaitoSearchKit, DaitoSearch, DaitoBench)
+launchd/                macOS launchd plist definitions (the owner's copies: absolute paths)
+config.toml             Vault paths, model settings, search and notes parameters (personal overrides: config.local.toml)
+docs/                   Install guide, development guide, specs, decisions log: start at docs/README.md
 ```
 
 ## Contributing
@@ -157,4 +183,4 @@ Read [AGENTS.md](AGENTS.md) first: it has the layout, commands and the rules tha
 make check
 ```
 
-That runs ruff, `tsc --noEmit`, the Python (`unittest`) and plugin (`node --test`) suites, and fails if the committed `obsidian/paper-search/main.js` is out of date with `src/`. Changes are test-first: add the failing test, then the fix. Tests never touch a real vault, Zotero library or Ollama.
+On a fresh clone run `make dev-setup` first. `make check` runs ruff, `tsc --noEmit` (plugin and launcher-core), the Python (`unittest`), plugin and launcher-core (`node --test`) and Swift (Swift Testing; needs Xcode) suites, and fails if the committed `main.js` or `launcher-core/dist/ranker.js` is out of date. The full development guide is [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md). Changes are test-first: add the failing test, then the fix. Tests never touch a real vault, Zotero library or Ollama.

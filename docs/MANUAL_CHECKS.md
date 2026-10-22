@@ -1,5 +1,7 @@
 # Paper Search Plugin Manual Test Checklist
 
+(For the launcher app see [macos/CHECK.md](../macos/CHECK.md).)
+
 ## Quick Smoke Test Checklist
 
 - [ ] Opens with the configured hotkey (`Mod+Shift+0` / `Cmd+Shift+F`). The first keystroke shows keyword results in under 50 ms (no visible lag).
