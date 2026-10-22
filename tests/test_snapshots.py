@@ -82,7 +82,7 @@ class TestZotlibSnapshots(unittest.TestCase):
         self.assertEqual(by_key["KEY0001"].snapshots, [])
         all_keys = {s.attachmentKey for p in papers for s in p.snapshots}
         self.assertEqual(all_keys, {"ATT005H"})
-        self.assertEqual(p5.to_dict()["snapshots"], [{"attachmentKey": "ATT005H", "hasText": True}])
+        self.assertEqual(p5.to_dict()["snapshots"], [{"attachmentKey": "ATT005H", "hasText": True, "file": "ATT005H/snapshot.html"}])
 
 
 class TestSnapshotIndexing(unittest.TestCase):
@@ -144,7 +144,7 @@ class TestSnapshotIndexing(unittest.TestCase):
         self.assertIsInstance(snap[0]["row"], int)
         self.assertIn("poroelastic", snap[0]["text"])
         self.assertNotIn("analytics beacon", snap[0]["text"])
-        self.assertEqual(papers[p5_idx]["snapshots"], [{"attachmentKey": "ATT005H", "hasText": True}])
+        self.assertEqual(papers[p5_idx]["snapshots"], [{"attachmentKey": "ATT005H", "hasText": True, "file": "ATT005H/snapshot.html"}])
         self.assertEqual(self.load("manifest.json")["chunker"], "pages-v2")
 
     def test_unchanged_snapshot_is_not_reembedded_and_changed_one_is(self):

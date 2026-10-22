@@ -1,0 +1,19 @@
+{
+  "name": "daito-launcher-core",
+  "version": "1.0.0",
+  "description": "Ranking and view-model core for the Daito Search launcher (runs in Node for tests, in JavaScriptCore in the app)",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit -p .",
+    "build": "node build.mjs",
+    "record": "node scripts/record-conformance.ts",
+    "eval": "node scripts/eval.ts"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "typescript": "^5.8.0"
+  }
+}

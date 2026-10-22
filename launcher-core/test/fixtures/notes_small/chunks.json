@@ -1,0 +1,74 @@
+[
+  {
+    "paper": 0,
+    "attachmentKey": "",
+    "page": 0,
+    "text": "Flow will do work for manager/search engine type A swiss charity update writing! papers weinberg! status/done mib stuff cam ticket thoughts happy with my morning dealing with useless thoughts Biomaterials (Celiz) research Cancer",
+    "row": 1,
+    "heading": "",
+    "line": 6
+  },
+  {
+    "paper": 1,
+    "attachmentKey": "",
+    "page": 0,
+    "text": "Why organoids are hard to scale, see Celiz notes and LeSavage 2022 Materials. Animal derived, same can of worms as FBS Only 53% batch to batch similarity in protein content Weaker mechanically than real ECM; tagged #matrigel and #organoids See the protocol and",
+    "row": 3,
+    "heading": "Organoid bottlenecks",
+    "line": 8
+  },
+  {
+    "paper": 1,
+    "attachmentKey": "",
+    "page": 0,
+    "text": "Hard to make crosslinking reproducible.",
+    "row": 4,
+    "heading": "Organoid bottlenecks › Materials › Collagen",
+    "line": 22
+  },
+  {
+    "paper": 1,
+    "attachmentKey": "",
+    "page": 0,
+    "text": "Dissociate and encapsulate single cells, or mince and encapsulate fragments. Usually a single biopsy so heterogeneity is lost, and healthy cells overgrow the culture quickly in practice. Second sentence about overgrowth. #include <stdio.h> # not a heading A callout title callout body words here col a col b cell one cell two html words and italic words and struck.",
+    "row": 5,
+    "heading": "Organoid bottlenecks › Techniques",
+    "line": 25
+  },
+  {
+    "paper": 2,
+    "attachmentKey": "",
+    "page": 0,
+    "text": "What happened this week: finished the replication of the viscoelastic hydrogel experiment and wrote up the methods in detail for the group.",
+    "row": 7,
+    "heading": "Review 2026-W42",
+    "line": 1
+  },
+  {
+    "paper": 3,
+    "attachmentKey": "",
+    "page": 0,
+    "text": "--- title: [unclosed this line is not yaml at all : : : --- Body text after a broken frontmatter block that still counts as the note body.",
+    "row": 9,
+    "heading": "",
+    "line": 1
+  },
+  {
+    "paper": 5,
+    "attachmentKey": "",
+    "page": 0,
+    "text": "Matrix stiffness and viscoelasticity regulate organoid growth and drug response, and permissive matrix degradation is required for outgrowth of organoids from patient tumour fragments.",
+    "row": 11,
+    "heading": "Next generation cancer organoids",
+    "line": 1
+  },
+  {
+    "paper": 6,
+    "attachmentKey": "",
+    "page": 0,
+    "text": "Faster stress relaxation accelerated neuronal maturation and neural network development in hydrogels with tunable viscoelasticity for organoid culture. my thoughts on stress relaxation and neural maturation in matrices that relax stress quickly",
+    "row": 13,
+    "heading": "Abstract",
+    "line": 6
+  }
+]

@@ -22,7 +22,8 @@
       {
         "attachmentKey": "ATT001",
         "pages": 14,
-        "hasText": true
+        "hasText": true,
+        "file": "ATT001/sample.pdf"
       }
     ],
     "abstractRow": 0
@@ -49,7 +50,8 @@
       {
         "attachmentKey": "ATT002",
         "pages": 10,
-        "hasText": true
+        "hasText": true,
+        "file": "ATT002/sample2.pdf"
       }
     ],
     "abstractRow": 2
@@ -76,7 +78,8 @@
       {
         "attachmentKey": "ATT004A",
         "pages": 8,
-        "hasText": true
+        "hasText": true,
+        "file": "ATT004A/main.pdf"
       }
     ],
     "abstractRow": 4
@@ -102,7 +105,8 @@
       {
         "attachmentKey": "ATT005",
         "pages": 6,
-        "hasText": true
+        "hasText": true,
+        "file": "ATT005/paper5.pdf"
       }
     ],
     "abstractRow": 6

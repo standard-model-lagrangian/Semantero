@@ -48,3 +48,13 @@ max_chunks_per_paper = 150          # stops a thesis or book from dominating res
 batch_size = 32
 keep_alive = "30m"
 
+
+[notes]
+enabled = true
+exclude = ["Templates/**", "Threads.md", "Zotero Template.md", "Zotero Citation Template.md"]
+chunk_words = 200            # notes are denser than papers; settled by the evaluation
+chunk_overlap_words = 40
+min_section_words = 25
+lead_words = 120
+max_chunks_per_note = 60
+# model, dims, query_instruction, batch_size, keep_alive come from [search]

@@ -8,7 +8,7 @@ import urllib.parse
 from collections import Counter
 from datetime import date, datetime, timedelta
 
-from . import brief, config, fixes, health, searchindex, stats, threads, vault, weekly
+from . import brief, config, fixes, health, notesindex, searchindex, stats, threads, vault, weekly
 from .extract import PROMPT, PROMPT_VERSION, extract, user_message
 from .llm import OPENAI_COMPAT, LLMError, chat_json, list_models
 
@@ -349,7 +349,45 @@ def cmd_threads(cfg, args):
         print(f"{threads_path.name} unchanged")
 
 
+def notes_tick_warning(cfg, err: Exception) -> str | None:
+    """A setup warning for a failed notes-index run, only when the index is missing or over a day old."""
+    st = notesindex.get_stats(cfg)
+    if st.get("indexed"):
+        try:
+            age = datetime.now() - datetime.fromisoformat(st["built_at"])
+            if age <= timedelta(days=1):
+                return None
+        except Exception:
+            pass
+    return f"Notes index couldn't be updated ({str(err)[:140]}). Run: planner notes index"
+
+
+def _notes_tick(cfg) -> None:
+    """Keep the notes index fresh on every launchd tick. Never raises; a busy lock just skips."""
+    if not notesindex.notes_enabled(cfg) or not getattr(cfg, "search", None):
+        return
+    try:
+        res = notesindex.build_index(cfg, blocking=False)
+        if res.get("changed"):
+            print(f"updated notes index ({res['notes']} notes)", flush=True)
+    except BlockingIOError:
+        return
+    except Exception as e:  # includes notesindex.VaultUnreadable: the old index is kept
+        print(f"notes index failed: {e}", flush=True)
+        warning = notes_tick_warning(cfg, e)
+        if warning:
+            print(f"warning: {warning}", flush=True)
+
+
 def cmd_morning(cfg, args):
+    """The launchd tick: the morning run (once a day), then the notes index (every tick)."""
+    try:
+        _morning(cfg, args)
+    finally:
+        _notes_tick(cfg)
+
+
+def _morning(cfg, args):
     """Run once per day, on the first check after you open the laptop and are online.
 
     launchd calls this every few minutes; it exits silently once today's run is done.
@@ -464,7 +502,8 @@ def cmd_doctor(cfg, args):
         print(f"online: {'yes' if is_online else 'no (endpoint checks skipped)'}")
     results = health.run(cfg, load_sides(cfg.data_dir), is_online, search_only=search_only)
     for r in results:
-        print(f"{'✓' if r.ok else '✗'} {r.name}" + ("" if r.ok else f"\n    {r.message}"))
+        note = f"\n    note: {r.message}" if r.ok and r.message else ""
+        print(f"{'✓' if r.ok else '✗'} {r.name}" + (note if r.ok else f"\n    {r.message}"))
     bad = sum(not r.ok for r in results)
     print(f"\n{len(results) - bad}/{len(results)} checks passed")
     if bad:
@@ -500,6 +539,29 @@ def cmd_search(cfg, args):
         zotwatch.watch_run(cfg)
 
 
+def cmd_notes(cfg, args):
+    if args.notes_cmd == "stats":
+        notesindex.print_stats(cfg)
+    elif args.notes_cmd == "index":
+        if not notesindex.notes_enabled(cfg):
+            sys.exit("notes index is not enabled: add a [notes] section to config.toml")
+        try:
+            res = notesindex.build_index(cfg, full=args.full)
+        except (TimeoutError, BlockingIOError) as e:
+            print(f"notes index: {e}", file=sys.stderr)
+            sys.exit(1)
+        if res["changed"]:
+            print(f"Indexed {res['notes']} notes ({res['chunks']} chunks, {res['embedded']} texts embedded) "
+                  f"in {res['elapsed']:.1f}s; {res['excluded']} excluded")
+        else:
+            print(f"notes index: no changes ({res['elapsed']:.1f}s)")
+        if res["missing_vectors"]:
+            print(f"Keyword-only for {res['missing_vectors']} texts: Ollama was unavailable. "
+                  "The next tick embeds them once Ollama is running.")
+        for item in res["skipped"]:
+            print(f"  skipped {item}")
+
+
 def main():
     p = argparse.ArgumentParser(prog="planner")
     p.add_argument("--model", help='override the extraction model, e.g. "groq:qwen/qwen3-32b"')
@@ -512,6 +574,11 @@ def main():
     sc_idx.add_argument("--full", action="store_true", help="force full rebuild")
     sc_idx.add_argument("--limit", type=int, help="limit number of papers to index")
     sc_sub.add_parser("watch-run", help="run watcher incremental sync on Zotero changes")
+    nc = sub.add_parser("notes", help="vault notes search index: stats or index")
+    nc_sub = nc.add_subparsers(dest="notes_cmd", required=True)
+    nc_sub.add_parser("stats", help="notes per kind, chunks, literature notes, excluded, model, age")
+    nc_idx = nc_sub.add_parser("index", help="build or update the notes index")
+    nc_idx.add_argument("--full", action="store_true", help="force full rebuild")
     b = sub.add_parser("backfill", help="extract all daily notes into .planner/")
     b.add_argument("--force", action="store_true", help="re-extract even cached notes")
     b.add_argument("--limit", type=int, help="only the most recent N notes")
@@ -556,7 +623,7 @@ def main():
     cmds = {"backfill": cmd_backfill, "show": cmd_show, "prompt": cmd_prompt, "compare": cmd_compare, "models": cmd_models,
             "brief": cmd_brief, "nightly": cmd_nightly, "weekly": cmd_weekly,
             "morning": cmd_morning, "doctor": cmd_doctor, "threads": cmd_threads, "remind": cmd_remind,
-            "search": cmd_search}
+            "search": cmd_search, "notes": cmd_notes}
     try:
         cmds[args.cmd](cfg, args)
     except LLMError as e:

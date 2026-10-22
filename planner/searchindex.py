@@ -26,6 +26,23 @@ def write_json(path: Path, data):
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
 
 
+def fsync_files(directory: Path, names: list[str]) -> None:
+    for fn in names:
+        with open(directory / fn, "rb") as f:
+            os.fsync(f.fileno())
+
+
+def atomic_swap(tmp_dir: Path, final_dir: Path, old_dir: Path) -> None:
+    """Move a fully written tmp_dir into place: old aside, new in, old deleted."""
+    if old_dir.exists():
+        shutil.rmtree(old_dir)
+    if final_dir.exists():
+        final_dir.rename(old_dir)
+    tmp_dir.rename(final_dir)
+    if old_dir.exists():
+        shutil.rmtree(old_dir)
+
+
 def compute_content_hash(papers_data: list[dict], chunks_data: list[dict], vector_bytes: bytes) -> str:
     hasher = hashlib.sha256()
     hasher.update(json.dumps(papers_data, sort_keys=True, ensure_ascii=False).encode("utf-8"))
@@ -42,7 +59,14 @@ _held_locks: dict[str, int] = {}
 
 @contextmanager
 def search_lock(cfg, timeout: float = 60.0, blocking: bool = True):
-    lock_path = cfg.data_dir / "search.lock"
+    with named_lock(cfg, "search.lock", timeout, blocking) as f:
+        yield f
+
+
+@contextmanager
+def named_lock(cfg, filename: str, timeout: float = 60.0, blocking: bool = True):
+    """Advisory lock on <data_dir>/<filename>; re-entrant within one process."""
+    lock_path = cfg.data_dir / filename
     key = str(lock_path.resolve())
     if _held_locks.get(key):
         _held_locks[key] += 1
@@ -66,7 +90,7 @@ def search_lock(cfg, timeout: float = 60.0, blocking: bool = True):
                 if not blocking:
                     raise BlockingIOError("busy: lock held by another process")
                 if (time.time() - start_time) >= timeout:
-                    raise TimeoutError(f"Could not acquire search.lock after {timeout}s: held by another process")
+                    raise TimeoutError(f"Could not acquire {filename} after {timeout}s: held by another process")
                 time.sleep(0.05)
         _held_locks[key] = 1
         yield f
@@ -458,7 +482,11 @@ def build_index(
             # 0.2: Check if this is a no-op run (a failed retry that reproduces the same keyword-only index is one too)
             old_content_hash = prev_manifest.get("content_hash") if prev_manifest else None
             nothing_new = len(pending_texts) == 0 or not embed_succeeded
-            if not full and nothing_new and old_content_hash is not None and content_hash == old_content_hash:
+            has_storage_field = bool(prev_manifest and prev_manifest.get("zotero_storage"))
+            if (
+                not full and nothing_new and has_storage_field
+                and old_content_hash is not None and content_hash == old_content_hash
+            ):
                 elapsed = time.time() - t0
                 print(f"search index: no changes ({elapsed:.1f}s)")
                 return {
@@ -479,6 +507,7 @@ def build_index(
                 "dims": dims,
                 "query_instruction": query_instruction,
                 "chunker": chunker,
+                "zotero_storage": str(zotero_dir / "storage"),
                 "papers": len(papers_data),
                 "chunks": len(chunks_data),
                 "content_hash": content_hash,
@@ -512,19 +541,8 @@ def build_index(
                 f.flush()
                 os.fsync(f.fileno())
 
-            # Fsync json files
-            for fn in ["manifest.json", "papers.json", "chunks.json", "state.json"]:
-                with open(tmp_dir / fn, "rb") as f:
-                    os.fsync(f.fileno())
-
-            # Atomic directory swap
-            if old_dir.exists():
-                shutil.rmtree(old_dir)
-            if search_dir.exists():
-                search_dir.rename(old_dir)
-            tmp_dir.rename(search_dir)
-            if old_dir.exists():
-                shutil.rmtree(old_dir)
+            fsync_files(tmp_dir, ["manifest.json", "papers.json", "chunks.json", "state.json"])
+            atomic_swap(tmp_dir, search_dir, old_dir)
 
             elapsed = time.time() - t0
             return {

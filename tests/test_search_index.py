@@ -1088,3 +1088,107 @@ if __name__ == "__main__":
     unittest.main()
 
 
+
+
+class TestPaperFilePaths(unittest.TestCase):
+    """Launcher spec Py 1-5: papers.json carries the file each attachment lives in."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.zotero_dir = self.root / "Zotero"
+        self.zotero_dir.mkdir()
+        (self.zotero_dir / "zotero.sqlite").write_bytes((FIXTURES_DIR / "zotero.sqlite").read_bytes())
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _add_attachment(self, att_id, parent_id, key, path, content_type):
+        import sqlite3
+        conn = sqlite3.connect(self.zotero_dir / "zotero.sqlite")
+        conn.execute("INSERT INTO items (itemID, itemTypeID, key) VALUES (?, 3, ?)", (att_id, key))
+        conn.execute(
+            "INSERT INTO itemAttachments (itemID, parentItemID, contentType, path) VALUES (?, ?, ?, ?)",
+            (att_id, parent_id, content_type, path),
+        )
+        conn.commit()
+        conn.close()
+
+    def _by_key(self):
+        return {p.key: p for p in zotlib.read_library(self.zotero_dir)}
+
+    # 1
+    def test_stored_attachment_file_is_relative_to_storage(self):
+        p1 = self._by_key()["KEY0001"]
+        self.assertEqual(p1.pdfs[0].file, "ATT001/sample.pdf")
+        self.assertEqual(p1.pdfs[0].to_dict()["file"], "ATT001/sample.pdf")
+
+    # 2
+    def test_linked_attachment_file_is_absolute(self):
+        self._add_attachment(300, 1, "ATTLINK", "/Users/x/Papers/linked one.pdf", "application/pdf")
+        pdfs = {a.attachmentKey: a for a in self._by_key()["KEY0001"].pdfs}
+        self.assertEqual(pdfs["ATTLINK"].file, "/Users/x/Papers/linked one.pdf")
+        self.assertEqual(pdfs["ATTLINK"].path, Path("/Users/x/Papers/linked one.pdf"))
+
+    # 3
+    def test_snapshot_has_file(self):
+        self._add_attachment(301, 1, "ATTSNAP", "storage:index.html", "text/html")
+        snap = self._by_key()["KEY0001"].snapshots[0]
+        self.assertEqual(snap.to_dict()["file"], "ATTSNAP/index.html")
+
+    def _cfg(self, vault):
+        from planner.config import Config
+        data_dir = vault / ".planner"
+        data_dir.mkdir(parents=True)
+        return Config(
+            vault=vault, daily_dir=vault, data_dir=data_dir, models={}, extract={}, brief={},
+            reviews_dir=vault / "Reviews", daily_template=vault / "Daily.md", schedule={}, threads={},
+            search={"zotero_dir": str(self.zotero_dir), "model": "m", "dims": 8},
+        )
+
+    def _fake_embed(self, texts, **kw):
+        return [[1.0] + [0.0] * 7 for _ in texts]
+
+    # 4
+    def test_manifest_has_expanded_zotero_storage(self):
+        from planner import searchindex
+        cfg = self._cfg(self.root / "vault")
+        searchindex.build_index(cfg, full=True, embed_fn=self._fake_embed)
+        manifest = json.loads((cfg.data_dir / "search" / "manifest.json").read_text())
+        self.assertEqual(manifest["zotero_storage"], str(self.zotero_dir / "storage"))
+        self.assertNotIn("~", manifest["zotero_storage"])
+
+    # 5
+    def test_adding_file_field_does_not_reembed(self):
+        """An index built before this change (no `file`, no `zotero_storage`) is rewritten once, with 0 embeds."""
+        from planner import searchindex
+        cfg = self._cfg(self.root / "vault")
+        searchindex.build_index(cfg, full=True, embed_fn=self._fake_embed)
+        search = cfg.data_dir / "search"
+        old_hash = json.loads((search / "manifest.json").read_text())["content_hash"]
+
+        # Downgrade the index on disk to the previous format.
+        papers = json.loads((search / "papers.json").read_text())
+        for p in papers:
+            for a in p["pdfs"] + p.get("snapshots", []):
+                a.pop("file", None)
+        (search / "papers.json").write_text(json.dumps(papers))
+        manifest = json.loads((search / "manifest.json").read_text())
+        manifest.pop("zotero_storage")
+        manifest["content_hash"] = "old"
+        (search / "manifest.json").write_text(json.dumps(manifest))
+
+        calls = []
+
+        def counting(texts, **kw):
+            calls.append(len(texts))
+            return self._fake_embed(texts)
+
+        res = searchindex.build_index(cfg, embed_fn=counting)
+        self.assertEqual(calls, [])
+        self.assertTrue(res["changed"])
+        new_manifest = json.loads((search / "manifest.json").read_text())
+        self.assertIn("zotero_storage", new_manifest)
+        self.assertEqual(new_manifest["content_hash"], old_hash)
+        papers = json.loads((search / "papers.json").read_text())
+        self.assertEqual(papers[0]["pdfs"][0]["file"], "ATT001/sample.pdf")

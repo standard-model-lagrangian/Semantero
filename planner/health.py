@@ -11,6 +11,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from pathlib import Path
 
 from .config import ROOT
 from .llm import OPENAI_COMPAT, SECRETS, LLMError, list_models
@@ -19,6 +20,7 @@ from .vault import future_notes, logical_today
 
 REBUILD = 'cd "{root}" && rm -rf .venv && python3 -m venv .venv && .venv/bin/pip install anthropic'
 JOBS = ["com.planner.morning", "com.planner.weekly"]
+APP_PATHS = [Path("/Applications/Daito Search.app"), Path.home() / "Applications" / "Daito Search.app"]
 
 
 @dataclass
@@ -229,6 +231,53 @@ def check_search_index(cfg) -> Result | None:
     return None
 
 
+def check_notes_index(cfg) -> Result | None:
+    from . import notesindex
+    if not notesindex.notes_enabled(cfg) or not getattr(cfg, "search", None):
+        return None
+    for g in notesindex.settings(cfg)["exclude"]:
+        try:
+            notesindex.glob_to_regex(g)
+        except ValueError as e:
+            return Result("notes index", False, f"Bad [notes] exclude pattern {g!r}: {e}")
+    manifest_path = cfg.data_dir / "notes" / "manifest.json"
+    if not manifest_path.exists():
+        return Result("notes index", False, "No notes index found. Run: planner notes index")
+    try:
+        manifest = json.loads(manifest_path.read_text())
+    except Exception as e:
+        return Result("notes index", False, f"Failed to read notes manifest: {e}. Run: planner notes index --full")
+    cfg_model = cfg.search.get("model", "qwen3-embedding:0.6b")
+    cfg_dims = int(cfg.search.get("dims", 1024))
+    if manifest.get("model") != cfg_model or manifest.get("dims") != cfg_dims:
+        return Result(
+            "notes index", False,
+            f"Notes index model/dims ({manifest.get('model')}/{manifest.get('dims')}) differs from config.toml "
+            f"({cfg_model}/{cfg_dims}). Run: planner notes index --full")
+    try:
+        age = datetime.now() - datetime.fromisoformat(manifest.get("built_at", ""))
+    except Exception:
+        age = None
+    if age is not None and age > timedelta(days=1) and manifest.get("degraded"):
+        return Result(
+            "notes index", False,
+            f"Notes index has been degraded for over a day: semantic search is off for "
+            f"{manifest.get('missing_vectors', 0)} texts. Start Ollama (brew services start ollama); the next tick embeds them")
+    if age is not None and age > timedelta(days=1):
+        return Result("notes index", False, f"Notes index is {age.days} days old (> 1 day). Run: planner notes index")
+    return None
+
+
+def check_launcher_app(cfg) -> Result | None:
+    """Informational: the launcher app is optional, so a missing app is a note, never a failure."""
+    from . import notesindex
+    if not notesindex.notes_enabled(cfg):
+        return None
+    if any(p.exists() for p in APP_PATHS):
+        return Result("launcher app", True)
+    return Result("launcher app", True, "Daito Search.app is not installed (optional). Build it with: make install-app")
+
+
 def check_search_tools(cfg) -> Result | None:
     if not getattr(cfg, "search", None):
         return None
@@ -300,8 +349,10 @@ def run(cfg, sides: list[dict], online: bool, today: date | None = None, search_
         if getattr(cfg, "search", None):
             checks += [
                 ("search index", lambda: check_search_index(cfg)),
+                ("notes index", lambda: check_notes_index(cfg)),
                 ("search tools", lambda: check_search_tools(cfg)),
                 ("zotero watch", lambda: check_zotero_watch(cfg)),
+                ("launcher app", lambda: check_launcher_app(cfg)),
             ]
         return [_check(name, fn) for name, fn in checks]
 
@@ -318,8 +369,10 @@ def run(cfg, sides: list[dict], online: bool, today: date | None = None, search_
     if getattr(cfg, "search", None):
         checks += [
             ("search index", lambda: check_search_index(cfg)),
+            ("notes index", lambda: check_notes_index(cfg)),
             ("search tools", lambda: check_search_tools(cfg)),
             ("zotero watch", lambda: check_zotero_watch(cfg)),
+            ("launcher app", lambda: check_launcher_app(cfg)),
         ]
     if online:
         checks += [("extract model", lambda: check_hosted_extract(cfg)),

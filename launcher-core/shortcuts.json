@@ -1,0 +1,16 @@
+{
+  "reserved": ["cmd+k", "cmd+d", "cmd+1", "cmd+2", "cmd+3", "cmd+w", "cmd+,", "cmd+q", "escape", "up", "down", "ctrl+n", "ctrl+p", "tab"],
+  "actions": [
+    { "id": "open", "title": "Open", "key": "return", "kinds": ["paper", "note", "daily", "litnote"], "needs": [] },
+    { "id": "paste-file", "title": "Paste File", "key": "cmd+return", "kinds": ["paper", "note", "daily", "litnote"], "needs": ["filePath"] },
+    { "id": "paste-passage", "title": "Paste Passage with Citation", "key": "cmd+shift+return", "kinds": ["paper", "note", "daily", "litnote"], "needs": [] },
+    { "id": "copy-file", "title": "Copy File", "key": "cmd+shift+c", "kinds": ["paper", "note", "daily", "litnote"], "needs": ["filePath"] },
+    { "id": "copy-passage", "title": "Copy Passage with Citation", "key": "cmd+option+c", "kinds": ["paper", "note", "daily", "litnote"], "needs": [] },
+    { "id": "copy-path", "title": "Copy Path", "key": "cmd+shift+.", "kinds": ["paper", "note", "daily", "litnote"], "needs": ["filePath"] },
+    { "id": "reveal", "title": "Show in Finder", "key": "cmd+shift+f", "kinds": ["paper", "note", "daily", "litnote"], "needs": ["filePath"] },
+    { "id": "quicklook", "title": "Quick Look", "key": "cmd+y", "kinds": ["paper", "note", "daily", "litnote"], "needs": ["filePath"] },
+    { "id": "copy-wikilink", "title": "Copy Wikilink", "key": "cmd+l", "kinds": ["paper", "note", "daily", "litnote"], "needs": [] },
+    { "id": "open-note", "title": "Open Literature Note", "key": "cmd+o", "kinds": ["paper"], "needs": ["noteUrl"] },
+    { "id": "select-zotero", "title": "Select in Zotero", "key": "cmd+shift+z", "kinds": ["paper", "litnote"], "needs": ["selectUrl"] }
+  ]
+}

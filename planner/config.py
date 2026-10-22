@@ -19,6 +19,7 @@ class Config:
     schedule: dict
     threads: dict
     search: dict = field(default_factory=dict)
+    notes: dict = field(default_factory=dict)
 
 
 def load(path: Path = ROOT / "config.toml") -> Config:
@@ -47,4 +48,5 @@ def load(path: Path = ROOT / "config.toml") -> Config:
         schedule=raw.get("schedule", {}),
         threads=raw.get("threads", {}),
         search=raw.get("search", {}),
+        notes=raw.get("notes", {}),
     )

@@ -6,5 +6,6 @@
   "query_instruction": "Given a description of what a paper found or showed, retrieve that paper",
   "chunker": "pages-v1",
   "papers": 4,
-  "chunks": 4
+  "chunks": 4,
+  "zotero_storage": "/Users/test/Zotero/storage"
 }

@@ -1,0 +1,3 @@
+Flow
+
+type A

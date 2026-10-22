@@ -155,3 +155,125 @@ All execution speed budgets specified in `INTEGRATION_SPEC.md` were benchmarked 
 - **papers.json:** `pdfs` stays PDF-only; snapshots are listed separately as `snapshots: [{attachmentKey, hasText}]` so nothing that counts pages or PDFs changes meaning.
 - **Opening:** verified in the installed Zotero (9.0.6) `ZoteroProtocolHandler.mjs`: `zotero://open` and `zotero://open-pdf` share one handler that accepts any file attachment and calls `Zotero.FileHandlers.open`. A snapshot hit opens `zotero://open/library/items/<attKey>` with no page. Abstract hits prefer the first PDF, then the first snapshot, then select the item. Badge: `web page`.
 - **Watcher:** fingerprint counts and stats PDF and snapshot attachments together (changes the fingerprint once on upgrade, which coincides with the chunker rebuild).
+
+---
+
+## Launcher (docs/LAUNCHER_SPEC.md): implementation log
+
+Implemented 22 Oct 2026. **Not committed.** Automated: Python 130 tests, plugin 161, `launcher-core` 41 (+3 gated perf), Swift 60 (also clean under Thread Sanitizer), 84 conformance cases passing in Node, in the JavaScriptCore bundle and in Swift. **Not verified (needs a person at the screen):** the manual checks in `macos/CHECK.md`, notably S2 (paste into other apps), S3 (Spotlight calling the intent live) and S4 (Core Spotlight items showing in ⌘Space). The built panel was captured with `cacheDisplay` (`DAITO_SHOW_PANEL=… DAITO_SNAPSHOT=…`): layout, text, bold matches, detail pane and footer render; glass, SF Symbols and the status dot do not show up in that capture, so the look is unchecked.
+
+### Spike S1: the ranker decision (measured here, M-series Mac, macOS 26.6, Xcode 27.1)
+
+Real library (170 papers, 145 notes, 9,100 chunks, 1× = today) and the spec's 3× synthetic (500 papers × 50 chunks + 2,000 notes × 3 chunks, 1,024 dims). `make bench-app`; `daito-bench --memprobe`.
+
+| | Budget (1× / 3×) | Real 1×, **no** JIT entitlement | Real 1×, allow-jit | 3×, **no** JIT | 3×, allow-jit |
+|---|---|---|---|---|---|
+| M1 load (files → engine ready) | ≤ 1.5 s / ≤ 4 s | 1.43 s | **0.52 s** | 1.15 s | **0.39 s** |
+| M2 keyword per keystroke, p95 incl. JSON bridge | ≤ 16 / ≤ 25 ms | 5.1 ms | **1.6 ms** | 14.6 ms | **4.9 ms** |
+| M3 option A (all JavaScriptCore) hybrid, p95 | ≤ 40 / ≤ 80 ms | **255 ms** | **8.2 ms** | **938 ms** | **29.7 ms** |
+| M3 option B (JSC + Accelerate vector pass), p95 | same | 6.4 ms | 2.3 ms | 25 ms | 8.7 ms |
+| M5 JSON bridge alone, p95 | ≤ 2 ms | 0.2 ms | 0.2 ms | 0.2 ms | 0.2 ms |
+| M7 Accelerate vector pass alone, p95 | | 0.8 ms | 0.6 ms | 2.7 ms | 2.0 ms |
+
+**Decision (rule 1, then rule 2): option A, all JavaScriptCore**, with two conditions the app now enforces:
+1. **The JIT entitlement is mandatory.** Without `com.apple.security.cs.allow-jit` JavaScriptCore runs interpreted (even ad hoc signed, even without the hardened runtime): the vector loop is 30× slower and load 3× slower. `macos/Resources/DaitoSearch.entitlements` carries it and `bundle.sh` always signs with it. An unsigned or plain `swift run` build is slow; that is expected.
+2. **`JSC_useFTLJIT=0` and `JSC_useDFGJIT=0`** (`JSCRanker.configureProcess()`, called before the first JavaScriptCore use). With the default tiers the process held 500–800 MB; without the top two tiers the steady state is 112–200 MB with load, keyword and hybrid times unchanged (hybrid A 7.6 ms at 1×, 28 ms at 3×).
+
+Option B (`AcceleratedRanker`) is built and passes the same 84 conformance cases; it is the ready fallback if M3 ever regresses (`rankerOption` in `AppModel.swift`). Option C (a Swift port) is not needed.
+
+M4 (memory, budget ≤ 250 MB at 1×): **met in the running app, by a workaround I do not fully understand.** Parsing 15 MB of chunk text and building the index churns ~1 GB; JavaScriptCore keeps that as dirty pages until a virtual machine is torn down. In a probe, the *third* load in a process drops the footprint from ~900 MB to ~150 MB; the second does not. `JSGarbageCollect` (an asynchronous hint), `malloc_zone_pressure_relief`, and a throwaway VM do nothing. So `AppModel.start` performs the first load and then **two compaction reloads** (`IndexReloader.forceReload()`, 4 s apart, old engine serving queries throughout); the running app then shows `footprint` = 112 MB. This is empirical and may change with a macOS update; `make bench-app` plus `daito-bench --memprobe` re-checks it. `ps` RSS reads high (1.1 GB) because it counts reclaimable pages; `footprint` / Activity Monitor "Memory" is the real figure.
+
+Things tried and ruled out for memory: typed-array postings in `bm25.ts` (kept: it is correct and faster to build, JSC footprint unchanged), removing the redundant hash operations in `BM25Index.build` (kept: −22 % build time in V8), `JSC_forceRAMSize` / `JSC_smallHeapRAMFraction` / `JSC_useGenerationalGC` (small or no effect), `$vm.gc()` (not available in the system JavaScriptCore).
+
+Other S1 fixes: JSON is decoded natively in Swift and passed as strings (the JS UTF-8 loop cost 0.6 s per load); every JavaScriptCore call runs in an `autoreleasepool` (without it each replaced engine stayed alive: +740 MB per reload).
+
+### Spikes S2–S4 (cannot be settled without a screen)
+
+- **S2 (non-activating panel + ⌘V):** built as specified (`NSPanel` `.nonactivatingPanel`, `CGEvent` ⌘V after a 60 ms settle, copy-only fallbacks). Untested in Mail/Teams/Chrome/Claude/Terminal. `osascript` could not drive keystrokes (no Accessibility permission for this shell).
+- **S3 (Spotlight action):** `OpenResultIntent`, `SearchResultEntity`, `SearchResultQuery: EntityStringQuery`, `AppShortcutsProvider` ("Search Everything in Daito Search"). `bundle.sh` now produces `Metadata.appintents` (xcodebuild for the `.swiftconstvalues`, then `appintentsmetadataprocessor`; the metadata lists the three intents, the entity, the query and the phrases). Whether Spotlight calls the query live per keystroke is unknown until you try (N-M13).
+- **S4 (Core Spotlight entries):** `SpotlightDonor` + `CoreSpotlightIndex` + `NSUserActivity` handling are in; the app ran here and donated its items to your Spotlight index (domains `papers`, `notes`; turn them off in Settings, which deletes them). Not checked in ⌘Space.
+
+### Budgets (acceptance table)
+
+| ID | Target | Measured |
+|---|---|---|
+| L2 | keyword per keystroke ≤ 33 ms p95 | 1.6 ms (app engine, real library); view update not measured |
+| L3 | semantic after the pause ≤ 300 ms p95 | scoring + merge 8 ms; embedding ≈ 190 ms (B9, Ollama warm) |
+| L4 | background load ≤ 1.5 s at 1× | 0.56 s (+ two compaction reloads, background) |
+| L5 | `notes index`, nothing changed ≤ 1.0 s, 0 bytes written | covered by test 22 (no writes); real vault 0.1 s |
+| L7 | memory ≤ 250 MB at 1× | 112 MB `footprint` after start-up compaction |
+| L1, L6, L8 | hotkey → panel, note saved → findable, ⌘↵ → pasted | **not measured** (manual: N-M1, N-M11/16, N-M4) |
+| Eval | paper `finding` recall@5 in All within 0.03 of Papers | 1.00 vs 1.00 (drop 0.00): PASS. **Note:** recall@1 for `finding` drops 0.96 → 0.88 in scope All (notes sometimes take the top slot). No `expect_note` queries exist yet, so note recall is unmeasured (phase 0, yours). |
+
+### Assumptions and things the spec left open
+
+**Python (notes index)**
+- State is a content signature plus a vector cache keyed by the hash of the embedded text, instead of the spec's per-note `{mtime, size, sha, rows}`. Same observable behaviour (renames, touches and unrelated edits re-embed nothing); simpler.
+- `mtime` is stored in each note's `papers.json` entry, so merely touching a note rewrites the index (without re-embedding). A touch inside the same second does not.
+- Chunk text does not include its heading, and the embedded text is exactly the stored text (as for papers). Headings are therefore not searchable by BM25 and not in the embedding. First tuning candidate if `note-finding` recall is low.
+- Short-section merging, where the spec was ambiguous: a short section merges into the next section only if that one is the same or **deeper** level; a short lead with no heading takes the next section's heading; a shallower next section is not merged into; a short trailing section merges back. A heading with no text is dropped before merging.
+- Daily-note title wins over the first H1 (frontmatter `title` wins over both). A note counts as `daily` only if its folder is `daily_folder` (the vault root today).
+- Frontmatter parser is minimal (scalars, `[a, b]`, `- item` lists). "Malformed" = a line that is not `key: value`, a list item or an indented continuation, or an unclosed `[` / quote; the whole block is then body text.
+- Tags must start with a letter (`#3d-culture` is not a tag; Obsidian agrees); aliases are folded into `tags` so they are searchable.
+- The tick runs the notes index after the morning work on **every** 5-minute launchd run (also when the day's run was skipped, offline, etc.) via `finally`, non-blocking lock. A failed run is logged; the "⚠ Setup" warning comes from `planner doctor`'s notes check (missing, >1 day old, model/dims mismatch, degraded >1 day, bad glob), which the morning run already includes. `notes_tick_warning` only decides whether the log line says "warning".
+- A Ollama outage retries on every tick (one attempt, no backoff).
+- `doctor`: "launcher app not installed" is an informational note on an OK check (`Result(ok=True, message=…)`); the login-item registration is **not** checked (no cheap API).
+- Literature notes match by frontmatter `citekey` or by file name. Your notes named like `LeSavage 2022 Next generation cancer organoids.md` do **not** match a citekey, so today only 1 of your notes is collapsed into its paper.
+- A git-ignored `config.local.toml` holds the owner's personal `[notes].exclude` additions (private notes that must never be indexed or donated to Spotlight). The first launchd tick after this code landed indexed the vault before that exclusion existed; the exclude was added and the index rebuilt, and the final index contains none of the excluded notes. Lesson: set up `config.local.toml` **before** enabling `[notes]`.
+- `index_small` (the plugin fixture) got `file` fields and `zotero_storage`; two snapshot tests that pinned the old exact entry shape were updated.
+
+**TypeScript (`launcher-core`)**
+- Empty query: recent notes (limit ≤ 10) from the *index* (by `mtime`), not a live vault scan (the spec's `recent.ts`). Scope Papers + empty query returns nothing.
+- A paper row whose literature note won shows the note's heading/snippet and `↵` opens the note, but `⌘↵` / file actions still use the **paper's PDF**; the citation actions use the winner's text.
+- `ResultVM` gained `openLabel` (footer text). Note citations drop a leading `Title › ` when the note's first H1 equals its title.
+- A corpus with a different `query_instruction` is treated like a model/dims mismatch (keyword-only).
+- `Engine.lookup(ids)` and `daito.shouldRunSemantic()` were added to the API (Spotlight id resolution; the gating rule stays single-sourced in `rank.ts`). `interleaveSemantic` engine option implements the spec's per-corpus-instruction fallback for `eval.ts --per-corpus-instruction`.
+- Dates in view models use the machine's time zone; tests and conformance run with `TZ=UTC` (`make test-launcher` sets it).
+- The engine refactor (`rowScores` + `semanticFromRowScores`) and the BM25 changes live in the plugin's shared files, so the plugin's `main.js` must be rebuilt (done by `make check`'s `build`).
+
+**Swift**
+- `swift-tools-version 6.2`, macOS 26 minimum, no packages. Swift Testing is used because Xcode is installed.
+- Settings: `UserDefaults` suite is the app's own; vault path defaults to `~/Documents/Obsidian Vault`.
+- Hotkey registration uses Carbon `RegisterEventHotKey` (needs no permission); `⌥Space` may collide with other apps (a failure shows a toast).
+- Login item registers only when the app runs from `/Applications` or `~/Applications`.
+- Panel closes on losing key status, on Esc, and on clicks outside. `panelWillShow` clears the query after 60 s.
+- Signing: **0 Apple Development identities are in your keychain**, so `make app` ad-hoc signs. That works, but the Accessibility permission will have to be re-granted after every rebuild until you create a free "Personal Team" certificate (Xcode → Settings → Accounts). `bundle.sh` picks one up automatically (or `DAITO_SIGN_IDENTITY`).
+- Debug aids (documented in AGENTS.md): `DAITO_DEBUG=1`, `DAITO_SHOW_PANEL="<query>"`, `DAITO_SNAPSHOT=<png>`.
+
+### Spec deviations (all small)
+- Per-note `state.json` replaced as above. `docs/LAUNCHER_SPEC.md` still describes the original.
+- The bundle exposes `lookup` and `shouldRunSemantic`; `RankerStatus` has an optional `timings` field (diagnostics).
+- `make test` now includes Swift; `make test-swift-tsan` is separate.
+- Status in LAUNCHER_SPEC.md: implemented, with the checks above outstanding.
+
+### Review fixes (22 Oct 2026, after the first review pass)
+
+| Finding | Fix | Verified by |
+|---|---|---|
+| An unreadable folder or a missing vault silently emptied the notes index (the next good run re-embedded everything) | `notesindex.scan` raises `VaultUnreadable` on any folder it can't list (excluded folders are never listed, so they can't fail); a vault that suddenly has no notes is refused unless `--full`; the tick logs it and keeps the old index | `TestUnreadableVault` (5 tests) |
+| A touch with no edit rewrote the whole index → the app reloaded both corpora every tick while you wrote | modified times are left out of `content_hash`; they are refreshed whenever content changes | test 24 (no rewrite, no reload), `test_edit_after_a_touch_records_fresh_mtimes`; live: touching a note → "no changes", app did not reload |
+| A search typed during a reload waited ~0.76 s | engines are built on their own JavaScriptCore VM in a detached task; the query actor keeps serving the old engine; the load started last wins; `IndexReloader` runs one check at a time (a livelock in the first version of this was caught by its test and fixed) | `ReloadTests` (search during a build < 100 ms; last load wins; 6 concurrent checks → 1 load) |
+| Settings (vault, Ollama URL, result limit, Spotlight toggles) needed a restart | `SettingsEffect.between(old, new)` decides what to redo; `AppModel.applySettings` reopens the vault (new reloader and watcher), rebuilds the embedder, re-runs the query with the new limit, re-syncs Spotlight | `SettingsEffectTests` |
+| ⌘↵ / ↑↓ risked being eaten by the search field | key handling moved onto the field itself; the ⌘K menu's field handles its own keys; focus returns to the search field when the menu closes | `make app-selftest`: 16/16 steps pass in the real app |
+| After semantic results re-ranked the list, the highlight stayed on the old top result (↵ opened the second-best match) | the selection follows the top result until you move it (arrows or a click); a new query resets that | `untouchedSelectionFollowsTheNewTopResult`, self-test step "top result selected after semantic re-rank" |
+| Permission errors showed a raw error | reading the index without permission says to allow Files and Folders (Documents) in Privacy & Security | `unreadableIndexGivesAnActionableMessage` |
+| Settings window opened behind other apps; Quick Look closed the panel; rows without a file could be dragged as "/" | Settings… activates the app first; the panel stays open while Quick Look is up; rows without a file are not draggable | manual (CHECK.md) |
+| JavaScriptCore re-grows memory minutes after compaction with nothing running (110 MB → 300–800 MB, once, timing varies; reproduced in the bare benchmark, so it is the framework, not the UI) | `MemoryWatchdog`: every minute, if the panel is hidden and the footprint is over 350 MB, swap in a fresh engine (at most every 10 min; costs no search latency now) | `MemoryWatchdogTests`; live 5-minute run below |
+
+Not fixed (by choice, see CHECK.md): JavaScriptCore can't be told to stop the idle re-growth (its GC options are not exposed in the system framework); Spotlight items are not re-donated if macOS rebuilds its index until something changes; tags starting with accented letters and notes in symlinked folders are not indexed; a hung (not refused) Ollama can hold a tick for up to 120 s per batch; `make check` needs Xcode and `npm install` in `launcher-core` (setup.sh doesn't do the latter).
+
+### First hands-on feedback (22 Oct 2026)
+
+- **⌘↵ into Outlook on the web (Firefox) showed "Something went wrong while the document preview was being created".**
+  Measured in a throwaway Firefox 158 profile driven over Marionette with a real native ⌘V: the page receives exactly
+  one `File`: the right name, `application/pdf`, all 5,196,783 bytes, starting `%PDF-1.7`. The clipboard holds what
+  Finder puts there for a copied file (`public.file-url` + `NSFilenamesPboardType`). So the attachment is the real PDF;
+  the message is Outlook's online preview service failing on it. Teams (same mechanism) works. Nothing to change in
+  the app; CHECK.md 3.3 now asks to compare with Outlook's own Attach button.
+- **⌘K menu overlapped the results and was unreadable.** It was a glass card nested inside the panel's glass, which
+  renders nearly transparent. Now: an opaque card (window background colour, border, shadow) drawn outside the glass
+  container, over a dimmed panel, anchored bottom-right above the footer, with the result it acts on as a header, an icon
+  per action, aligned shortcut glyphs, a scrolling list (max 300 pt) that follows the selection, and the panel grows
+  when it is too short for the menu. Checked by capture (`DAITO_SNAPSHOT_ACTIONS=1`).
+- Test modes (`DAITO_SELFTEST`, `DAITO_SNAPSHOT`) no longer register the hotkey or the login item, so they can run next
+  to the installed app. The self-test waits for the semantic merge instead of a fixed 1.5 s (one flaky run in ten).

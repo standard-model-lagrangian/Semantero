@@ -10,3 +10,7 @@ obsidian/paper-search/test/fixtures/synthetic_index/
 obsidian/paper-search/data.json
 .ruff_cache/
 .claude/
+launcher-core/test/fixtures/synthetic_papers_3x/
+launcher-core/test/fixtures/synthetic_notes_2000/
+macos/build/
+.build/

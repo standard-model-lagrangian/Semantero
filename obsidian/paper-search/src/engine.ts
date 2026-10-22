@@ -98,48 +98,53 @@ export function keyword(ix: LoadedIndex, query: string, limit: number = 10, opts
 }
 
 /**
- * Semantic search: one pass over all rows updating paper max scores.
- * No full sort of all rows.
+ * Dot product of the query vector with every row. Rows of excluded papers are skipped (left at 0).
+ * Returns null when there is nothing to compare: no vectors, or a query embedded with other dims.
+ * Float64 on purpose: dot products are summed in doubles, and Float32 rounding would merge close scores.
  */
-export function semantic(
+export function rowScores(ix: LoadedIndex, qVec: Float32Array, exclude?: Set<number>): Float64Array | null {
+  if (!ix.vectors || ix.vectors.length === 0 || ix.totalRows === 0) return null;
+  if (qVec.length !== ix.dims) return null;
+  const { dims, totalRows, vectors } = ix;
+  const scores = new Float64Array(totalRows);
+  for (let r = 0; r < totalRows; r++) {
+    if (exclude && exclude.has(ix.rowToPaper[r])) continue;
+    const offset = r * dims;
+    let dot = 0;
+    for (let d = 0; d < dims; d++) dot += qVec[d] * vectors[offset + d];
+    scores[r] = dot;
+  }
+  return scores;
+}
+
+/**
+ * Semantic search from precomputed row scores (from `rowScores`, or a native scorer such as Accelerate):
+ * per-paper maximum, winning row, top-k and snippets. No full sort of all rows.
+ */
+export function semanticFromRowScores(
   ix: LoadedIndex,
-  qVec: Float32Array,
+  scores: ArrayLike<number>,
   query: string,
   opts?: { limit?: number; exclude?: Set<number>; minScore?: number } & SearchOptions
 ): Hit[] {
   const withSnippets = opts?.snippets !== false;
-  if (!ix.vectors || ix.vectors.length === 0 || ix.totalRows === 0) {
-    return [];
-  }
-  // A query embedded with different dims than the index cannot be compared.
-  if (qVec.length !== ix.dims) return [];
+  if (ix.totalRows === 0 || scores.length < ix.totalRows) return [];
 
   const limit = opts?.limit ?? 10;
   const exclude = opts?.exclude;
   const minScore = opts?.minScore ?? 0;
-  const dims = ix.dims;
   const totalRows = ix.totalRows;
-  const vectors = ix.vectors;
   const { tokens } = tokenize(query);
 
-  // Per-paper tracking
-  // Float64: dot products are summed in doubles, and Float32 rounding would merge close scores.
   const paperMaxScore = new Float64Array(ix.papers.length);
   const paperWinningRow = new Int32Array(ix.papers.length);
   paperWinningRow.fill(-1);
 
-  // Single pass over all rows
   for (let r = 0; r < totalRows; r++) {
     const pIdx = ix.rowToPaper[r];
     if (pIdx < 0) continue;
     if (exclude && exclude.has(pIdx)) continue;
-
-    const offset = r * dims;
-    let dot = 0;
-    for (let d = 0; d < dims; d++) {
-      dot += qVec[d] * vectors[offset + d];
-    }
-
+    const dot = scores[r];
     if (dot > paperMaxScore[pIdx]) {
       paperMaxScore[pIdx] = dot;
       paperWinningRow[pIdx] = r;
@@ -167,11 +172,9 @@ export function semantic(
     const winningRow = h.winningRow;
     const isAbstract = winningRow >= 0 && ix.rowIsAbstract[winningRow] === 1;
 
-    let snippet = "";
     let page: number | undefined;
     let fromAbstract = true;
     let attKey: string | undefined;
-
     let chunkIndex: number | undefined;
     if (!isAbstract && winningRow >= 0) {
       const chunkIdx = ix.rowToChunk[winningRow];
@@ -188,7 +191,7 @@ export function semantic(
       paper: h.paper,
       score: h.score,
       source: "semantic",
-      snippet,
+      snippet: "",
       page,
       attachmentKey: attKey || paper.pdfs?.[0]?.attachmentKey,
       fromAbstract,
@@ -199,6 +202,21 @@ export function semantic(
   }
 
   return hits;
+}
+
+/**
+ * Semantic search: one pass over all rows updating paper max scores.
+ * No full sort of all rows.
+ */
+export function semantic(
+  ix: LoadedIndex,
+  qVec: Float32Array,
+  query: string,
+  opts?: { limit?: number; exclude?: Set<number>; minScore?: number } & SearchOptions
+): Hit[] {
+  const scores = rowScores(ix, qVec, opts?.exclude);
+  if (!scores) return [];
+  return semanticFromRowScores(ix, scores, query, opts);
 }
 
 /**

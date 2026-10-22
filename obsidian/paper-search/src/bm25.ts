@@ -11,10 +11,16 @@ export interface PaperMetadata {
   tags: string[];
   collections: string[];
   abstract: string | null;
-  pdfs?: { attachmentKey: string; pages: number; hasText: boolean }[];
+  /** `file` (added for the launcher): relative to the Zotero storage folder, or absolute for a linked file. */
+  pdfs?: { attachmentKey: string; pages: number; hasText: boolean; file?: string }[];
   /** Web snapshots (text/html attachments); their chunks have page 0. */
-  snapshots?: { attachmentKey: string; hasText: boolean }[];
+  snapshots?: { attachmentKey: string; hasText: boolean; file?: string }[];
   abstractRow?: number | null;
+  /** Notes corpus only (the launcher): what kind of note, where it lives, when it changed. */
+  kind?: "note" | "daily" | "litnote";
+  path?: string;
+  mtime?: number;
+  litnoteOf?: string | null;
 }
 
 export interface ChunkDocument {
@@ -23,6 +29,9 @@ export interface ChunkDocument {
   page: number; // 1-based PDF page; 0 for a web snapshot
   text: string;
   row?: number;
+  /** Notes corpus only: heading path of the section ("Materials › EHS") and its 1-based start line. */
+  heading?: string;
+  line?: number;
 }
 
 export interface BM25SearchResult {
@@ -43,15 +52,23 @@ const FIELD_WEIGHTS: Record<string, number> = {
   abstract: 1.5,
 };
 
-interface TermPostingPaper {
-  paperIndex: number;
-  score: number;
+/** Postings of one term as parallel typed arrays: a few objects per term instead of one per posting
+ * (a library has a million of them, and JavaScriptCore needs ~700 bytes of heap per posting-object chain). */
+interface PostingList {
+  /** paper index (paper postings) or chunk index (chunk postings; the paper is `chunks[i].paper`) */
+  ids: Int32Array;
+  scores: Float64Array;
 }
 
-interface TermPostingChunk {
-  chunkIndex: number;
-  paperIndex: number;
-  score: number;
+interface PostingBuilder {
+  ids: number[];
+  scores: number[];
+}
+
+function freeze(builders: Map<string, PostingBuilder>): Map<string, PostingList> {
+  const out = new Map<string, PostingList>();
+  for (const [term, b] of builders) out.set(term, { ids: Int32Array.from(b.ids), scores: Float64Array.from(b.scores) });
+  return out;
 }
 
 export class BM25Index {
@@ -74,8 +91,8 @@ export class BM25Index {
   private avgChunkLength: number = 0;
 
   // Inverted postings: term -> postings
-  private paperPostings: Map<string, TermPostingPaper[]> = new Map();
-  private chunkPostings: Map<string, TermPostingChunk[]> = new Map();
+  private paperPostings: Map<string, PostingList> = new Map();
+  private chunkPostings: Map<string, PostingList> = new Map();
 
   // Reusable typed arrays for search to avoid GC pauses
   private paperScoresBuf: Float64Array;
@@ -133,7 +150,6 @@ export class BM25Index {
         for (const t of tokens) {
           termFreqs.set(t, (termFreqs.get(t) || 0) + 1);
           paperDistinctTerms.add(t);
-          this.vocab.add(t);
         }
         fieldTerms.set(fName, termFreqs);
         fieldLengths.set(fName, tokens.length);
@@ -161,15 +177,12 @@ export class BM25Index {
     for (const chunk of this.chunks) {
       const { tokens } = tokenize(chunk.text);
       const termFreqs = new Map<string, number>();
-      const chunkDistinctTerms = new Set<string>();
 
+      // Two hash operations per token (the index is built on every launch, and JavaScriptCore pays for each).
       for (const t of tokens) {
         termFreqs.set(t, (termFreqs.get(t) || 0) + 1);
-        chunkDistinctTerms.add(t);
-        this.vocab.add(t);
       }
-
-      for (const t of chunkDistinctTerms) {
+      for (const t of termFreqs.keys()) {
         this.df.set(t, (this.df.get(t) || 0) + 1);
       }
 
@@ -180,10 +193,13 @@ export class BM25Index {
 
     this.avgChunkLength = this.chunks.length > 0 ? totalChunkLen / this.chunks.length : 1;
 
-    // 3. Build sorted vocabulary
-    this.sortedVocab = Array.from(this.vocab).sort();
+    // 3. Build sorted vocabulary: every term of every paper and chunk has a document frequency
+    this.sortedVocab = Array.from(this.df.keys()).sort();
+    this.vocab = new Set(this.sortedVocab);
 
     // 4. Precompute inverted postings
+    const paperBuild = new Map<string, PostingBuilder>();
+    const chunkBuild = new Map<string, PostingBuilder>();
     for (let pIdx = 0; pIdx < this.papers.length; pIdx++) {
       const fieldTerms = paperFieldTerms[pIdx];
       const fieldLens = paperFieldLengths[pIdx];
@@ -210,12 +226,13 @@ export class BM25Index {
         }
 
         if (score > 0) {
-          let list = this.paperPostings.get(term);
+          let list = paperBuild.get(term);
           if (!list) {
-            list = [];
-            this.paperPostings.set(term, list);
+            list = { ids: [], scores: [] };
+            paperBuild.set(term, list);
           }
-          list.push({ paperIndex: pIdx, score });
+          list.ids.push(pIdx);
+          list.scores.push(score);
         }
       }
     }
@@ -223,23 +240,25 @@ export class BM25Index {
     for (let cIdx = 0; cIdx < this.chunks.length; cIdx++) {
       const termFreqs = chunkTermsList[cIdx];
       const docLen = chunkLengthsList[cIdx];
-      const pIdx = this.chunks[cIdx].paper;
 
       for (const [term, tf] of termFreqs.entries()) {
         if (tf > 0) {
           const idfVal = this.idf(term);
           const score = this.scoreTerm(tf, docLen, this.avgChunkLength, idfVal);
           if (score > 0) {
-            let list = this.chunkPostings.get(term);
+            let list = chunkBuild.get(term);
             if (!list) {
-              list = [];
-              this.chunkPostings.set(term, list);
+              list = { ids: [], scores: [] };
+              chunkBuild.set(term, list);
             }
-            list.push({ chunkIndex: cIdx, paperIndex: pIdx, score });
+            list.ids.push(cIdx);
+            list.scores.push(score);
           }
         }
       }
     }
+    this.paperPostings = freeze(paperBuild);
+    this.chunkPostings = freeze(chunkBuild);
   }
 
   public idf(term: string): number {
@@ -359,22 +378,22 @@ export class BM25Index {
       for (const term of matcher.matchingTerms) {
         const pPostings = this.paperPostings.get(term);
         if (pPostings) {
-          for (let i = 0; i < pPostings.length; i++) {
-            const p = pPostings[i];
-            const prev = matcherPaperScores.get(p.paperIndex) || 0;
-            if (p.score > prev) {
-              matcherPaperScores.set(p.paperIndex, p.score);
+          const { ids, scores } = pPostings;
+          for (let i = 0; i < ids.length; i++) {
+            const prev = matcherPaperScores.get(ids[i]) || 0;
+            if (scores[i] > prev) {
+              matcherPaperScores.set(ids[i], scores[i]);
             }
           }
         }
 
         const cPostings = this.chunkPostings.get(term);
         if (cPostings) {
-          for (let i = 0; i < cPostings.length; i++) {
-            const c = cPostings[i];
-            const prev = matcherChunkScores.get(c.chunkIndex) || 0;
-            if (c.score > prev) {
-              matcherChunkScores.set(c.chunkIndex, c.score);
+          const { ids, scores } = cPostings;
+          for (let i = 0; i < ids.length; i++) {
+            const prev = matcherChunkScores.get(ids[i]) || 0;
+            if (scores[i] > prev) {
+              matcherChunkScores.set(ids[i], scores[i]);
             }
           }
         }

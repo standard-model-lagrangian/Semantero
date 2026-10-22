@@ -13,13 +13,17 @@ class PdfAttachment:
     path: Path
     pages: int = 0
     hasText: bool = True
+    file: str | None = None  # relative to <zotero>/storage, or absolute for a linked file
 
     def to_dict(self):
-        return {
+        d = {
             "attachmentKey": self.attachmentKey,
             "pages": self.pages,
             "hasText": self.hasText,
         }
+        if self.file:
+            d["file"] = self.file
+        return d
 
 
 @dataclass
@@ -29,12 +33,16 @@ class SnapshotAttachment:
     path: Path
     pages: int = 0
     hasText: bool = True
+    file: str | None = None
 
     def to_dict(self):
-        return {
+        d = {
             "attachmentKey": self.attachmentKey,
             "hasText": self.hasText,
         }
+        if self.file:
+            d["file"] = self.file
+        return d
 
 
 def attachment_path(zotero_dir: Path, att_key: str, path_str: str | None) -> Path | None:
@@ -42,6 +50,15 @@ def attachment_path(zotero_dir: Path, att_key: str, path_str: str | None) -> Pat
         return zotero_dir / "storage" / att_key / path_str[len("storage:"):]
     if path_str:
         return Path(path_str)
+    return None
+
+
+def attachment_file(att_key: str, path_str: str | None) -> str | None:
+    """The `file` recorded in papers.json: storage-relative for stored files, absolute for linked ones."""
+    if path_str and path_str.startswith("storage:"):
+        return f"{att_key}/{path_str[len('storage:'):]}"
+    if path_str:
+        return str(Path(path_str))
     return None
 
 
@@ -198,11 +215,11 @@ def read_library(zotero_dir: Path | str) -> list[Paper]:
                 continue
             if content_type == "text/html":
                 snapshots_by_parent.setdefault(parent_id, []).append(
-                    SnapshotAttachment(attachmentKey=att_key, path=full_path)
+                    SnapshotAttachment(attachmentKey=att_key, path=full_path, file=attachment_file(att_key, path_str))
                 )
             else:
                 pdfs_by_parent.setdefault(parent_id, []).append(
-                    PdfAttachment(attachmentKey=att_key, path=full_path)
+                    PdfAttachment(attachmentKey=att_key, path=full_path, file=attachment_file(att_key, path_str))
                 )
 
         conn.close()
