@@ -4,7 +4,7 @@ RUFF   ?= $(shell command -v ruff 2>/dev/null || echo uvx ruff)
 PLUGIN := obsidian/paper-search
 LAUNCHER := launcher-core
 
-.PHONY: check test test-py test-ts test-launcher test-swift lint typecheck build bundle-fresh fixtures record-conformance app install-app bench-app app-selftest dev-setup
+.PHONY: check test test-py test-ts test-launcher test-swift lint typecheck build bundle-fresh fixtures record-conformance app install-app bench-app app-selftest dev-setup install-global
 
 check: lint typecheck test bundle-fresh
 
@@ -38,6 +38,13 @@ install-app: app
 	rm -rf "/Applications/Daito Search.app"
 	cp -R "macos/build/Daito Search.app" /Applications/
 	@echo "installed to /Applications; open it once so macOS registers the Spotlight action"
+
+# The global setup in one go: notes index (must be enabled in config.local.toml first) + the Daito Search app.
+install-global:
+	@$(PY) -c "import sys; sys.path.insert(0, '.'); from planner import config, notesindex; sys.exit(0 if notesindex.notes_enabled(config.load()) else 'The notes index is off. Add to config.local.toml:\n  [notes]\n  enabled = true\n  exclude = [\"Templates/**\", \"Threads.md\", \"Zotero Template.md\", \"Zotero Citation Template.md\"]  # + your private notes\nSee docs/INSTALL.md (Global setup).')"
+	$(PY) -m planner notes index
+	$(MAKE) install-app
+	@echo "Global setup done. Open Daito Search once (allow Documents access), then press ⌥Space."
 
 # Drives the built app's real panel with synthetic key events (no permissions needed) and prints a pass/fail report.
 app-selftest: app

@@ -45,6 +45,20 @@ tests.
 | `launchd/`, `bin/` | plist, zsh | The owner's launchd jobs; `planner-run.sh` adds Homebrew to launchd's PATH | — | — |
 | `docs/` | Markdown | Specs, decisions log, checklists, these guides | — | — |
 
+## The two setups in the code
+
+| | Obsidian only | Global |
+|---|---|---|
+| Config | `config.toml` as shipped (`[notes] enabled = false`) | `config.local.toml`: `[notes] enabled = true` + `exclude` |
+| Python | `searchindex`, `zotlib`, `pdftext`, `htmltext`, `zotwatch`, `embed`; `planner doctor --search` | also `mdtext`, `notesindex`; the morning tick's `_notes_tick`; doctor's notes and launcher-app checks (both silent when notes are off) |
+| TypeScript | `obsidian/paper-search` | also `launcher-core` (imports the plugin's core) |
+| Swift | — | `macos/` |
+| Install | `./setup-search.sh` | `make install-global` |
+
+Rules: features of the global setup are gated on `notesindex.notes_enabled(cfg)` on the Python side, and nothing in the
+plugin may depend on `launcher-core` or `macos/`. The shipped-config test (`TestShippedConfig`) keeps `config.toml`
+Obsidian-only.
+
 ## Setting up a development checkout
 
 ```bash

@@ -5,7 +5,7 @@ and number the tests that pin each behaviour. Where an implementation differs fr
 
 | I want to… | Read |
 |---|---|
-| Install daito (Obsidian only, notes, the launcher app, the planner) | [INSTALL.md](INSTALL.md) |
+| Install daito: **Obsidian only** or **Global** (Obsidian + notes + the Daito Search app), and switch between them | [INSTALL.md](INSTALL.md#choose-your-setup) |
 | Work on the code (architecture, commands, workflows, gotchas) | [DEVELOPMENT.md](DEVELOPMENT.md), then [AGENTS.md](../AGENTS.md) (rules) |
 | Know why a design choice was made, what was measured, what's still open | [DECISIONS_AND_GAPS.md](DECISIONS_AND_GAPS.md) |
 | Check the plugin by hand | [MANUAL_CHECKS.md](MANUAL_CHECKS.md) |

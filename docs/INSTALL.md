@@ -1,6 +1,78 @@
 # Installing daito
 
-daito is four pieces that build on each other. Install only what you want; each tier works without the ones below it.
+## Choose your setup
+
+daito is one repository with two ways to use it. Pick one; you can switch later (below).
+
+| | **Obsidian only** | **Global** |
+|---|---|---|
+| What you get | Paper search inside Obsidian: `⌘⇧0` pop-up over your Zotero library, `@@` inline citations, literature notes, related-papers panel. Index kept fresh in the background | Everything in Obsidian only, **plus** your vault's notes indexed, and **Daito Search**: press **⌥Space in any app** to search papers *and* notes, paste the PDF into Mail/Teams/an LLM, copy citations, drag files; also in Spotlight |
+| Runs | Obsidian plugin + one background watcher | The same, plus a menu-bar app and the notes index |
+| You need | Zotero (+ Better BibTeX), Obsidian, Homebrew, Python 3.11+, poppler; Ollama optional | The same, plus macOS 26, full **Xcode**, Node.js |
+| Setup time | ~5 minutes | ~15 minutes (mostly the Xcode download) |
+| Code used | `planner/` (paper index, watcher), `obsidian/paper-search/` | also `planner/notesindex.py`, `launcher-core/`, `macos/` |
+
+The planner (daily brief, weekly review) is a separate, optional add-on for either setup: [tier 4](#tier-4-the-planner-daily-brief-threads-weekly-review).
+
+### Obsidian only
+
+```bash
+git clone https://github.com/standard-model-lagrangian/daito.git
+cd daito
+./setup-search.sh            # add --vault "/path/to/Vault" --zotero "/path/to/Zotero" if not in the default places
+```
+
+Then in Obsidian: **Settings → Community plugins → Installed plugins → reload → enable "Daito Paper Search"**, and press
+`⌘⇧0`. That's it. Details and management commands: [tier 1](#tier-1-paper-search-in-obsidian).
+
+The notes index is **off** in this setup (`config.toml` ships with `[notes] enabled = false`), so nothing reads your
+notes and `planner doctor` doesn't expect a notes index. You don't need Xcode or Node.
+
+### Global
+
+1. Do **Obsidian only** above first.
+2. Install the extra tools: full Xcode from the App Store, then
+   `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`; Node with `brew install node`. Optional but
+   recommended: Xcode → Settings → Accounts → add your Apple ID (stable signing, so macOS remembers the app's
+   permissions across updates).
+3. Turn on the notes index and list your private notes, in the git-ignored `config.local.toml` (create it if
+   `setup-search.sh` didn't). **Do this before step 4**: excluded notes are never read.
+
+   ```toml
+   [notes]
+   enabled = true
+   exclude = ["Templates/**", "Threads.md", "Zotero Template.md", "Zotero Citation Template.md",
+              "Private/**", "My bank details.md"]
+   ```
+
+4. Build and install:
+
+   ```bash
+   (cd launcher-core && npm install)
+   make install-global          # builds the notes index, then builds and installs Daito Search.app
+   open "/Applications/Daito Search.app"
+   ```
+
+5. Allow **Documents** access when asked; allow **Accessibility** the first time you press ⌘↵. Then press **⌥Space**.
+6. Keep the notes index fresh: the planner's 5-minute job does it if you use the planner; otherwise run
+   `.venv/bin/python -m planner notes index` when you like, or schedule `bin/planner-run.sh notes index` with launchd
+   (see [tier 2](#tier-2-notes-index)).
+
+Details: [tier 2](#tier-2-notes-index) (notes index) and [tier 3](#tier-3-the-launcher-app-daito-searchapp) (the app).
+
+### Switching
+
+| From → to | Do |
+|---|---|
+| Obsidian only → Global | Steps 2–6 of **Global** above. Nothing in the Obsidian setup changes |
+| Global → Obsidian only | Menu bar → Settings… → untick the three Spotlight options → Save; Quit the app; `rm -rf "/Applications/Daito Search.app"`; set `[notes] enabled = false` in `config.local.toml`; optionally delete `<vault>/.planner/notes/`. The Obsidian plugin and the watcher are unaffected |
+| Update either | `git pull`, then `./setup-search.sh` (plugin, watcher). Global also: `make install-global`, quit and reopen the app |
+
+---
+
+## The pieces in detail (tiers)
+
+Tier 1 is the **Obsidian only** setup; tiers 1–3 are **Global**; tier 4 (the planner) is optional for either.
 
 | Tier | What you get | Runs where | Needs |
 |---|---|---|---|
@@ -72,12 +144,14 @@ Node is **not** needed here: the plugin's `main.js` is committed.
 
 This makes every Markdown note in the vault searchable, in `<vault>/.planner/notes/`.
 
-**First, decide what must never be indexed.** Private notes (bank details, IDs, health) go in `config.local.toml`
-**before** the first build. A list there *replaces* the default list, so repeat the defaults:
+**First, turn it on and decide what must never be indexed.** The notes index is off by default. Private notes (bank
+details, IDs, health) go in `config.local.toml` **before** the first build. A list there *replaces* the default list,
+so repeat the defaults:
 
 ```toml
 # config.local.toml (git-ignored)
 [notes]
+enabled = true
 exclude = ["Templates/**", "Threads.md", "Zotero Template.md", "Zotero Citation Template.md",
            "Private/**", "My bank details.md"]
 ```
@@ -114,6 +188,7 @@ its file name matches a Zotero citekey.
 sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 (cd launcher-core && npm install)          # tools for building the ranking engine
 make install-app                           # builds, signs and copies to /Applications
+# or, notes index + app in one go (checks the notes index is enabled first):  make install-global
 open "/Applications/Daito Search.app"
 ```
 

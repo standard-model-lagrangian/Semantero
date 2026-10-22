@@ -322,3 +322,11 @@ start-up settles within 5 s instead of needing two engine swaps.
 
 Not done (judged not worth it): Float32 posting scores (−4.6 MB, would risk tie order against the goldens); moving
 chunk text out of JavaScript entirely (Python would have to write a second format); a resident query server.
+
+### Two setups in one repo (22 Oct 2026)
+
+`launcher-app` merged into `main`. The repository serves two setups: **Obsidian only** (plugin + Zotero watcher;
+`./setup-search.sh`) and **Global** (+ notes index + Daito Search.app; `make install-global`). `config.toml` now ships
+with `[notes] enabled = false`, so the Obsidian-only setup never reads notes and `planner doctor` doesn't expect a
+notes index; the global setup opts in in `config.local.toml` (test `TestShippedConfig` pins the shipped default).
+`make install-global` refuses to run until the notes index is enabled, so private-note excludes are set first.

@@ -558,6 +558,14 @@ class TestUnreadableVault(NotesCase):
         self.assertTrue(any("no access" in str(c) for c in pr.call_args_list))
 
 
+class TestShippedConfig(unittest.TestCase):
+    def test_shipped_config_is_obsidian_only(self):
+        """config.toml ships with the notes index off: the Obsidian-only setup must pass `doctor` untouched."""
+        import tomllib
+        raw = tomllib.loads((Path(__file__).resolve().parent.parent / "config.toml").read_text())
+        self.assertIs(raw["notes"]["enabled"], False)
+
+
 class TestTickAndDoctor(NotesCase):
     # 32
     def test_tick_runs_notes_index_after_daily_work_and_swallows_failure(self):
@@ -628,6 +636,8 @@ class TestTickAndDoctor(NotesCase):
         self.assertIn("/abs/path", health.check_notes_index(self.cfg).message)
         self.cfg.notes = {}
         self.assertIsNone(health.check_notes_index(self.cfg))  # not configured: no check
+        self.cfg.notes = {"enabled": False}
+        self.assertIsNone(health.check_notes_index(self.cfg))  # Obsidian-only setup: no check, no failure
 
     # 36
     def test_doctor_app_installed_is_warning_not_failure(self):

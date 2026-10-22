@@ -50,7 +50,11 @@ keep_alive = "5m"                   # Ollama unloads the model (~400 MB) this lo
 
 
 [notes]
-enabled = true
+# Off for the Obsidian-only setup. The global setup (notes index + Daito Search app) turns it on in config.local.toml:
+#   [notes]
+#   enabled = true
+#   exclude = [ ...defaults..., "Private/**" ]   # see docs/INSTALL.md
+enabled = false
 exclude = ["Templates/**", "Threads.md", "Zotero Template.md", "Zotero Citation Template.md"]
 chunk_words = 200            # notes are denser than papers; settled by the evaluation
 chunk_overlap_words = 40

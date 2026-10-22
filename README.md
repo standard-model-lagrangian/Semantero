@@ -2,7 +2,14 @@
 
 A personal research and productivity layer combining **Obsidian** notes and **Zotero** literature.
 
-**Install guide (pick a tier: Obsidian only, notes, the launcher app, the planner): [docs/INSTALL.md](docs/INSTALL.md).** All documentation: [docs/](docs/README.md).
+## Two ways to use it
+
+| **Obsidian only** | **Global** |
+|---|---|
+| Search your Zotero library from inside Obsidian (`⌘⇧0`), `@@` citations, literature notes, related papers | All of that, plus your notes indexed and **Daito Search**: **⌥Space in any app** searches papers *and* notes, pastes the PDF into Mail/Teams/an LLM, copies citations; also in Spotlight |
+| `./setup-search.sh`, enable the plugin. No Xcode needed | Obsidian only first, then `[notes] enabled = true` in `config.local.toml` and `make install-global` (needs Xcode, Node, macOS 26) |
+
+Step-by-step for both, and how to switch: **[docs/INSTALL.md](docs/INSTALL.md#choose-your-setup)**. All documentation: [docs/](docs/README.md).
 
 This repository includes **Daito Paper Search**: a local, hybrid paper search engine and Obsidian plugin that gives you instant Zotero search, inline citation autocompletion (`@@`), automatic literature note generation, and context-aware related paper recommendations.
 
@@ -99,7 +106,7 @@ A menu-bar app that searches your Zotero library **and** your Obsidian notes fro
 - Papers and their literature notes appear as one row. Private notes can be excluded by glob and are never read.
 - Paper and note titles also appear in Spotlight (⌘Space), plus a "Search Everything" Spotlight action.
 
-Install: [docs/INSTALL.md, tier 3](docs/INSTALL.md#tier-3-the-launcher-app-daito-searchapp) (needs Xcode).
+Install: the **Global** setup in [docs/INSTALL.md](docs/INSTALL.md#global) (needs Xcode).
 Design: [docs/LAUNCHER_SPEC.md](docs/LAUNCHER_SPEC.md).
 
 ---
