@@ -4,11 +4,11 @@ import Foundation
 import Observation
 import ServiceManagement
 
-/// Which ranker the app runs. Decided by spike S1 (docs/DECISIONS_AND_GAPS.md): all JavaScriptCore (option A), which met
-/// every budget once signed with the JIT entitlement. `.javaScriptCoreWithAccelerate` (option B) is built, tested against
-/// the same conformance cases, and ready if the vector pass ever exceeds its budget.
+/// Which ranker the app runs (docs/DECISIONS_AND_GAPS.md, spike S1 and "Memory pass"): JavaScriptCore for keyword
+/// search, merging and view models; Accelerate for the vector pass (option B). With the JIT tiers the app needs for its
+/// memory budget, the all-JavaScriptCore vector pass measured 20–54 ms per query against Accelerate's 2–3 ms.
 enum RankerOption { case javaScriptCore, javaScriptCoreWithAccelerate }
-let rankerOption: RankerOption = .javaScriptCore
+let rankerOption: RankerOption = .javaScriptCoreWithAccelerate
 
 @MainActor
 @Observable
@@ -56,7 +56,10 @@ final class AppModel {
         scope = settings.scope
     }
 
-    var vaultURL: URL { URL(fileURLWithPath: settings.vaultPath, isDirectory: true) }
+    /// `DAITO_VAULT` overrides the setting for measurement runs, so they never touch the installed app's settings.
+    var vaultURL: URL {
+        URL(fileURLWithPath: ProcessInfo.processInfo.environment["DAITO_VAULT"] ?? settings.vaultPath, isDirectory: true)
+    }
     var results: [ResultVM] { selection.results }
 
     // MARK: start-up
@@ -91,7 +94,7 @@ final class AppModel {
 
         // Test modes run next to the installed app: they take no hotkey and no login item.
         let env = ProcessInfo.processInfo.environment
-        if env["DAITO_SELFTEST"] == nil && env["DAITO_SNAPSHOT"] == nil {
+        if env["DAITO_SELFTEST"] == nil && env["DAITO_SNAPSHOT"] == nil && env["DAITO_NO_HOTKEY"] == nil {
             registerHotkey()
             applyLaunchAtLogin()
         }
@@ -126,7 +129,7 @@ final class AppModel {
         }
     }
 
-    /// (Re)starts everything that depends on the vault path: reloader, file watcher, first load and compaction.
+    /// (Re)starts everything that depends on the vault path: reloader, file watcher, first load.
     private func openVault() {
         guard let ranker else { return }
         watcher?.stop()
@@ -136,36 +139,30 @@ final class AppModel {
             Task { @MainActor in await self?.reloadIndexes() }
         }
         watcher?.start()
-        compactionTask = Task {
-            await reloadIndexes()
-            // Two compaction reloads: each swaps in a fresh engine, and from the second one on JavaScriptCore gives back
-            // the ~650 MB the first loads churned through (measured, spike S1; see IndexReloader.forceReload).
-            if await compact(reason: "start-up") { Task { await syncSpotlight() } }
+        // Each build ends with a synchronous full GC (JSCRanker), so no compaction reloads are needed after loading.
+        compactionTask = Task { await reloadIndexes() }
+    }
+
+    /// One synchronous GC a few seconds after a reload (see JSCRanker.collectGarbage): measured 143 → ~110 MB.
+    private var settleTask: Task<Void, Never>?
+    private func scheduleSettleGC() {
+        settleTask?.cancel()
+        settleTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard !Task.isCancelled, let ranker = self?.ranker else { return }
+            if let r = ranker as? AcceleratedRanker { await r.collectGarbage() } else if let r = ranker as? JSCRanker { await r.collectGarbage() }
         }
     }
 
-    /// Two fresh-engine swaps, 4 s apart. JavaScriptCore frees the memory a build churned through only when a virtual
-    /// machine is torn down *after* that garbage was collected, so one swap is not enough (measured: one swap after the
-    /// idle re-growth went 455 → 916 MB; two swaps settle at ~100 MB).
-    private func compact(reason: String) async -> Bool {
-        var ok = false
-        for round in 1...2 {
-            try? await Task.sleep(nanoseconds: 4_000_000_000)
-            if Task.isCancelled { return false }
-            if case .reloaded = await reloader?.forceReload() { ok = true }
-            if ProcessInfo.processInfo.environment["DAITO_DEBUG"] != nil {
-                fputs("daito: \(Date().formatted(date: .omitted, time: .standard)) \(reason) compaction \(round) → \(MemoryWatchdog.footprintMB()) MB\n", stderr)
-            }
-        }
-        return ok
-    }
-
-    /// Gives JavaScriptCore's retained memory back by swapping in a fresh engine (see MemoryWatchdog).
+    /// Safety net (see MemoryWatchdog): if the footprint still grows past the threshold while hidden, swap in a fresh engine.
     private func compactIfNeeded() async {
         let mb = MemoryWatchdog.footprintMB()
         guard watchdog.shouldCompact(footprintMB: mb, panelVisible: panel.isVisible, now: Date()) else { return }
         watchdog.didCompact(at: Date())
-        _ = await compact(reason: "watchdog at \(mb) MB")
+        _ = await reloader?.forceReload()
+        if ProcessInfo.processInfo.environment["DAITO_DEBUG"] != nil {
+            fputs("daito: \(Date().formatted(date: .omitted, time: .standard)) watchdog reload at \(mb) MB\n", stderr)
+        }
     }
 
     /// Applies a saved Settings change now, redoing only what that change affects.
@@ -203,6 +200,7 @@ final class AppModel {
         case .reloaded(let s):
             status = s
             loadMessage = nil
+            scheduleSettleGC()
             await configureEmbedding(from: s)
             await controller?.setQuery(query)
             Task { await syncSpotlight() }
@@ -220,7 +218,8 @@ final class AppModel {
             intentService = IntentSearchService(ranker: ranker!, embedder: nil)
             return
         }
-        let client = OllamaClient(baseURL: url, model: model, instruction: instruction, dims: dims)
+        let client = OllamaClient(baseURL: url, model: model, instruction: instruction, dims: dims,
+                                  keepAlive: settings.ollamaKeepAlive)
         await controller.configure(embedder: { try await client.embedQuery($0) }, warmUp: { await client.warmUp() })
         intentService = IntentSearchService(ranker: ranker!, embedder: { try await client.embedQuery($0) })
     }

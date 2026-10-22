@@ -22,6 +22,10 @@ export interface WarmUpOptions {
   keepAlive?: string;
 }
 
+/** How long Ollama keeps the embedding model loaded after a request. Its process holds ~400 MB while loaded; the
+ * pop-up warms the model when it opens, so a short hold costs little. */
+export const DEFAULT_KEEP_ALIVE = "5m";
+
 export function formatQuery(instruction: string, query: string): string {
   return `Instruct: ${instruction}\nQuery: ${query}`;
 }
@@ -36,7 +40,7 @@ export async function embedQuery(
   const payload = {
     model: options.model,
     input: [formattedInput],
-    keep_alive: options.keepAlive ?? "30m",
+    keep_alive: options.keepAlive ?? DEFAULT_KEEP_ALIVE,
     truncate: true,
   };
 
@@ -65,7 +69,7 @@ export async function warmUp(
   const payload = {
     model: options.model,
     input: [""],
-    keep_alive: options.keepAlive ?? "30m",
+    keep_alive: options.keepAlive ?? DEFAULT_KEEP_ALIVE,
   };
 
   try {

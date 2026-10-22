@@ -17,6 +17,11 @@ public actor IndexReloader {
     private var loadedHashes: [String?]?
     public private(set) var status: RankerStatus?
     public private(set) var reloadCount = 0
+    /// How many of those reloads replaced only the notes corpus.
+    public private(set) var partialReloadCount = 0
+    /// Notes indexes up to this size (chunks.json bytes) are swapped in place on the ranker's actor (a few ms per MB);
+    /// bigger ones take the full rebuild, which runs off the actor.
+    public static let partialReloadLimit = 4_000_000
 
     public init(vault: URL, ranker: Ranker) { self.vault = vault; self.ranker = ranker }
 
@@ -49,6 +54,23 @@ public actor IndexReloader {
         if IndexFiles.swapInProgress(dir: dirs.papers) || IndexFiles.swapInProgress(dir: dirs.notes) { return .deferred }
         let hashes = [IndexFiles.manifestHash(of: dirs.papers), IndexFiles.manifestHash(of: dirs.notes)]
         if let loadedHashes, loadedHashes == hashes { return .unchanged }
+        // Only the notes changed: swap them in without touching the papers corpus.
+        if let loadedHashes, loadedHashes[0] == hashes[0], let partial = ranker as? NotesReloading {
+            do {
+                let notes = try IndexFiles.read(dir: dirs.notes)
+                if (notes?.chunks.count ?? 0) <= Self.partialReloadLimit {
+                    if (notes?.contentHash).flatMap({ $0.isEmpty ? nil : $0 }) != hashes[1] { return .deferred }
+                    let s = try await partial.reloadNotes(notes)
+                    self.loadedHashes = hashes
+                    status = s
+                    reloadCount += 1
+                    partialReloadCount += 1
+                    return .reloaded(s)
+                }
+            } catch {
+                return .failed(Self.describe(error))
+            }
+        }
         do {
             let papers = try IndexFiles.read(dir: dirs.papers)
             let notes = try IndexFiles.read(dir: dirs.notes)

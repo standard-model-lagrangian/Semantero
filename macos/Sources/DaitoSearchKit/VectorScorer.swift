@@ -24,7 +24,7 @@ public enum VectorScorer {
 }
 
 /// JavaScriptCore for everything except the vector pass, which uses Accelerate.
-public actor AcceleratedRanker: Ranker {
+public actor AcceleratedRanker: NotesReloading {
     private let inner: JSCRanker
     private var vectors: [Scope: Data] = [:]
     private var lastStatus: RankerStatus?
@@ -39,6 +39,15 @@ public actor AcceleratedRanker: Ranker {
         lastStatus = status
         return status
     }
+
+    public func reloadNotes(_ notes: CorpusFiles?) async throws -> RankerStatus {
+        let status = try await inner.reloadNotes(notes)
+        vectors[.notes] = notes?.vectors
+        lastStatus = status
+        return status
+    }
+
+    public func collectGarbage() async { await inner.collectGarbage() }
 
     public func status() async throws -> RankerStatus { try await inner.status() }
     public func shouldRunSemantic(_ query: String) async -> Bool { await inner.shouldRunSemantic(query) }

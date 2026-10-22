@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const SRC = path.resolve(import.meta.dirname, "../src");
-const CORE = ["engine", "bm25", "rank", "text", "vectors", "ollama", "indexstore", "zotero"];
+const CORE = ["engine", "bm25", "rank", "text", "vectors", "ollama", "indexstore", "zotero", "textstore"];
 
 function importsOf(file: string): string[] {
   const src = fs.readFileSync(file, "utf8");

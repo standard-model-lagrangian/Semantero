@@ -545,6 +545,7 @@ class TestSearchIndex(unittest.TestCase):
         conn = sqlite3.connect(self.zotero_dir / "zotero.sqlite")
         cur = conn.cursor()
         cur.execute("UPDATE itemDataValues SET value = 'Brand new abstract about neural networks' WHERE value LIKE 'Faster stress relaxation%'")
+        cur.execute("UPDATE items SET clientDateModified = '2026-10-22 12:00:00' WHERE key = 'KEY0001'")  # as Zotero does on edit
         conn.commit()
         conn.close()
 
@@ -604,22 +605,84 @@ class TestSearchIndex(unittest.TestCase):
         # Full rebuild occurred: everything re-embedded
         self.assertTrue(mock_embed.call_count > 0)
 
-    def test_rebuild_preserves_watcher_fingerprint(self):
-        """The watcher's fingerprint in state.json survives full and dims-change rebuilds."""
-        from planner import searchindex
+    def test_rebuild_records_the_fingerprint_it_was_built_from(self):
+        """Every build records the library fingerprint it reflects (full and dims-change rebuilds included); when the
+        fingerprint can't be computed, the previous one is kept."""
+        from unittest.mock import patch
+        from planner import searchindex, zotwatch
 
         searchindex.build_index(self.cfg, full=True, embed_fn=self.fake_embed)
         state_file = self.data_dir / "search" / "state.json"
+        real = zotwatch.compute_fingerprint(self.zotero_dir)
+        self.assertEqual(json.loads(state_file.read_text()).get("fingerprint"), real)
+
         state = json.loads(state_file.read_text())
         state["fingerprint"] = "fp-123"
         state_file.write_text(json.dumps(state))
-
         searchindex.build_index(self.cfg, full=True, embed_fn=self.fake_embed)
-        self.assertEqual(json.loads(state_file.read_text()).get("fingerprint"), "fp-123")
+        self.assertEqual(json.loads(state_file.read_text()).get("fingerprint"), real)
 
         self.cfg.search["dims"] = 16  # state no longer reusable: everything re-embedded
-        searchindex.build_index(self.cfg, full=False, embed_fn=self.fake_embed)
-        self.assertEqual(json.loads(state_file.read_text()).get("fingerprint"), "fp-123")
+        with patch.object(zotwatch, "compute_fingerprint", return_value=None):
+            searchindex.build_index(self.cfg, full=False, embed_fn=self.fake_embed)
+        self.assertEqual(json.loads(state_file.read_text()).get("fingerprint"), real)
+
+    def test_unchanged_fingerprint_skips_the_build_without_reading_the_library(self):
+        from unittest.mock import patch
+        from planner import searchindex, zotlib
+        searchindex.build_index(self.cfg, full=True, embed_fn=self.fake_embed)
+        with patch.object(zotlib, "read_library", side_effect=AssertionError("library read")):
+            res = searchindex.build_index(self.cfg, embed_fn=self.fake_embed)
+        self.assertFalse(res["changed"])
+        self.assertEqual(res["papers"], 4)
+        self.assertGreater(res["chunks"], 0)
+
+    def test_full_reconcile_at_least_weekly_even_with_an_unchanged_fingerprint(self):
+        """Safety net: an edit that did not bump clientDateModified is still picked up within a week."""
+        import sqlite3
+        from datetime import datetime, timedelta
+        from planner import searchindex
+        searchindex.build_index(self.cfg, full=True, embed_fn=self.fake_embed)
+        conn = sqlite3.connect(self.zotero_dir / "zotero.sqlite")
+        conn.execute("UPDATE itemDataValues SET value = 'Silently edited title' WHERE value LIKE 'Tunable hydrogel viscoelasticity%'")
+        conn.commit()
+        conn.close()
+        self.assertFalse(searchindex.build_index(self.cfg, embed_fn=self.fake_embed)["changed"])   # fingerprint unchanged
+        state_file = self.data_dir / "search" / "state.json"
+        state = json.loads(state_file.read_text())
+        state["reconciled_at"] = (datetime.now() - timedelta(days=8)).isoformat(timespec="seconds")
+        state_file.write_text(json.dumps(state))
+        self.assertTrue(searchindex.build_index(self.cfg, embed_fn=self.fake_embed)["changed"])
+        papers = json.loads((self.data_dir / "search" / "papers.json").read_text())
+        self.assertIn("Silently edited title", [p["title"] for p in papers])
+
+    def test_fingerprint_shortcut_is_skipped_when_anything_relevant_changed(self):
+        import os
+        from planner import searchindex
+        searchindex.build_index(self.cfg, full=True, embed_fn=self.fake_embed)
+        calls = []
+
+        def counting(texts, **k):
+            calls.append(len(texts))
+            return self.fake_embed(texts, **k)
+
+        pdf = self.zotero_dir / "storage" / "ATT001" / "sample.pdf"   # an attachment changed on disk
+        pdf.write_bytes(pdf.read_bytes() + b"\n%changed")
+        os.utime(pdf, (pdf.stat().st_atime, pdf.stat().st_mtime + 10))
+        self.assertTrue(searchindex.build_index(self.cfg, embed_fn=counting)["changed"])
+        self.assertGreater(sum(calls), 0)
+
+        state_file = self.data_dir / "search" / "state.json"   # a keyword-only index retries
+        state = json.loads(state_file.read_text())
+        state["degraded"] = True
+        state_file.write_text(json.dumps(state))
+        with patch("planner.zotlib.read_library", wraps=__import__("planner.zotlib", fromlist=["x"]).read_library) as rl:
+            searchindex.build_index(self.cfg, embed_fn=counting)
+        self.assertTrue(rl.called)
+
+        with patch("planner.zotlib.read_library", wraps=__import__("planner.zotlib", fromlist=["x"]).read_library) as rl:
+            searchindex.build_index(self.cfg, embed_fn=counting, limit=10)   # --limit always builds
+        self.assertTrue(rl.called)
 
     # 26. Atomic write never leaves partial index
     def test_atomic_write_never_leaves_partial_index(self):
@@ -809,6 +872,7 @@ class TestSearchIndex(unittest.TestCase):
         conn = sqlite3.connect(self.zotero_dir / "zotero.sqlite")
         cur = conn.cursor()
         cur.execute("UPDATE itemDataValues SET value = 'Brand New Title for Viscoelasticity Paper' WHERE value LIKE 'Tunable hydrogel viscoelasticity%'")
+        cur.execute("UPDATE items SET clientDateModified = '2026-10-22 12:00:00' WHERE key = 'KEY0001'")  # as Zotero does on edit
         conn.commit()
         conn.close()
 

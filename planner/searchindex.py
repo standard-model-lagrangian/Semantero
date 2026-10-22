@@ -6,7 +6,7 @@ import os
 import shutil
 import time
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from . import embed, htmltext, pdftext, zotlib
@@ -41,6 +41,14 @@ def atomic_swap(tmp_dir: Path, final_dir: Path, old_dir: Path) -> None:
     tmp_dir.rename(final_dir)
     if old_dir.exists():
         shutil.rmtree(old_dir)
+
+
+def append_vector(out: array.array, vec) -> None:
+    """Append one vector: a memoryview of float32s (reused from the previous index) is copied as raw bytes."""
+    if isinstance(vec, memoryview):
+        out.frombytes(vec.cast("B"))
+    else:
+        out.extend(vec)
 
 
 def compute_content_hash(papers_data: list[dict], chunks_data: list[dict], vector_bytes: bytes) -> str:
@@ -116,7 +124,8 @@ def get_stats(cfg) -> dict:
     if manifest_path.exists():
         manifest = load_json(manifest_path, {})
         papers = load_json(papers_path, [])
-        chunks = load_json(chunks_path, [])
+        # The manifest has the chunk count; reading chunks.json (all chunk text) just to count it cost ~200 MB.
+        chunks = range(manifest["chunks"]) if isinstance(manifest.get("chunks"), int) else load_json(chunks_path, [])
 
         built_at_str = manifest.get("built_at", "")
         age_str = "unknown"
@@ -190,6 +199,34 @@ def print_stats(cfg):
     print(f"  Index age:            {st['age']}")
 
 
+RECONCILE_EVERY = timedelta(days=7)
+
+
+def _unchanged_result(search_dir: Path, state, fingerprint, model, dims, chunker, t0) -> dict | None:
+    """The no-change result when the library fingerprint matches the last successful build, else None. A full
+    reconcile still runs at least weekly (`reconciled_at`), in case an edit didn't bump Zotero's clientDateModified."""
+    if not fingerprint or not isinstance(state, dict) or state.get("fingerprint") != fingerprint:
+        return None
+    try:
+        if datetime.now() - datetime.fromisoformat(state.get("reconciled_at", "")) > RECONCILE_EVERY:
+            return None
+    except ValueError:
+        return None
+    if state.get("degraded") or state.get("model") != model or state.get("dims") != dims or state.get("chunker") != chunker:
+        return None
+    manifest = load_json(search_dir / "manifest.json")
+    if not isinstance(manifest, dict) or not manifest.get("zotero_storage") or manifest.get("missing_vectors"):
+        return None
+    if not all((search_dir / f).exists() for f in ("papers.json", "chunks.json", "vectors.f32")):
+        return None
+    papers = load_json(search_dir / "papers.json", []) or []
+    no_text = [f"{p.get('citekey')}:{a.get('attachmentKey')}" for p in papers for a in p.get("pdfs", []) if not a.get("hasText")]
+    return {
+        "papers": manifest.get("papers", len(papers)), "chunks": manifest.get("chunks", 0), "elapsed": time.time() - t0,
+        "no_text_pdfs": no_text, "changed": False, "content_hash": manifest.get("content_hash"), "missing_vectors": 0,
+    }
+
+
 def build_index(
     cfg,
     full: bool = False,
@@ -223,7 +260,7 @@ def build_index(
     chunk_overlap_words = int(cfg.search.get("chunk_overlap_words", 50))
     max_chunks_per_paper = int(cfg.search.get("max_chunks_per_paper", 150))
     batch_size = int(cfg.search.get("batch_size", 32))
-    keep_alive = cfg.search.get("keep_alive", "30m")
+    keep_alive = cfg.search.get("keep_alive", "5m")
     ollama_url = cfg.search.get("ollama_url", "http://localhost:11434")
     zotero_dir = Path(cfg.search.get("zotero_dir", "~/Zotero")).expanduser()
 
@@ -242,6 +279,18 @@ def build_index(
             old_state = load_json(search_dir / "state.json") if search_dir.exists() else None
             watcher_fingerprint = old_state.get("fingerprint") if isinstance(old_state, dict) else None
 
+            # Cheap no-op check (0.05 s, ~30 MB) before the full reconcile (~0.2 s, ~400 MB): the library fingerprint
+            # covers items, edits and every attachment's path, size and mtime. Recorded after each successful build.
+            fingerprint = None
+            if limit is None:
+                from .zotwatch import compute_fingerprint
+                fingerprint = compute_fingerprint(zotero_dir)
+            if not full and limit is None:
+                shortcut = _unchanged_result(search_dir, old_state, fingerprint, model, dims, chunker, t0)
+                if shortcut is not None:
+                    print(f"search index: no changes ({shortcut['elapsed']:.1f}s, fingerprint)")
+                    return shortcut
+
             if not full and search_dir.exists():
                 prev_manifest = load_json(search_dir / "manifest.json")
                 state_data = old_state
@@ -255,12 +304,14 @@ def build_index(
                     vec_file = search_dir / "vectors.f32"
                     if vec_file.exists():
                         arr = array.array("f")
-                        arr.frombytes(vec_file.read_bytes())
+                        with open(vec_file, "rb") as vf:
+                            arr.fromfile(vf, vec_file.stat().st_size // arr.itemsize)
                         prev_vecs = arr
                     for c in load_json(search_dir / "chunks.json", []):
                         if isinstance(c, dict) and "row" in c:
                             prev_chunks_by_row[c["row"]] = c
 
+            prev_view = memoryview(prev_vecs) if prev_vecs is not None else None
             cached_abstracts: dict[str, list[float]] = {}
             cached_attachments: dict[str, dict] = {}
             if prev_state:
@@ -271,7 +322,9 @@ def build_index(
                         start = val * dims
                         end = start + dims
                         if end <= len(prev_vecs):
-                            cached_abstracts[sha] = list(prev_vecs[start:end])
+                            # zero-copy views into the previous vectors, not lists of Python floats (~32 bytes a number:
+                            # a no-op build held ~770 MB) or array slices (a second copy of the file)
+                            cached_abstracts[sha] = prev_view[start:end]
 
                 for att_key, att_info in prev_state.get("attachments", {}).items():
                     resolved_chunks: list[dict] = []
@@ -287,7 +340,7 @@ def build_index(
                                 resolved_chunks.append({
                                     "page": c_meta["page"],
                                     "text": c_meta["text"],
-                                    "vec": list(prev_vecs[start:end]),
+                                    "vec": prev_view[start:end],
                                 })
                             else:
                                 valid_att = False
@@ -437,7 +490,7 @@ def build_index(
                 if sha is not None and sha in cached_abstracts and cached_abstracts[sha] is not None:
                     abstract_row = current_row
                     abstract_vec = cached_abstracts[sha]
-                    all_vectors.extend(abstract_vec)
+                    append_vector(all_vectors, abstract_vec)
                     state_abstracts[sha] = abstract_row
                     current_row += 1
                 else:
@@ -451,7 +504,7 @@ def build_index(
                     for chunk in paper_attachment_chunks.get(pdf.attachmentKey, []):
                         if chunk.get("vec") is not None:
                             ch_row = current_row
-                            all_vectors.extend(chunk["vec"])
+                            append_vector(all_vectors, chunk["vec"])
                             if pdf.attachmentKey in state_attachments:
                                 state_attachments[pdf.attachmentKey]["chunks"].append(ch_row)
                             current_row += 1
@@ -466,7 +519,7 @@ def build_index(
                         })
 
             # Compute content_hash
-            vec_bytes = all_vectors.tobytes()
+            vec_bytes = memoryview(all_vectors)  # hashed in place: tobytes() was another copy of the whole file
             content_hash = compute_content_hash(papers_data, chunks_data, vec_bytes)
 
             no_text_pdfs = [
@@ -487,6 +540,10 @@ def build_index(
                 not full and nothing_new and has_storage_field
                 and old_content_hash is not None and content_hash == old_content_hash
             ):
+                if fingerprint is not None and not missing_vectors and isinstance(old_state, dict):
+                    # nothing changed: record the fingerprint and the reconcile, so the next runs can shortcut
+                    write_json(search_dir / "state.json", {**old_state, "fingerprint": fingerprint,
+                                                           "reconciled_at": datetime.now().isoformat(timespec="seconds")})
                 elapsed = time.time() - t0
                 print(f"search index: no changes ({elapsed:.1f}s)")
                 return {
@@ -522,8 +579,9 @@ def build_index(
                 "abstracts": state_abstracts,
                 "attachments": state_attachments,
             }
-            if watcher_fingerprint is not None:
-                state_data["fingerprint"] = watcher_fingerprint
+            if fingerprint is not None or watcher_fingerprint is not None:
+                state_data["fingerprint"] = fingerprint or watcher_fingerprint
+            state_data["reconciled_at"] = datetime.now().isoformat(timespec="seconds")
             if missing_vectors:
                 # Tells the watcher to retry once Ollama is back, even if Zotero hasn't changed.
                 state_data["degraded"] = True

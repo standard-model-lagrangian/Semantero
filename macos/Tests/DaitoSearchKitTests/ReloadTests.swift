@@ -76,3 +76,59 @@ struct MemoryWatchdogTests {
 
     @Test func footprintIsReadable() { #expect(MemoryWatchdog.footprintMB() > 0) }
 }
+
+@Suite("Notes-only reload")
+struct NotesOnlyReloadTests {
+    @Test func notesChangeSwapsOnlyTheNotesCorpus() async throws {
+        let vault = try makeTempVault()
+        defer { try? FileManager.default.removeItem(at: vault) }
+        let ranker = try makeJSCRanker()
+        let reloader = IndexReloader(vault: vault, ranker: ranker)
+        _ = await reloader.check()
+        let notesDir = IndexFiles.corpusDirs(vault: vault).notes
+        // edit a note's title in the index
+        let papersURL = notesDir.appendingPathComponent("papers.json")
+        var notes = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: papersURL)) as? [[String: Any]])
+        let i = try #require(notes.firstIndex { ($0["title"] as? String) == "Organoid bottlenecks" })
+        notes[i]["title"] = "Organoid bottlenecks renamed zebrafish"
+        try JSONSerialization.data(withJSONObject: notes).write(to: papersURL)
+        try rewriteManifest(notesDir) { $0["content_hash"] = "notes-edited" }
+        guard case .reloaded(let s) = await reloader.check() else { Issue.record("expected a reload"); return }
+        #expect(await reloader.partialReloadCount == 1)
+        #expect(s.papers?.count == 4 && s.notes?.count == 7)
+        #expect(try await ranker.keyword("zebrafish", scope: .notes, limit: 3).first?.title == "Organoid bottlenecks renamed zebrafish")
+        #expect(try await ranker.keyword("stiffer gels", scope: .papers, limit: 1).first?.id == "P:KEY0004")
+        // a papers change takes the full path
+        try rewriteManifest(IndexFiles.corpusDirs(vault: vault).papers) { $0["content_hash"] = "papers-edited" }
+        guard case .reloaded = await reloader.check() else { Issue.record("expected a reload"); return }
+        #expect(await reloader.partialReloadCount == 1)
+        #expect(await reloader.reloadCount == 3)
+    }
+
+    @Test func acceleratedRankerKeepsSemanticSearchAfterANotesReload() async throws {
+        let vault = try makeTempVault()
+        defer { try? FileManager.default.removeItem(at: vault) }
+        let ranker = AcceleratedRanker(inner: try makeJSCRanker())
+        let reloader = IndexReloader(vault: vault, ranker: ranker)
+        _ = await reloader.check()
+        try rewriteManifest(IndexFiles.corpusDirs(vault: vault).notes) { $0["content_hash"] = "x" }
+        _ = await reloader.check()
+        #expect(await reloader.partialReloadCount == 1)
+        let v: [Float] = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
+        let hits = try await ranker.hybrid("organoid matrix", queryVector: v, scope: .notes, limit: 5)
+        #expect(hits.contains { $0.source != "keyword" }, "semantic results for notes after the swap")
+    }
+
+    @Test func failedNotesReloadKeepsTheEngine() async throws {
+        let vault = try makeTempVault()
+        defer { try? FileManager.default.removeItem(at: vault) }
+        let ranker = try makeJSCRanker()
+        let reloader = IndexReloader(vault: vault, ranker: ranker)
+        _ = await reloader.check()
+        let notesDir = IndexFiles.corpusDirs(vault: vault).notes
+        try Data("[broken".utf8).write(to: notesDir.appendingPathComponent("chunks.json"))
+        try rewriteManifest(notesDir) { $0["content_hash"] = "broken" }
+        guard case .failed = await reloader.check() else { Issue.record("expected failure"); return }
+        #expect(try await ranker.keyword("matrigel", scope: .notes, limit: 3).first?.title == "Organoid bottlenecks")
+    }
+}

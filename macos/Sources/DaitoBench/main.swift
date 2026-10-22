@@ -43,6 +43,10 @@ let notes = try IndexFiles.read(dir: dirs.notes)
 print("daito-bench [\(label)]  vault: \(vault.path)")
 print("  papers vectors \((papers.vectors?.count ?? 0) / 1_048_576) MB, notes vectors \((notes?.vectors?.count ?? 0) / 1_048_576) MB")
 
+if CommandLine.arguments.contains("--notesprobe") { try await notesProbe(papers: papers, notes: notes, rankerURL: rankerURL); exit(0) }
+if let b = arg("--dropprobe") { try await dropProbe(papers: papers, notes: notes, bundle: URL(fileURLWithPath: b)); exit(0) }
+if CommandLine.arguments.contains("--parseprobe") { parseProbe(papers: papers); exit(0) }
+if CommandLine.arguments.contains("--heapprobe") { try await heapProbe(papers: papers, notes: notes, rankerURL: rankerURL); exit(0) }
 if let probe = arg("--jsprobe2") { try jsProbe2(probeURL: URL(fileURLWithPath: probe), papers: papers); exit(0) }
 if CommandLine.arguments.contains("--jsprobe") { await jsProbe(); exit(0) }
 if CommandLine.arguments.contains("--memprobe") { try await memProbe(papers: papers, notes: notes, rankerURL: rankerURL); exit(0) }

@@ -62,9 +62,13 @@ export function buildCorpus(name: CorpusName, raw: RawCorpus): Corpus {
 }
 
 export function buildCorpora(papersRaw: RawCorpus | null, notesRaw: RawCorpus | null): Corpora {
+  return assembleCorpora(papersRaw ? buildCorpus("papers", papersRaw) : null, notesRaw ? buildCorpus("notes", notesRaw) : null);
+}
+
+/** Corpora from built corpora: flags, the cross-corpus checks and lookups. `papers` may be reused from an earlier
+ * engine (a notes-only reload); `notes` must be freshly built, because the model check may mark it keyword-only. */
+export function assembleCorpora(papers: Corpus | null, notes: Corpus | null): Corpora {
   const flags: string[] = [];
-  const papers = papersRaw ? buildCorpus("papers", papersRaw) : null;
-  const notes = notesRaw ? buildCorpus("notes", notesRaw) : null;
   if (!papers) flags.push("papers index missing");
   if (!notes) flags.push("notes index missing");
   if (papers?.reason) flags.push(`papers: semantic off (${papers.reason})`);
@@ -105,3 +109,4 @@ export function buildCorpora(papersRaw: RawCorpus | null, notesRaw: RawCorpus | 
     paperKeyByCitekey,
   };
 }
+

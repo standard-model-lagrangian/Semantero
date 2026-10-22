@@ -198,6 +198,6 @@ updates the notes index on every run. Logs go to `logs/morning.log` and `logs/we
 | ⌥Space does something else | Another app has it (e.g. an assistant's quick-entry key). Pick another hotkey in Settings |
 | A note never shows up | `planner notes stats` (is it excluded? is the index fresh?). Notes in symlinked folders and tags starting with accented letters are not indexed |
 | Outlook on the web shows "Something went wrong while the document preview was being created" | The pasted file is correct (verified byte-for-byte in Firefox); it's Outlook's previewer. Download it to check, or compare with Outlook's own Attach button |
-| Launcher uses lots of memory | Normal for a few seconds after start. It compacts itself to ~100–160 MB, and a watchdog re-compacts when hidden and over 350 MB. Activity Monitor's "Memory" is the right number; `ps` RSS over-reports |
+| Launcher uses lots of memory | It settles at ~100–150 MB a few seconds after start or after an index change (more for bigger libraries). A watchdog reloads if it is ever over 350 MB while hidden. Activity Monitor's "Memory" is the right number |
 | `planner doctor` flags the notes index | The message says the fix: `planner notes index` (missing or stale), `--full` (model changed), or start Ollama (degraded) |
 | `make check` fails on a fresh clone | Run `make dev-setup` (npm packages for both TypeScript projects and the Python venv); `make test-swift` needs full Xcode |

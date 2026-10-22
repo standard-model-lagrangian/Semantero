@@ -51,6 +51,7 @@ struct HotkeyShortcutsSettingsTests {
         let s = SettingsStore(defaults: suite)
         #expect(s.hotkey == "⌥Space")
         #expect(s.ollamaURL == "http://127.0.0.1:11434")
+        #expect(s.ollamaKeepAlive == "5m")
         #expect(s.resultLimit == 15)
         #expect(s.restoreClipboard == false)
         #expect(s.spotlightPapers == true && s.spotlightNoteTitles == true && s.spotlightNoteText == false)
@@ -77,6 +78,9 @@ struct SettingsEffectTests {
         #expect(SettingsEffect.between(before, SettingsSnapshot(s)) ==
                 [.reopenVault, .syncSpotlight, .reconfigureEmbedding, .applyResultLimit, .registerHotkey, .applyLoginItem])
         let mid = SettingsSnapshot(s)
+        s.ollamaKeepAlive = "30m"
+        #expect(SettingsEffect.between(mid, SettingsSnapshot(s)) == [.reconfigureEmbedding])
+        s.ollamaKeepAlive = "5m"
         s.spotlightPapers = false
         #expect(SettingsEffect.between(mid, SettingsSnapshot(s)) == [.syncSpotlight])
     }

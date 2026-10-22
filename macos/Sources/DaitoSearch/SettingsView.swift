@@ -7,6 +7,7 @@ struct SettingsView: View {
     @State private var vault = ""
     @State private var hotkey = ""
     @State private var ollama = ""
+    @State private var keepAlive = ""
     @State private var limit = 15
     @State private var restore = false
     @State private var spotPapers = true
@@ -22,6 +23,7 @@ struct SettingsView: View {
                 TextField("Hotkey (e.g. ⌥Space)", text: $hotkey).onSubmit(save)
                 if let hotkeyError { Text(hotkeyError).foregroundStyle(.red).font(.caption) }
                 TextField("Ollama URL", text: $ollama).onSubmit(save)
+                TextField("Keep the model loaded for (e.g. 5m, 30m)", text: $keepAlive).onSubmit(save)
                 Stepper("Results: \(limit)", value: $limit, in: 5...30)
             }
             Section("Pasting") {
@@ -49,7 +51,7 @@ struct SettingsView: View {
 
     private func load() {
         let s = model.settings
-        vault = s.vaultPath; hotkey = s.hotkey; ollama = s.ollamaURL; limit = s.resultLimit; restore = s.restoreClipboard
+        vault = s.vaultPath; hotkey = s.hotkey; ollama = s.ollamaURL; keepAlive = s.ollamaKeepAlive; limit = s.resultLimit; restore = s.restoreClipboard
         spotPapers = s.spotlightPapers; spotTitles = s.spotlightNoteTitles; spotText = s.spotlightNoteText; login = s.launchAtLogin
     }
 
@@ -58,7 +60,7 @@ struct SettingsView: View {
         let before = SettingsSnapshot(s)
         hotkeyError = nil
         do { _ = try HotkeySpec(parsing: hotkey) } catch { hotkeyError = "Not a valid hotkey: use modifiers and a key, like ⌥Space"; return }
-        s.vaultPath = (vault as NSString).expandingTildeInPath; s.hotkey = hotkey; s.ollamaURL = ollama; s.resultLimit = limit
+        s.vaultPath = (vault as NSString).expandingTildeInPath; s.hotkey = hotkey; s.ollamaURL = ollama; s.ollamaKeepAlive = keepAlive.isEmpty ? "5m" : keepAlive; s.resultLimit = limit
         s.restoreClipboard = restore; s.spotlightPapers = spotPapers; s.spotlightNoteTitles = spotTitles
         s.spotlightNoteText = spotText; s.launchAtLogin = login
         model.applySettings(from: before)

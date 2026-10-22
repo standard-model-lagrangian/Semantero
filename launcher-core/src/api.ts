@@ -56,6 +56,13 @@ const api = {
     return JSON.stringify({ ...next.status(), timings: { ...loadTimings } });
   },
 
+  /** Replace only the notes corpus, reusing the loaded papers corpus. Returns the status as JSON. */
+  loadNotes(notes: CorpusPart | null): string {
+    const next = need().withNotes(raw(notes));
+    engine = next;
+    return JSON.stringify(next.status());
+  },
+
   status(): string {
     return JSON.stringify(need().status());
   },

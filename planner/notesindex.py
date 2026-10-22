@@ -162,7 +162,7 @@ def build_index(
     query_instruction = cfg.search.get(
         "query_instruction", "Given a description of what a paper found or showed, retrieve that paper")
     batch_size = int(cfg.search.get("batch_size", 32))
-    keep_alive = cfg.search.get("keep_alive", "30m")
+    keep_alive = cfg.search.get("keep_alive", "5m")
     ollama_url = cfg.search.get("ollama_url", "http://localhost:11434")
 
     with named_lock(cfg, "notes.lock", timeout=lock_timeout, blocking=blocking):

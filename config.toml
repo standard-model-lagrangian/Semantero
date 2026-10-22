@@ -46,7 +46,7 @@ chunk_words = 300
 chunk_overlap_words = 50
 max_chunks_per_paper = 150          # stops a thesis or book from dominating results
 batch_size = 32
-keep_alive = "30m"
+keep_alive = "5m"                   # Ollama unloads the model (~400 MB) this long after the last embedding
 
 
 [notes]

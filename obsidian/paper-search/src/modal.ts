@@ -7,7 +7,7 @@ import {
 } from "obsidian";
 import type PaperSearchPlugin from "./main.ts";
 import { keyword, hybridSearch, type Hit, type LoadedIndex } from "./engine.ts";
-import { embedQuery, warmUp } from "./ollama.ts";
+import { DEFAULT_KEEP_ALIVE, embedQuery, warmUp } from "./ollama.ts";
 import { shouldRunSemantic, SemanticCoordinator } from "./rank.ts";
 import { ensureLiteratureNote, formatCitation } from "./litnote.ts";
 import { hitUrl, selectItemUrl } from "./zotero.ts";
@@ -50,7 +50,7 @@ export class PaperSearchModal extends SuggestModal<SearchModalItem> {
       warmUp(requestUrl, {
         url: this.plugin.settings.ollamaUrl,
         model: ix.manifest.model,
-        keepAlive: "30m",
+        keepAlive: DEFAULT_KEEP_ALIVE,
       });
     }
 

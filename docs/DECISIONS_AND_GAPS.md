@@ -277,3 +277,48 @@ Not fixed (by choice, see CHECK.md): JavaScriptCore can't be told to stop the id
   when it is too short for the menu. Checked by capture (`DAITO_SNAPSHOT_ACTIONS=1`).
 - Test modes (`DAITO_SELFTEST`, `DAITO_SNAPSHOT`) no longer register the hotkey or the login item, so they can run next
   to the installed app. The self-test waits for the semantic merge instead of a fixed 1.5 s (one flaky run in ten).
+
+### Memory pass (22 Oct 2026)
+
+Reported: the installed app at 700–820 MB. `vmmap` showed 660 MB of *live* allocations in JavaScriptCore's allocator
+(1.39 M allocations). New tooling: `JSCPrivate` (exported but unheadered JavaScriptCore functions: live heap
+statistics, object counts by type, a synchronous full GC) and `daito-bench --heapprobe / --parseprobe / --dropprobe /
+--notesprobe`.
+
+**Findings and fixes, in order of effect**
+
+| Finding | Fix | Effect (real library: 171 papers / 8,839 chunks, 145 notes) |
+|---|---|---|
+| `JSGarbageCollect` only *schedules* a collection: after a build the churn (~1 GB) stayed resident; the old "two engine swaps" worked only because tearing down a VM forces a collection | each build ends with `JSSynchronousGarbageCollectForDebugging` on the build thread (`JSCPrivate.collectNow`); start-up compaction swaps removed; watchdog kept as a single-reload safety net | start-up footprint 783 MB → **143 MB within 5 s** |
+| BM25 kept 4 Maps × 65k terms and 2–4 small typed arrays per term (529k live objects) | postings in compressed-sparse-row form (`offsets`/`ids`/`scores` per list), term ids = positions in the sorted vocabulary, document frequency in an `Int32Array`; build uses term ids and per-chunk typed arrays. Same scores and order (plugin goldens, 84 conformance cases) | objects 529k → 111k; heap (incl. external) 122 → 98 MB |
+| Vocabulary words were slices of lowercased chunk copies, pinning them | one JSON round trip makes flat copies | 98 → 89 MB |
+| Chunk texts as JS strings: 30 MB (81 % of chunks contain a non-Latin-1 character, so whole strings are 2 bytes a character) | `TextStore`: all chunk texts as WTF-8 in one byte array, decoded on demand by a getter on each chunk (shared core, so the plugin gets it too); repeated attachment keys and headings interned | 89 → 74 MB; settled footprint **102 MB** |
+| A notes-only change rebuilt both corpora (0.5 s, a ~450 MB transient) | `daito.loadNotes` / `NotesReloading.reloadNotes`: swap only the notes corpus in the current engine (21 ms incl. a 1.2 ms synchronous GC), for notes indexes up to 4 MB of chunks; bigger ones take the full off-actor rebuild | repeated note edits: flat at **110 MB** (without the GC: +15 MB per edit) |
+| The all-JavaScriptCore vector pass measured 20–54 ms per query with the reduced JIT tiers (budget 40) | the app runs option B (Accelerate vector pass): 2.3–3.0 ms p95. Option A remains, conformance-tested | hybrid p95 ~3 ms |
+
+What the remaining ~100 MB is (drop probe): paper vectors 37 MB (memory-mapped `vectors.f32`: clean file pages,
+counted by JavaScriptCore as external memory but mostly not in the process footprint), keyword index 17 MB, chunk
+records + packed text 16 MB, notes 3 MB, other JS ~2 MB; the rest is the Swift/SwiftUI app.
+
+**Obsidian plugin** (same core, V8, real paper index): JS heap 80 → 12 MB, array buffers 49 → 67 MB, total live
+129 → 79 MB; build time unchanged (~760 ms).
+
+**Python**
+
+| Job | Before | After | Fix |
+|---|---|---|---|
+| `search index` with nothing changed (daily, and on Zotero changes) | 0.62 s, 768 MB peak | **0.05 s, 34 MB** (a full reconcile, at least weekly: 0.21 s, 400 MB) | (1) the watcher's library fingerprint (items, edits, every attachment's path/size/mtime; 0.05 s) now short-circuits `build_index` itself when it matches the last successful build, the index isn't degraded and model/dims/chunker match; a full reconcile still runs if the last one is over 7 days old, in case an edit didn't bump `clientDateModified`. (2) the reconcile itself: cached vectors were Python float lists (~32 bytes a number) and the vector file was held 4×; now zero-copy `memoryview` slices, `array.fromfile`, `frombytes(view.cast("B"))`, hashing in place |
+| 5-minute morning tick | 0.38 s | 0.07 s, 31 MB | the paper index's fingerprint shortcut |
+| `search stats` | 0.12 s, 213 MB | 0.05 s, 33 MB | chunk count from the manifest instead of loading every chunk |
+| 5-minute tick, notes index no-op, watcher no-op | < 0.4 s, ~28 MB | unchanged | already cheap |
+
+**Ollama** (not daito's process, but loaded on its behalf): the embedding model's process holds ~400 MB footprint
+(~950 MB resident) while loaded. `keep_alive` was 30 min everywhere; now 5 min by default (app setting "Keep the model
+loaded for", `config.toml` `[search] keep_alive`, the plugin's `DEFAULT_KEEP_ALIVE`). The app and the plugin warm the
+model when their search opens, so the cold start (measured 0.85 s; keyword results are instant anyway) is mostly hidden.
+
+**Net, the installed app on this library:** 700–820 MB → **~110 MB**, stable over idle time and repeated note edits;
+start-up settles within 5 s instead of needing two engine swaps.
+
+Not done (judged not worth it): Float32 posting scores (−4.6 MB, would risk tie order against the goldens); moving
+chunk text out of JavaScript entirely (Python would have to write a second format); a resident query server.

@@ -15,7 +15,7 @@ private final class ExceptionBox: @unchecked Sendable {
 
 /// The TypeScript ranking core (launcher-core/dist/ranker.js) running in JavaScriptCore. Each load builds a new engine
 /// (its own virtual machine and context) off the actor; once installed, an engine is only used from this actor.
-public actor JSCRanker: Ranker {
+public actor JSCRanker: NotesReloading {
     /// The bundle version this app build expects: launcher-core/package.json "version".
     public static let expectedVersion = "1.0.0"
 
@@ -64,16 +64,38 @@ public actor JSCRanker: Ranker {
         installedGeneration = generation
         let old = engine
         engine = built.engine
-        autoreleasepool {
-            // Parsing and index building leave a lot of garbage; JavaScriptCore would hold on to it for a long time.
-            JSGarbageCollect(built.engine.ctx.jsGlobalContextRef)
-            if let old { JSGarbageCollect(old.ctx.jsGlobalContextRef) }
-        }
-        // Note (spike S1): the first engine in a process keeps ~750 MB of dirty pages from parsing and index building
-        // until a virtual machine is torn down; replacing it with a fresh one (identical data) leaves ~150 MB. The app
-        // does that after start-up: IndexReloader.forceReload().
+        _ = old  // released here: its virtual machine is torn down with it
         return built.status
     }
+
+    /// Swaps in a new notes corpus inside the current engine (on this actor: keep it to small notes indexes, see
+    /// IndexReloader.partialReloadLimit). A failure keeps the current engine.
+    public func reloadNotes(_ notes: CorpusFiles?) async throws -> RankerStatus {
+        guard let engine else { throw RankerError("no index loaded") }
+        return try autoreleasepool {
+            _ = engine.exceptions.take()
+            let part: Any = try notes.map { try Self.part($0, in: engine.ctx) } ?? NSNull()
+            let result = engine.api.invokeMethod("loadNotes", withArguments: [part])
+            if let e = engine.exceptions.take() { throw e }
+            guard let result else { throw RankerError("loadNotes returned nothing") }
+            let status = try Self.decode(RankerStatus.self, from: result)
+            // The replaced notes corpus is garbage in this same engine: collect it now, or each reload keeps ~15 MB.
+            let t = ContinuousClock.now
+            JSCPrivate.collectNow(engine.ctx)
+            lastNotesGC = ContinuousClock.now - t
+            return status
+        }
+    }
+
+    /// A synchronous full collection of the live engine (~1–2 ms). Run a few seconds after a full load: what the load left
+    /// behind outside the new engine (the replaced engine, transfer buffers) can only be reclaimed once it is installed.
+    public func collectGarbage() {
+        guard let engine else { return }
+        autoreleasepool { JSCPrivate.collectNow(engine.ctx) }
+    }
+
+    /// How long the synchronous collection after the last notes-only reload took (diagnostics).
+    public private(set) var lastNotesGC: Duration = .zero
 
     /// Builds an engine on a fresh virtual machine. Touches no actor state, so it can run on any thread.
     /// Everything runs inside an autorelease pool: JSValues come back autoreleased, and on a Swift concurrency thread
@@ -98,7 +120,12 @@ public actor JSCRanker: Ranker {
             let result = api.invokeMethod("load", withArguments: [papersPart ?? NSNull(), notesPart ?? NSNull()])
             if let e = box.take() { throw e }
             guard let result else { throw RankerError("load returned nothing") }
-            return (Engine(ctx: ctx, api: api, exceptions: box), try decode(RankerStatus.self, from: result))
+            let status = try decode(RankerStatus.self, from: result)
+            // Building churns several times the engine's final size. A synchronous full collection here (off the query
+            // actor) lets the allocator hand that back within seconds; JSGarbageCollect only schedules one, and without
+            // it the process stayed at ~800 MB (measured; DECISIONS_AND_GAPS.md, "Memory pass").
+            JSCPrivate.collectNow(ctx)
+            return (Engine(ctx: ctx, api: api, exceptions: box), status)
         }
     }
 
@@ -138,6 +165,26 @@ public actor JSCRanker: Ranker {
 
     private func callDecode<T: Decodable>(_ type: T.Type, _ method: String, _ args: [Any]) throws -> T {
         try autoreleasepool { try Self.decode(T.self, from: try call(method, args)) }
+    }
+
+    /// Diagnostics: the current engine's JavaScriptCore heap (after an optional synchronous full GC).
+    public func heapStatistics(collectFirst: Bool = false) -> [String: Double] {
+        guard let engine else { return [:] }
+        return autoreleasepool {
+            if collectFirst { JSCPrivate.collectNow(engine.ctx) }
+            return JSCPrivate.heapStatistics(engine.ctx)
+        }
+    }
+
+    public func objectTypeCounts() -> [(String, Int)] {
+        guard let engine else { return [] }
+        return autoreleasepool { JSCPrivate.collectNow(engine.ctx); return JSCPrivate.objectTypeCounts(engine.ctx) }
+    }
+
+    /// Diagnostics: runs JavaScript in the current engine and returns its string result.
+    public func evaluateForDiagnostics(_ script: String) -> String {
+        guard let engine else { return "" }
+        return autoreleasepool { engine.ctx.evaluateScript(script)?.toString() ?? "" }
     }
 
     public func lookup(ids: [String]) async throws -> [ResultVM] {

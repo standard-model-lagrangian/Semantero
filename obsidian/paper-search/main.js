@@ -304,28 +304,21 @@ var FIELD_WEIGHTS = {
   collections: 2,
   abstract: 1.5
 };
-function freeze(builders) {
-  const out = /* @__PURE__ */ new Map();
-  for (const [term, b] of builders) out.set(term, { ids: Int32Array.from(b.ids), scores: Float64Array.from(b.scores) });
-  return out;
-}
 var BM25Index = class {
   k1 = 1.2;
   b = 0.75;
   papers;
   chunks;
-  // Vocabulary of all terms across index
-  vocab = /* @__PURE__ */ new Set();
+  /** Every term, sorted; a term's index here is its id everywhere below. */
   sortedVocab = [];
-  // Document frequencies: term -> count of docs containing term
-  df = /* @__PURE__ */ new Map();
+  /** Document frequency by term id. */
+  dfById = new Int32Array(0);
   totalDocs = 0;
   // Average lengths
   avgFieldLengths = /* @__PURE__ */ new Map();
   avgChunkLength = 0;
-  // Inverted postings: term -> postings
-  paperPostings = /* @__PURE__ */ new Map();
-  chunkPostings = /* @__PURE__ */ new Map();
+  paperPostings = { offsets: new Int32Array(1), ids: new Int32Array(0), scores: new Float64Array(0) };
+  chunkPostings = { offsets: new Int32Array(1), ids: new Int32Array(0), scores: new Float64Array(0) };
   // Reusable typed arrays for search to avoid GC pauses
   paperScoresBuf;
   chunkScoresBuf;
@@ -342,129 +335,157 @@ var BM25Index = class {
   }
   build() {
     this.totalDocs = this.papers.length + this.chunks.length;
-    const totalFieldLengths = {
-      title: 0,
-      authors: 0,
-      citekey: 0,
-      journal: 0,
-      tags: 0,
-      collections: 0,
-      abstract: 0
+    const idOf = /* @__PURE__ */ new Map();
+    const terms = [];
+    const df = [];
+    const intern = (t) => {
+      let id = idOf.get(t);
+      if (id === void 0) {
+        id = terms.length;
+        idOf.set(t, id);
+        terms.push(t);
+        df.push(0);
+      }
+      return id;
     };
-    const paperFieldTerms = [];
-    const paperFieldLengths = [];
+    const fieldNames = Object.keys(FIELD_WEIGHTS);
+    const totalFieldLengths = new Float64Array(fieldNames.length);
+    const paperFields = [];
+    const counts = /* @__PURE__ */ new Map();
+    const seen = /* @__PURE__ */ new Set();
     for (const paper of this.papers) {
-      const fieldTerms = /* @__PURE__ */ new Map();
-      const fieldLengths = /* @__PURE__ */ new Map();
-      const paperDistinctTerms = /* @__PURE__ */ new Set();
-      const fields = {
-        title: paper.title || "",
-        authors: paper.authors.join(" "),
-        citekey: paper.citekey || "",
-        journal: paper.journal || "",
-        tags: paper.tags.join(" "),
-        collections: paper.collections.join(" "),
-        abstract: paper.abstract || ""
-      };
-      for (const [fName, fText] of Object.entries(fields)) {
-        const { tokens } = tokenize(fText);
-        const termFreqs = /* @__PURE__ */ new Map();
+      const fieldTexts = [
+        paper.title || "",
+        paper.authors.join(" "),
+        paper.citekey || "",
+        paper.journal || "",
+        paper.tags.join(" "),
+        paper.collections.join(" "),
+        paper.abstract || ""
+      ];
+      seen.clear();
+      const perField = [];
+      for (let f = 0; f < fieldNames.length; f++) {
+        const { tokens } = tokenize(fieldTexts[f]);
+        counts.clear();
         for (const t of tokens) {
-          termFreqs.set(t, (termFreqs.get(t) || 0) + 1);
-          paperDistinctTerms.add(t);
+          const id = intern(t);
+          counts.set(id, (counts.get(id) || 0) + 1);
+          seen.add(id);
         }
-        fieldTerms.set(fName, termFreqs);
-        fieldLengths.set(fName, tokens.length);
-        totalFieldLengths[fName] += tokens.length;
+        perField.push({ ids: Int32Array.from(counts.keys()), tfs: Int32Array.from(counts.values()), len: tokens.length });
+        totalFieldLengths[f] += tokens.length;
       }
-      for (const t of paperDistinctTerms) {
-        this.df.set(t, (this.df.get(t) || 0) + 1);
-      }
-      paperFieldTerms.push(fieldTerms);
-      paperFieldLengths.push(fieldLengths);
+      for (const id of seen) df[id]++;
+      paperFields.push(perField);
     }
     const numPapers = Math.max(1, this.papers.length);
-    for (const [fName, totalLen] of Object.entries(totalFieldLengths)) {
-      this.avgFieldLengths.set(fName, totalLen / numPapers);
-    }
+    for (let f = 0; f < fieldNames.length; f++) this.avgFieldLengths.set(fieldNames[f], totalFieldLengths[f] / numPapers);
     let totalChunkLen = 0;
-    const chunkTermsList = [];
-    const chunkLengthsList = [];
-    for (const chunk of this.chunks) {
-      const { tokens } = tokenize(chunk.text);
-      const termFreqs = /* @__PURE__ */ new Map();
+    const chunkIds = new Array(this.chunks.length);
+    const chunkTfs = new Array(this.chunks.length);
+    const chunkLen = new Int32Array(this.chunks.length);
+    for (let c = 0; c < this.chunks.length; c++) {
+      const { tokens } = tokenize(this.chunks[c].text);
+      counts.clear();
       for (const t of tokens) {
-        termFreqs.set(t, (termFreqs.get(t) || 0) + 1);
+        const id = intern(t);
+        counts.set(id, (counts.get(id) || 0) + 1);
       }
-      for (const t of termFreqs.keys()) {
-        this.df.set(t, (this.df.get(t) || 0) + 1);
-      }
-      chunkTermsList.push(termFreqs);
-      chunkLengthsList.push(tokens.length);
+      for (const id of counts.keys()) df[id]++;
+      chunkIds[c] = Int32Array.from(counts.keys());
+      chunkTfs[c] = Int32Array.from(counts.values());
+      chunkLen[c] = tokens.length;
       totalChunkLen += tokens.length;
     }
     this.avgChunkLength = this.chunks.length > 0 ? totalChunkLen / this.chunks.length : 1;
-    this.sortedVocab = Array.from(this.df.keys()).sort();
-    this.vocab = new Set(this.sortedVocab);
-    const paperBuild = /* @__PURE__ */ new Map();
-    const chunkBuild = /* @__PURE__ */ new Map();
-    for (let pIdx = 0; pIdx < this.papers.length; pIdx++) {
-      const fieldTerms = paperFieldTerms[pIdx];
-      const fieldLens = paperFieldLengths[pIdx];
-      const paperTerms = /* @__PURE__ */ new Set();
-      for (const freqs of fieldTerms.values()) {
-        for (const t of freqs.keys()) {
-          paperTerms.add(t);
+    const V = terms.length;
+    const order = Array.from({ length: V }, (_, i) => i).sort((a, b) => terms[a] < terms[b] ? -1 : terms[a] > terms[b] ? 1 : 0);
+    const rank = new Int32Array(V);
+    this.sortedVocab = new Array(V);
+    this.dfById = new Int32Array(V);
+    for (let i = 0; i < V; i++) {
+      rank[order[i]] = i;
+      this.sortedVocab[i] = terms[order[i]];
+      this.dfById[i] = df[order[i]];
+    }
+    this.sortedVocab = JSON.parse(JSON.stringify(this.sortedVocab));
+    const idfById = new Float64Array(V);
+    for (let i = 0; i < V; i++) idfById[i] = this.idfFromDf(this.dfById[i]);
+    const paperScoreOf = (fields, into) => {
+      into.clear();
+      for (let f = 0; f < fieldNames.length; f++) {
+        const { ids, tfs, len } = fields[f];
+        const weight = FIELD_WEIGHTS[fieldNames[f]];
+        const avgLen = this.avgFieldLengths.get(fieldNames[f]) || 1;
+        for (let k = 0; k < ids.length; k++) {
+          const id = rank[ids[k]];
+          into.set(id, (into.get(id) || 0) + weight * this.scoreTerm(tfs[k], len, avgLen, idfById[id]));
         }
       }
-      for (const term of paperTerms) {
-        const idfVal = this.idf(term);
-        let score = 0;
-        for (const [fName, weight] of Object.entries(FIELD_WEIGHTS)) {
-          const freqs = fieldTerms.get(fName);
-          const tf = freqs ? freqs.get(term) || 0 : 0;
-          if (tf > 0) {
-            const docLen = fieldLens.get(fName) || 0;
-            const avgLen = this.avgFieldLengths.get(fName) || 1;
-            score += weight * this.scoreTerm(tf, docLen, avgLen, idfVal);
-          }
-        }
-        if (score > 0) {
-          let list = paperBuild.get(term);
-          if (!list) {
-            list = { ids: [], scores: [] };
-            paperBuild.set(term, list);
-          }
-          list.ids.push(pIdx);
-          list.scores.push(score);
-        }
+    };
+    const scores = /* @__PURE__ */ new Map();
+    const paperCount = new Int32Array(V + 1);
+    for (let p = 0; p < this.papers.length; p++) {
+      paperScoreOf(paperFields[p], scores);
+      for (const [id, score] of scores) if (score > 0) paperCount[id + 1]++;
+    }
+    const paperPost = this.allocate(paperCount);
+    const paperFill = paperPost.offsets.slice(0, V);
+    for (let p = 0; p < this.papers.length; p++) {
+      paperScoreOf(paperFields[p], scores);
+      for (const [id, score] of scores) {
+        if (score <= 0) continue;
+        const at = paperFill[id]++;
+        paperPost.ids[at] = p;
+        paperPost.scores[at] = score;
       }
     }
-    for (let cIdx = 0; cIdx < this.chunks.length; cIdx++) {
-      const termFreqs = chunkTermsList[cIdx];
-      const docLen = chunkLengthsList[cIdx];
-      for (const [term, tf] of termFreqs.entries()) {
-        if (tf > 0) {
-          const idfVal = this.idf(term);
-          const score = this.scoreTerm(tf, docLen, this.avgChunkLength, idfVal);
-          if (score > 0) {
-            let list = chunkBuild.get(term);
-            if (!list) {
-              list = { ids: [], scores: [] };
-              chunkBuild.set(term, list);
-            }
-            list.ids.push(cIdx);
-            list.scores.push(score);
-          }
-        }
+    this.paperPostings = paperPost;
+    const chunkCount = new Int32Array(V + 1);
+    for (let c = 0; c < this.chunks.length; c++) {
+      const ids = chunkIds[c];
+      for (let k = 0; k < ids.length; k++) chunkCount[rank[ids[k]] + 1]++;
+    }
+    const chunkPost = this.allocate(chunkCount);
+    const chunkFill = chunkPost.offsets.slice(0, V);
+    for (let c = 0; c < this.chunks.length; c++) {
+      const ids = chunkIds[c], tfs = chunkTfs[c];
+      for (let k = 0; k < ids.length; k++) {
+        const id = rank[ids[k]];
+        const score = this.scoreTerm(tfs[k], chunkLen[c], this.avgChunkLength, idfById[id]);
+        if (score <= 0) continue;
+        const at = chunkFill[id]++;
+        chunkPost.ids[at] = c;
+        chunkPost.scores[at] = score;
       }
     }
-    this.paperPostings = freeze(paperBuild);
-    this.chunkPostings = freeze(chunkBuild);
+    this.chunkPostings = chunkPost;
+  }
+  /** CSR arrays for per-term counts in `count[t + 1]`. */
+  allocate(count) {
+    const offsets = new Int32Array(count.length);
+    for (let i = 1; i < count.length; i++) offsets[i] = offsets[i - 1] + count[i];
+    const n = offsets[offsets.length - 1];
+    return { offsets, ids: new Int32Array(n), scores: new Float64Array(n) };
+  }
+  /** Id of an exact vocabulary term, or -1. */
+  termId(term) {
+    const V = this.sortedVocab;
+    let l = 0, r = V.length;
+    while (l < r) {
+      const m = l + r >>> 1;
+      if (V[m] < term) l = m + 1;
+      else r = m;
+    }
+    return l < V.length && V[l] === term ? l : -1;
+  }
+  idfFromDf(docFreq) {
+    return Math.log(1 + (this.totalDocs - docFreq + 0.5) / (docFreq + 0.5));
   }
   idf(term) {
-    const docFreq = this.df.get(term) || 0;
-    return Math.log(1 + (this.totalDocs - docFreq + 0.5) / (docFreq + 0.5));
+    const id = this.termId(term);
+    return this.idfFromDf(id < 0 ? 0 : this.dfById[id]);
   }
   scoreTerm(tf, docLen, avgDocLen, idfVal) {
     if (tf <= 0) return 0;
@@ -509,25 +530,22 @@ var BM25Index = class {
       const isLast = i === tokens.length - 1;
       if (isLast && lastIncomplete) {
         if (t.length < 3) {
-          if (/\d/.test(t) && this.df.has(t)) {
-            termMatchers.push({ isPrefix: false, matchingTerms: [t] });
+          const id = /\d/.test(t) ? this.termId(t) : -1;
+          if (id >= 0) {
+            termMatchers.push({ isPrefix: false, matchingTerms: [id] });
           }
         } else {
           const [start, end] = this.findPrefixRange(t);
           const matchCount = end - start;
           if (matchCount > 0) {
             if (matchCount <= 64) {
-              termMatchers.push({
-                isPrefix: true,
-                matchingTerms: this.sortedVocab.slice(start, end)
-              });
+              const range = [];
+              for (let id = start; id < end; id++) range.push(id);
+              termMatchers.push({ isPrefix: true, matchingTerms: range });
             } else {
-              const candidates = this.sortedVocab.slice(start, end);
-              candidates.sort((a, b) => {
-                const dfDiff = (this.df.get(b) || 0) - (this.df.get(a) || 0);
-                if (dfDiff !== 0) return dfDiff;
-                return a < b ? -1 : a > b ? 1 : 0;
-              });
+              const candidates = [];
+              for (let id = start; id < end; id++) candidates.push(id);
+              candidates.sort((a, b) => this.dfById[b] - this.dfById[a] || a - b);
               termMatchers.push({
                 isPrefix: true,
                 matchingTerms: candidates.slice(0, 64)
@@ -538,7 +556,8 @@ var BM25Index = class {
           }
         }
       } else {
-        termMatchers.push({ isPrefix: false, matchingTerms: [t] });
+        const id = this.termId(t);
+        termMatchers.push({ isPrefix: false, matchingTerms: id >= 0 ? [id] : [] });
       }
     }
     if (termMatchers.length === 0) {
@@ -554,25 +573,15 @@ var BM25Index = class {
       matcherPaperScores.clear();
       matcherChunkScores.clear();
       for (const term of matcher.matchingTerms) {
-        const pPostings = this.paperPostings.get(term);
-        if (pPostings) {
-          const { ids, scores } = pPostings;
-          for (let i = 0; i < ids.length; i++) {
-            const prev = matcherPaperScores.get(ids[i]) || 0;
-            if (scores[i] > prev) {
-              matcherPaperScores.set(ids[i], scores[i]);
-            }
-          }
+        const pp = this.paperPostings;
+        for (let i = pp.offsets[term], end = pp.offsets[term + 1]; i < end; i++) {
+          const prev = matcherPaperScores.get(pp.ids[i]) || 0;
+          if (pp.scores[i] > prev) matcherPaperScores.set(pp.ids[i], pp.scores[i]);
         }
-        const cPostings = this.chunkPostings.get(term);
-        if (cPostings) {
-          const { ids, scores } = cPostings;
-          for (let i = 0; i < ids.length; i++) {
-            const prev = matcherChunkScores.get(ids[i]) || 0;
-            if (scores[i] > prev) {
-              matcherChunkScores.set(ids[i], scores[i]);
-            }
-          }
+        const cp = this.chunkPostings;
+        for (let i = cp.offsets[term], end = cp.offsets[term + 1]; i < end; i++) {
+          const prev = matcherChunkScores.get(cp.ids[i]) || 0;
+          if (cp.scores[i] > prev) matcherChunkScores.set(cp.ids[i], cp.scores[i]);
         }
       }
       for (const [pIdx, score] of matcherPaperScores.entries()) {
@@ -617,6 +626,131 @@ var BM25Index = class {
     return results;
   }
 };
+
+// src/textstore.ts
+var TextStore = class _TextStore {
+  bytes;
+  offsets;
+  constructor(bytes, offsets) {
+    this.bytes = bytes;
+    this.offsets = offsets;
+  }
+  get count() {
+    return this.offsets.length - 1;
+  }
+  get byteLength() {
+    return this.bytes.length;
+  }
+  static from(texts) {
+    const offsets = new Int32Array(texts.length + 1);
+    let total = 0;
+    for (let i = 0; i < texts.length; i++) {
+      total += encodedLength(texts[i]);
+      offsets[i + 1] = total;
+    }
+    const bytes = new Uint8Array(total);
+    for (let i = 0; i < texts.length; i++) encodeInto(texts[i], bytes, offsets[i]);
+    return new _TextStore(bytes, offsets);
+  }
+  get(i) {
+    if (i < 0 || i >= this.count) return "";
+    return decode(this.bytes, this.offsets[i], this.offsets[i + 1]);
+  }
+};
+var isHigh = (u) => u >= 55296 && u <= 56319;
+var isLow = (u) => u >= 56320 && u <= 57343;
+function encodedLength(s) {
+  let n = 0;
+  for (let i = 0; i < s.length; i++) {
+    const u = s.charCodeAt(i);
+    if (u < 128) n += 1;
+    else if (u < 2048) n += 2;
+    else if (isHigh(u) && i + 1 < s.length && isLow(s.charCodeAt(i + 1))) {
+      n += 4;
+      i++;
+    } else n += 3;
+  }
+  return n;
+}
+function encodeInto(s, out, at) {
+  for (let i = 0; i < s.length; i++) {
+    let u = s.charCodeAt(i);
+    if (u < 128) {
+      out[at++] = u;
+    } else if (u < 2048) {
+      out[at++] = 192 | u >> 6;
+      out[at++] = 128 | u & 63;
+    } else if (isHigh(u) && i + 1 < s.length && isLow(s.charCodeAt(i + 1))) {
+      u = 65536 + (u - 55296 << 10) + (s.charCodeAt(++i) - 56320);
+      out[at++] = 240 | u >> 18;
+      out[at++] = 128 | u >> 12 & 63;
+      out[at++] = 128 | u >> 6 & 63;
+      out[at++] = 128 | u & 63;
+    } else {
+      out[at++] = 224 | u >> 12;
+      out[at++] = 128 | u >> 6 & 63;
+      out[at++] = 128 | u & 63;
+    }
+  }
+}
+function decode(b, start, end) {
+  const units = [];
+  let out = "";
+  for (let i = start; i < end; ) {
+    const c = b[i];
+    if (c < 128) {
+      units.push(c);
+      i += 1;
+    } else if (c < 224) {
+      units.push((c & 31) << 6 | b[i + 1] & 63);
+      i += 2;
+    } else if (c < 240) {
+      units.push((c & 15) << 12 | (b[i + 1] & 63) << 6 | b[i + 2] & 63);
+      i += 3;
+    } else {
+      const cp = ((c & 7) << 18 | (b[i + 1] & 63) << 12 | (b[i + 2] & 63) << 6 | b[i + 3] & 63) - 65536;
+      units.push(55296 + (cp >> 10), 56320 + (cp & 1023));
+      i += 4;
+    }
+    if (units.length >= 8192) {
+      out += String.fromCharCode.apply(null, units);
+      units.length = 0;
+    }
+  }
+  return out + String.fromCharCode.apply(null, units);
+}
+function compactChunkTexts(chunks) {
+  const store = TextStore.from(chunks.map((c) => c.text));
+  const proto = Object.defineProperty({}, "text", {
+    get() {
+      return store.get(this.i);
+    },
+    enumerable: true
+  });
+  const shared = /* @__PURE__ */ new Map();
+  const intern = (v) => {
+    if (v === void 0) return v;
+    let s = shared.get(v);
+    if (s === void 0) {
+      s = v;
+      shared.set(v, v);
+    }
+    return s;
+  };
+  for (let i = 0; i < chunks.length; i++) {
+    const c = chunks[i];
+    const lean = Object.create(proto);
+    lean.i = i;
+    lean.paper = c.paper;
+    lean.attachmentKey = intern(c.attachmentKey);
+    lean.page = c.page;
+    lean.row = c.row;
+    if (c.heading !== void 0) lean.heading = intern(c.heading);
+    if (c.line !== void 0) lean.line = c.line;
+    chunks[i] = lean;
+  }
+  return store;
+}
 
 // src/indexstore.ts
 var IndexStore = class _IndexStore {
@@ -711,6 +845,7 @@ var IndexStore = class _IndexStore {
       }
     }
     const bm25 = new BM25Index(papers, chunks);
+    compactChunkTexts(chunks);
     return {
       id,
       manifest,
@@ -1052,6 +1187,7 @@ function truncateAndNormalize(vec, targetDims) {
 }
 
 // src/ollama.ts
+var DEFAULT_KEEP_ALIVE = "5m";
 function formatQuery(instruction, query) {
   return `Instruct: ${instruction}
 Query: ${query}`;
@@ -1062,7 +1198,7 @@ async function embedQuery(requestUrl3, options) {
   const payload = {
     model: options.model,
     input: [formattedInput],
-    keep_alive: options.keepAlive ?? "30m",
+    keep_alive: options.keepAlive ?? DEFAULT_KEEP_ALIVE,
     truncate: true
   };
   const resp = await requestUrl3({
@@ -1084,7 +1220,7 @@ async function warmUp(requestUrl3, options) {
   const payload = {
     model: options.model,
     input: [""],
-    keep_alive: options.keepAlive ?? "30m"
+    keep_alive: options.keepAlive ?? DEFAULT_KEEP_ALIVE
   };
   try {
     await requestUrl3({
@@ -1370,7 +1506,7 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
       warmUp(import_obsidian.requestUrl, {
         url: this.plugin.settings.ollamaUrl,
         model: ix.manifest.model,
-        keepAlive: "30m"
+        keepAlive: DEFAULT_KEEP_ALIVE
       });
     }
     const modalEl = this.modalEl;

@@ -10,7 +10,7 @@ def embed(
     model: str = "qwen3-embedding:0.6b",
     dims: int = 1024,
     batch_size: int = 32,
-    keep_alive: str = "30m",
+    keep_alive: str = "5m",
     ollama_url: str = "http://localhost:11434",
     max_retries: int = 3,
     timeout: float = 120.0,

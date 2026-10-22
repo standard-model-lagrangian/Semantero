@@ -1,6 +1,6 @@
 import { fillSnippets, keyword, rowScores, semanticFromRowScores, type Hit } from "../../obsidian/paper-search/src/engine.ts";
 import { bestSnippet, tokenize } from "../../obsidian/paper-search/src/text.ts";
-import type { Corpora, Corpus, CorpusName } from "./corpora.ts";
+import { assembleCorpora, buildCorpus, type Corpora, type Corpus, type CorpusName, type RawCorpus } from "./corpora.ts";
 import { collapseLitnotes, interleave, rrf, sortByCosine, type CHit, type Row } from "./merge.ts";
 import { buildVM, type ResultVM } from "./vm.ts";
 
@@ -43,6 +43,11 @@ export class Engine {
     if ((scope === "all" || scope === "papers") && this.corpora.papers) out.push(this.corpora.papers);
     if ((scope === "all" || scope === "notes") && this.corpora.notes) out.push(this.corpora.notes);
     return out;
+  }
+
+  /** The same engine with a new notes corpus; the papers corpus (the expensive part) is reused as it is. */
+  withNotes(notes: RawCorpus | null): Engine {
+    return new Engine(assembleCorpora(this.corpora.papers, notes ? buildCorpus("notes", notes) : null), this.opts);
   }
 
   /** Keyword results only (every keystroke). */

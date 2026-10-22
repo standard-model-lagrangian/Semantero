@@ -1,5 +1,6 @@
 import { BM25Index, type PaperMetadata, type ChunkDocument } from "./bm25.ts";
 import type { LoadedIndex } from "./engine.ts";
+import { compactChunkTexts } from "./textstore.ts";
 
 export interface IndexStoreAdapter {
   read(path: string): Promise<string>;
@@ -128,8 +129,9 @@ export class IndexStore {
       }
     }
 
-    // 6. Build BM25 index
+    // 6. Build BM25 index, then pack the chunk texts (only snippets read them from here on)
     const bm25 = new BM25Index(papers, chunks);
+    compactChunkTexts(chunks);
 
     return {
       id,

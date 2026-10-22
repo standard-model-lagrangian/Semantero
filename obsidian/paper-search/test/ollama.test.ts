@@ -55,3 +55,13 @@ test("warm-up request sends keep_alive and empty input", async () => {
   assert.strictEqual(capturedBody.keep_alive, "30m");
   assert.strictEqual(capturedBody.model, "qwen3-embedding:0.6b");
 });
+
+test("keep_alive defaults to 5 minutes when not given (the model's process holds ~400 MB while loaded)", async () => {
+  const { embedQuery, warmUp, DEFAULT_KEEP_ALIVE } = await import("../src/ollama.ts");
+  const bodies: any[] = [];
+  const fake = async (p: { body?: string }) => { bodies.push(JSON.parse(p.body!)); return { status: 200, json: { embeddings: [[1, 0]] } }; };
+  await embedQuery(fake, { url: "http://x", model: "m", instruction: "i", query: "q" });
+  await warmUp(fake, { url: "http://x", model: "m" });
+  assert.strictEqual(DEFAULT_KEEP_ALIVE, "5m");
+  assert.deepStrictEqual(bodies.map((b) => b.keep_alive), ["5m", "5m"]);
+});

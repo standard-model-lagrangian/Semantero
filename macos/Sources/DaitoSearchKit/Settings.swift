@@ -20,6 +20,12 @@ public final class SettingsStore: @unchecked Sendable {
         get { defaults.string(forKey: "ollamaURL") ?? "http://127.0.0.1:11434" }
         set { defaults.set(newValue, forKey: "ollamaURL") }
     }
+    /// How long Ollama keeps the embedding model loaded after a search (its process holds ~400 MB while loaded). The panel
+    /// warms the model when it opens, so a cold model mostly costs nothing noticeable.
+    public var ollamaKeepAlive: String {
+        get { defaults.string(forKey: "ollamaKeepAlive") ?? "5m" }
+        set { defaults.set(newValue, forKey: "ollamaKeepAlive") }
+    }
     public var resultLimit: Int {
         get { defaults.object(forKey: "resultLimit") as? Int ?? 15 }
         set { defaults.set(newValue, forKey: "resultLimit") }
@@ -60,12 +66,14 @@ public struct SettingsSnapshot: Equatable, Sendable {
     public var vaultPath: String
     public var hotkey: String
     public var ollamaURL: String
+    public var ollamaKeepAlive: String
     public var resultLimit: Int
     public var spotlight: [Bool]
     public var launchAtLogin: Bool
 
     public init(_ s: SettingsStore) {
-        vaultPath = s.vaultPath; hotkey = s.hotkey; ollamaURL = s.ollamaURL; resultLimit = s.resultLimit
+        vaultPath = s.vaultPath; hotkey = s.hotkey; ollamaURL = s.ollamaURL; ollamaKeepAlive = s.ollamaKeepAlive
+        resultLimit = s.resultLimit
         spotlight = [s.spotlightPapers, s.spotlightNoteTitles, s.spotlightNoteText]; launchAtLogin = s.launchAtLogin
     }
 }
@@ -83,7 +91,7 @@ public enum SettingsEffect: Hashable, Sendable {
     public static func between(_ old: SettingsSnapshot, _ new: SettingsSnapshot) -> Set<SettingsEffect> {
         var out = Set<SettingsEffect>()
         if old.vaultPath != new.vaultPath { out.insert(.reopenVault); out.insert(.syncSpotlight) }
-        if old.ollamaURL != new.ollamaURL { out.insert(.reconfigureEmbedding) }
+        if old.ollamaURL != new.ollamaURL || old.ollamaKeepAlive != new.ollamaKeepAlive { out.insert(.reconfigureEmbedding) }
         if old.resultLimit != new.resultLimit { out.insert(.applyResultLimit) }
         if old.hotkey != new.hotkey { out.insert(.registerHotkey) }
         if old.spotlight != new.spotlight { out.insert(.syncSpotlight) }

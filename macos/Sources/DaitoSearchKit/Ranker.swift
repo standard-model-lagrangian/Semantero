@@ -13,3 +13,9 @@ public protocol Ranker: Sendable {
     /// Results for remembered ids (Spotlight), in the order asked; unknown ids are skipped.
     func lookup(ids: [String]) async throws -> [ResultVM]
 }
+
+/// A ranker that can replace only the notes corpus, reusing the loaded papers corpus. Used when only the notes index
+/// changed (the common case while writing): no re-read or rebuild of the much larger paper index.
+public protocol NotesReloading: Ranker {
+    func reloadNotes(_ notes: CorpusFiles?) async throws -> RankerStatus
+}

@@ -131,7 +131,8 @@ the morning brief shows as `⚠ Setup:` lines.
 | `DAITO_SHOW_PANEL="<query>"` | Opens the panel with that query once the index is loaded |
 | `DAITO_SNAPSHOT=<png>` (+ `DAITO_SNAPSHOT_ACTIONS=1`) | With `DAITO_SHOW_PANEL`: saves the panel (optionally with ⌘K open) to a PNG via `cacheDisplay`, then quits. Needs no screen-recording permission. Glass and SF Symbols may not render in the capture |
 | `DAITO_SELFTEST=<json>` | See `make app-selftest`. Test modes take no hotkey or login item, so they run beside the installed app |
-| `daito-bench` (`swift run -c release daito-bench --vault …`) | `--memprobe` (footprint per load stage), `--jsprobe` / `--jsprobe2 <bundle>` (JavaScriptCore memory experiments; the second takes a bundle of `launcher-core/scripts/probe-entry.ts`) |
+| `daito-bench` (`swift run -c release daito-bench --vault …`; sign it with the JIT entitlement first, see `macos/scripts/bench.sh`) | default: load/keyword/hybrid timings for options A and B. `--heapprobe` (live heap, objects by type, footprint over idle time), `--notesprobe` (notes-only reload cost), `--parseprobe` (JSON.parse/string costs), `--dropprobe <debug bundle>` (heap owned by each engine part), `--memprobe`, `--jsprobe`, `--jsprobe2 <bundle>` |
+| `DAITO_VAULT=<dir> DAITO_NO_HOTKEY=1` | Run a build of the app against another vault (e.g. a copy of the indexes) without touching the installed app's hotkey or settings |
 | `footprint <pid>` / `vmmap -summary <pid>` | The real memory figure (`ps` RSS counts reclaimable pages) |
 | `planner notes stats`, `planner search stats`, `planner doctor --search` | Index contents, age, health |
 
@@ -139,11 +140,15 @@ the morning brief shows as `⚠ Setup:` lines.
 
 - **JavaScriptCore needs the JIT entitlement** (`com.apple.security.cs.allow-jit`). Without it, it runs interpreted:
   the semantic pass is 30× slower and loading 3× slower. `bundle.sh` always signs with it, so `swift run` builds are slow.
-- **JavaScriptCore memory.** The app turns off the DFG and FTL JIT tiers (`JSCRanker.configureProcess()`): same speed, a
-  fraction of the memory. Parsing and index building churn ~1 GB that JavaScriptCore only gives back when a VM is torn
-  down *after* that garbage was collected, so the app swaps in a fresh engine twice after start-up, plus a watchdog.
-  Every JavaScriptCore call runs in an `autoreleasepool`, or replaced engines stay alive. Details and measurements:
-  [DECISIONS_AND_GAPS.md](DECISIONS_AND_GAPS.md) (Launcher → Spike S1, Review fixes).
+- **JavaScriptCore memory.** `JSGarbageCollect` only schedules a collection; every build therefore ends with a
+  synchronous one (`JSCPrivate.collectNow`), or the build's ~1 GB churn stays resident. Keep the engine's object count
+  low: postings are flat typed arrays (CSR), chunk texts live packed in a `TextStore`, vocabulary strings are flat copies
+  (a token slice pins its whole parent string). The app also turns off the DFG and FTL JIT tiers
+  (`JSCRanker.configureProcess()`). Every JavaScriptCore call runs in an `autoreleasepool`, or replaced engines stay
+  alive. Measure with `daito-bench --heapprobe` (live heap, objects by type, footprint) and `--dropprobe` (which part
+  holds what). Details: [DECISIONS_AND_GAPS.md](DECISIONS_AND_GAPS.md) (Spike S1, Review fixes, Memory pass).
+- **Notes-only reloads** swap the notes corpus inside the current engine (`daito.loadNotes`), so editing notes never
+  rebuilds the paper index. Keep `Engine.withNotes` exactly equivalent to a full build (test R35).
 - **Reloads build off the query actor** on their own VM; the last load started wins. Don't move engine building back
   onto `JSCRanker`'s actor, or every keystroke waits for it.
 - **A non-activating `NSPanel`** keeps the previous app frontmost, which is what makes ⌘V reach it. Key handling sits
