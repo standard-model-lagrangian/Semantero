@@ -1,6 +1,8 @@
-# daito
+# Semantero
+(bad shorthand for semantic + zotero) 
 
-A personal research and productivity layer combining **Obsidian** notes and **Zotero** literature.
+A personal research and productivity layer combining **Obsidian** notes and **Zotero** literature. Beneficial even if you just use Zotero. 
+If you've found yourself endlessly digging through your vault or finder for a paper you want to cite/paste etc, this is for you. 
 
 ## Two ways to use it
 
