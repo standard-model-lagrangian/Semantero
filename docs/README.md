@@ -8,7 +8,7 @@ and number the tests that pin each behaviour. Where an implementation differs fr
 | Install daito: **Obsidian only** or **Global** (Obsidian + notes + the Daito Search app), and switch between them | [INSTALL.md](INSTALL.md#choose-your-setup) |
 | Work on the code (architecture, commands, workflows, gotchas) | [DEVELOPMENT.md](DEVELOPMENT.md), then [AGENTS.md](../AGENTS.md) (rules) |
 | Know why a design choice was made, what was measured, what's still open | [DECISIONS_AND_GAPS.md](DECISIONS_AND_GAPS.md) |
-| Try other embedding models in the real plugin and app (Qwen3 0.6B/4B/8B, pplx-embed-v2-late) and switch between them | [EMBED_INSTALLS.md](EMBED_INSTALLS.md); pplx internals: [pplx/README.md](../pplx/README.md) |
+| Try other embedding models in the real plugin and app (Qwen3-Embedding 0.6B vs pplx-embed-v2-late) and switch between them | [EMBED_INSTALLS.md](EMBED_INSTALLS.md); pplx internals: [pplx/README.md](../pplx/README.md) |
 | Check the plugin by hand | [MANUAL_CHECKS.md](MANUAL_CHECKS.md) |
 | Check the launcher by hand | [macos/CHECK.md](../macos/CHECK.md) |
 

@@ -1,23 +1,24 @@
-# Embedding installs: four models in the real plugin and app
+# Embedding installs: two models in the real plugin and app
 
-Four embedding models, each with its own paper + notes index, that you switch between and judge by using them: the
+Two embedding models, each with its own paper + notes index, that you switch between and judge by using them: the
 search pop-up (`⌘⇧0`), `@@` citations, the Related panel and Daito Search. One is live at a time; switching swaps
-folders, so it takes a second and re-embeds nothing. Background: [EMBED_BENCH_PLAN.md](EMBED_BENCH_PLAN.md) (why these
-four, why pplx runs frozen), [../pplx/README.md](../pplx/README.md) (how pplx runs).
+folders, so it takes a second and re-embeds nothing. Background: [EMBED_BENCH_PLAN.md](EMBED_BENCH_PLAN.md) (the
+original lineup, why pplx runs frozen), [../pplx/README.md](../pplx/README.md) (how pplx runs).
 
 | Profile | Model | Runs on | Quantisation | Stored per row | Query model in RAM |
 |---|---|---|---|---|---|
 | `qwen3-0.6b` (current) | Qwen3-Embedding 0.6B | Ollama | Q8_0 | 1 × 1024 | ~0.6 GB |
-| `qwen3-4b` | Qwen3-Embedding 4B | Ollama (`qwen3-embedding:4b-q8_0`) | Q8_0 | 1 × 2560 | ~4.4 GB |
-| `qwen3-8b` | Qwen3-Embedding 8B | Ollama (`qwen3-embedding:8b`) | Q4_K_M | 1 × 4096 | ~5 GB |
 | `pplx-v2-late` | pplx-embed-v2-late 0.6B | pinned llama.cpp + `pplxd` | Q8_0 (parity-checked) | ~400 × 128 (one per token) + 1 × 128 | ~0.56 GB |
+
+Qwen3-Embedding 4B and 8B were in the first lineup and were dropped: a marginal gain over the 0.6B for 4–8 h builds and
+query models of 4.4–5 GB, too slow to embed new papers and notes as they arrive without scheduling.
 
 ## Using them
 
 ```bash
 .venv/bin/python -m planner profile list            # * marks the live one; size and age of each
-.venv/bin/python -m planner profile use qwen3-4b    # switch, then catch up with changes since it was built
-.venv/bin/python -m planner profile build qwen3-8b  # build or update one without touching the live one
+.venv/bin/python -m planner profile build pplx-v2-late  # build or update it without touching the live one
+.venv/bin/python -m planner profile use pplx-v2-late    # switch, then catch up with changes since it was built
 ```
 
 After `use`:
@@ -46,17 +47,11 @@ lets `scripts/eval.ts` score them later.
 
 ## Implementation notes: quantisation, dimensions, chunking
 
-- **Same chunks everywhere.** All four use the same chunkers (papers: 300 words with 50 overlap, at most 150 per paper;
+- **Same chunks everywhere.** Both use the same chunkers (papers: 300 words with 50 overlap, at most 150 per paper;
   notes: heading sections, 200 words with 40 overlap), so every model ranks the same rows.
-- **Quantisation.** The 0.6B models and the 4B run at Q8_0 (near-lossless for embeddings). The 8B runs at Ollama's
-  default Q4_K_M: at Q8_0 it is 8.1 GB, too much to keep loaded next to Obsidian on 16 GB. pplx's Q8_0 GGUF was checked
-  against the official fp32 output: per-token cosine ≥ 0.9999, the same top result for 20/20 test queries
-  ([../pplx/README.md](../pplx/README.md)).
-- **Dimensions and Matryoshka.** Each Qwen profile stores its native width (1024 / 2560 / 4096), so you judge each model
-  at its best. Qwen3-Embedding is Matryoshka-trained: the first N values of a stored vector, re-normalised, are what an
-  N-dim index would hold, so a cheaper 1024-dim variant of the 4B or 8B can be cut from the stored vectors later
-  without re-embedding, if one of them wins. The plugin loads `vectors.f32` into memory: ~90 MB of papers vectors for
-  the 4B, ~150 MB for the 8B, against ~37 MB today.
+- **Quantisation.** Both run at Q8_0 (near-lossless for embeddings). pplx's Q8_0 GGUF was checked against the official
+  fp32 output: per-token cosine ≥ 0.9999, the same top result for 20/20 test queries ([../pplx/README.md](../pplx/README.md)).
+- **Dimensions.** Qwen stores its native 1024 per row; pplx its native 128 per token.
 - **Instructions vs markers.** Qwen embeds documents as they are and queries as `Instruct: … Query: …` (the
   instructions in `config.toml`; the Related panel's own setting). pplx takes no instruction: it prefixes `[Q] ` to
   queries and `[D] ` to documents, as the model was trained, and the instruction settings are ignored.
@@ -72,14 +67,12 @@ lets `scripts/eval.ts` score them later.
 
 ## Costs
 
-| | Build from scratch (M4, ~9,100 paper texts; estimates from the first batches) | Disk |
+| | Build from scratch (M4, ~9,100 paper texts; estimates) | Disk |
 |---|---|---|
 | `qwen3-0.6b` | under an hour | ~55 MB |
-| `qwen3-4b` | ~4 h | ~110 MB |
-| `qwen3-8b` | 6 h or more | ~170 MB |
 | `pplx-v2-late` | ~1–1.5 h | ~20 MB index + ~1 GB token cache in `~/Library/Application Support/daito/cache/` |
 
-Builds of different profiles compete for the GPU, so they run one after another. pplx's token cache lives outside the
+pplx's token cache lives outside the
 vault on purpose: the vault is in Documents, which may sync to iCloud.
 
 ## Removing

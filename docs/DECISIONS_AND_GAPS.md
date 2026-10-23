@@ -356,3 +356,7 @@ plugin and app (`planner profile list|build|use`, `profiles.toml`, `<data_dir>/p
 - Open: which model wins (the owner judges by use); if a bigger Qwen wins, whether its 1024-dim Matryoshka cut (derivable
   from stored vectors) is as good; if pplx wins, a Swift MaxSim (Accelerate) instead of the service is possible but
   not needed for speed.
+- **4B and 8B dropped (same day, before any was built):** on the M4 the 4B embeds ~200 tok/s (a 4–6 h library build,
+  the 8B 8 h+) and holds 4.4–5 GB while loaded. Whatever they gain over the 0.6B is marginal next to that: new papers
+  and notes would need scheduled embedding instead of being indexed as they arrive. The lineup is now the current 0.6B
+  vs pplx-embed-v2-late-0.6b, two models of the same size with different designs (one vector per row vs per token).
