@@ -1466,10 +1466,48 @@ ${renderedBody}`;
   }
   return renderedBody;
 }
+async function renderLiteratureNote(vault, paper, settings, options) {
+  let templateText = BUILTIN_TEMPLATE;
+  const templatePath = settings.literatureNoteTemplate || "Zotero Template.md";
+  const templateFile = vault.getAbstractFileByPath ? vault.getAbstractFileByPath(templatePath) : null;
+  if (templateFile) {
+    try {
+      templateText = await vault.read(templateFile);
+    } catch {
+      templateText = BUILTIN_TEMPLATE;
+    }
+  }
+  const sessionNotices = options?.sessionNotices || /* @__PURE__ */ new Set();
+  return renderTemplate(templateText, paper, {
+    onUnsupportedTemplate: () => {
+      if (!sessionNotices.has("nunjucks")) {
+        sessionNotices.add("nunjucks");
+        options?.showNotice?.(
+          "Paper search: template uses unsupported Nunjucks features. Using built-in template."
+        );
+      }
+    }
+  });
+}
 async function ensureLiteratureNote(vault, metadataCache, paper, settings, options) {
   const existing = findLiteratureNote(vault, metadataCache, paper.citekey);
   if (existing) {
-    return { file: existing, created: false };
+    if (settings.createLiteratureNotes === false || !vault.modify) return { file: existing, created: false };
+    let current;
+    try {
+      current = await vault.read(existing);
+    } catch {
+      return { file: existing, created: false };
+    }
+    if (current.trim() !== "") return { file: existing, created: false };
+    const content2 = await renderLiteratureNote(vault, paper, settings, options);
+    try {
+      await vault.modify(existing, content2);
+      return { file: existing, created: true };
+    } catch (err) {
+      options?.showNotice?.(`Paper search: failed to fill literature note: ${err.message}`);
+      return { file: existing, created: false };
+    }
   }
   if (settings.createLiteratureNotes === false) {
     return { file: null, created: false };
@@ -1493,27 +1531,7 @@ async function ensureLiteratureNote(vault, metadataCache, paper, settings, optio
     } catch {
     }
   }
-  let templateText = BUILTIN_TEMPLATE;
-  const templatePath = settings.literatureNoteTemplate || "Zotero Template.md";
-  const templateFile = vault.getAbstractFileByPath ? vault.getAbstractFileByPath(templatePath) : null;
-  if (templateFile) {
-    try {
-      templateText = await vault.read(templateFile);
-    } catch {
-      templateText = BUILTIN_TEMPLATE;
-    }
-  }
-  const sessionNotices = options?.sessionNotices || /* @__PURE__ */ new Set();
-  const content = renderTemplate(templateText, paper, {
-    onUnsupportedTemplate: () => {
-      if (!sessionNotices.has("nunjucks")) {
-        sessionNotices.add("nunjucks");
-        options?.showNotice?.(
-          "Paper search: template uses unsupported Nunjucks features. Using built-in template."
-        );
-      }
-    }
-  });
+  const content = await renderLiteratureNote(vault, paper, settings, options);
   const filePath = folder ? `${folder}/${paper.citekey}.md` : `${paper.citekey}.md`;
   try {
     const file = await vault.create(filePath, content);
