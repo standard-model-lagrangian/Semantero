@@ -78,7 +78,7 @@ test("R26 action list per kind: paper-with-pdf, paper-no-attachment, snapshot-on
   assert.deepStrictEqual(paperPdf.actions, all); // a paper with a file and a literature-note target gets everything
   const note = e.keyword("matrigel", "notes", 1)[0];
   assert.strictEqual(note.kind, "note");
-  assert.deepStrictEqual(note.actions, ["open", "paste-file", "paste-passage", "copy-file", "copy-passage", "copy-path", "reveal", "quicklook", "copy-wikilink"]);
+  assert.deepStrictEqual(note.actions, ["open", "paste-file", "paste-passage", "copy-file", "copy-passage", "copy-path", "reveal", "quicklook", "paste-wikilink"]);
   const daily = e.keyword("swiss charity", "notes", 5).find((r) => r.kind === "daily")!;
   assert.ok(daily, "daily note found");
   assert.deepStrictEqual(daily.actions, note.actions);
@@ -87,7 +87,7 @@ test("R26 action list per kind: paper-with-pdf, paper-no-attachment, snapshot-on
 
   const none = new Engine(buildCorpora(customPapers([{}]), null)).keyword("gel", "papers", 1)[0];
   assert.strictEqual(none.filePath, null);
-  assert.deepStrictEqual(none.actions, ["open", "paste-passage", "copy-passage", "copy-wikilink", "select-zotero"]);
+  assert.deepStrictEqual(none.actions, ["open", "paste-passage", "copy-passage", "paste-wikilink", "select-zotero"]);
   assert.strictEqual(none.openUrl, "zotero://select/library/items/K0");
   assert.strictEqual(none.openLabel, "Show in Zotero");
   assert.strictEqual(none.noteUrl, null); // no vault known → nothing to create a note in
@@ -116,11 +116,11 @@ test("R27 shortcuts.json: unique ids, unique keys, none reserved, needs are know
   const keys = ACTIONS.map((a) => a.key);
   assert.strictEqual(new Set(keys).size, keys.length);
   for (const k of keys) assert.ok(!RESERVED_KEYS.includes(k), `${k} is reserved`);
-  assert.deepStrictEqual(ids, ["open", "paste-file", "paste-passage", "copy-file", "copy-passage", "copy-path", "reveal", "quicklook", "copy-wikilink", "open-note", "select-zotero"]);
+  assert.deepStrictEqual(ids, ["open", "paste-file", "paste-passage", "copy-file", "copy-passage", "copy-path", "reveal", "quicklook", "paste-wikilink", "open-note", "select-zotero"]);
   assert.strictEqual(ACTIONS[0].key, "return");
   assert.strictEqual(ACTIONS[1].key, "cmd+return");
   for (const a of ACTIONS) for (const n of a.needs) assert.ok(["filePath", "noteUrl", "selectUrl"].includes(n));
-  assert.deepStrictEqual(actionsFor("daily", { filePath: false, noteUrl: false, selectUrl: false }), ["open", "paste-passage", "copy-passage", "copy-wikilink"]);
+  assert.deepStrictEqual(actionsFor("daily", { filePath: false, noteUrl: false, selectUrl: false }), ["open", "paste-passage", "copy-passage", "paste-wikilink"]);
   const e = fixtureEngine();
   for (const r of [...e.keyword("organoid", "all", 10), ...e.recent(10)]) for (const a of r.actions) assert.ok(ids.includes(a));
 });

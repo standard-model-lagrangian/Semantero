@@ -66,6 +66,13 @@ struct ActionExecutorTests {
         #expect(f.log.all == ["write-string:\"…passage…\" (Roth, 2023, p. 6)", "hide", "sleep:60", "post-cmd-v"])
     }
 
+    @Test func pasteWikilinkPastesTheLinkNotJustCopiesIt() async {
+        let f = Fakes()
+        let outcome = await f.executor().run("paste-wikilink", on: paper)
+        #expect(outcome == .done)
+        #expect(f.log.all == ["write-string:[[roth2023]]", "hide", "sleep:60", "post-cmd-v"])
+    }
+
     // S24
     @Test func withoutAccessibilityItCopiesOnlyAndOffersTheSettingsPane() async {
         let f = Fakes()
@@ -141,12 +148,11 @@ struct ActionExecutorTests {
         #expect(await e.run("copy-file", on: paper) == .done)
         #expect(await e.run("copy-passage", on: paper) == .done)
         #expect(await e.run("copy-path", on: paper) == .done)
-        #expect(await e.run("copy-wikilink", on: paper) == .done)
         let writes = f.log.all.filter { $0.hasPrefix("write-") }
         #expect(writes == ["write-file:/Z/storage/ATT1/a.pdf", "write-string:\"…passage…\" (Roth, 2023, p. 6)",
-                           "write-string:/Z/storage/ATT1/a.pdf", "write-string:[[roth2023]]"])
-        #expect(f.log.all.filter { $0 == "hide" }.count == 4)
-        #expect(f.toasts.count == 4)
+                           "write-string:/Z/storage/ATT1/a.pdf"])
+        #expect(f.log.all.filter { $0 == "hide" }.count == 3)
+        #expect(f.toasts.count == 3)
         #expect(!f.log.all.contains("post-cmd-v"))
     }
 

@@ -61,8 +61,8 @@ public final class ActionExecutor: Sendable {
 
     /// Every action id this executor implements (a test checks it covers shortcuts.json).
     public static let supportedIDs: Set<String> = [
-        "open", "paste-file", "paste-passage", "copy-file", "copy-passage", "copy-path", "reveal", "quicklook",
-        "copy-wikilink", "open-note", "select-zotero",
+        "open", "paste-file", "paste-passage", "paste-wikilink", "copy-file", "copy-passage", "copy-path", "reveal", "quicklook",
+        "open-note", "select-zotero",
     ]
 
     private let services: ActionServices
@@ -81,7 +81,7 @@ public final class ActionExecutor: Sendable {
         case "paste-passage": return await paste(text: vm.citation)
         case "copy-file": return await copy(file: vm)
         case "copy-passage": return await copy(text: vm.citation, label: "passage")
-        case "copy-wikilink": return await copy(text: vm.wikilink, label: vm.wikilink)
+        case "paste-wikilink": return await paste(text: vm.wikilink)
         case "copy-path":
             guard let path = vm.filePath else { return .failed("No file for this result") }
             return await copy(text: path, label: "path")

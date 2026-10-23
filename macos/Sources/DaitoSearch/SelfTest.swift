@@ -67,7 +67,7 @@ enum SelfTest {
         await key(53, "\u{1b}")
         check("Esc closes the action menu, panel stays", !model.showActionMenu && model.panel.isVisible)
         await key(37, "l", .command)
-        check("⌘L copies the wikilink", model.recordedActions == ["copy-wikilink \(selected)"], "got \(model.recordedActions ?? [])")
+        check("⌘L pastes the wikilink", model.recordedActions == ["paste-wikilink \(selected)"], "got \(model.recordedActions ?? [])")
         await key(19, "2", .command)
         check("⌘2 switches scope to Papers", model.scope == .papers)
         await key(18, "1", .command)

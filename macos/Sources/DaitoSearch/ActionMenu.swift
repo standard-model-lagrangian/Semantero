@@ -91,7 +91,7 @@ struct ActionMenu: View {
         case "copy-path": return "point.topleft.down.to.point.bottomright.curvepath"
         case "reveal": return "folder"
         case "quicklook": return "eye"
-        case "copy-wikilink": return "link"
+        case "paste-wikilink": return "link"
         case "open-note": return "note.text"
         case "select-zotero": return "books.vertical"
         default: return "circle"

@@ -39,7 +39,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -109,7 +109,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -157,7 +157,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -227,7 +227,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "select-zotero"
      ],
      "detail": [
@@ -281,7 +281,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -351,7 +351,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -430,7 +430,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -482,7 +482,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "select-zotero"
      ],
      "detail": [
@@ -527,7 +527,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "select-zotero"
      ],
      "detail": [
@@ -576,7 +576,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -641,7 +641,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -711,7 +711,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -755,7 +755,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -825,7 +825,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -877,7 +877,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -942,7 +942,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -1012,7 +1012,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -1091,7 +1091,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "select-zotero"
      ],
      "detail": [
@@ -1136,7 +1136,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -1180,7 +1180,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "select-zotero"
      ],
      "detail": [
@@ -1225,7 +1225,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -1282,7 +1282,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -1352,7 +1352,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -1391,7 +1391,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -1461,7 +1461,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -1540,7 +1540,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -1605,7 +1605,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -1675,7 +1675,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -1754,7 +1754,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -1798,7 +1798,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "select-zotero"
      ],
      "detail": [
@@ -1843,7 +1843,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "select-zotero"
      ],
      "detail": [
@@ -1897,7 +1897,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -1967,7 +1967,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -2037,7 +2037,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -2116,7 +2116,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -2186,7 +2186,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -2256,7 +2256,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -2339,7 +2339,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "select-zotero"
      ],
      "detail": [
@@ -2388,7 +2388,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -2462,7 +2462,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -2536,7 +2536,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "select-zotero"
      ],
      "detail": [
@@ -2590,7 +2590,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -2655,7 +2655,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -2716,7 +2716,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -2785,7 +2785,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -2842,7 +2842,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -2921,7 +2921,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -3008,7 +3008,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -3087,7 +3087,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -3193,7 +3193,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -3253,7 +3253,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -3305,7 +3305,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -3379,7 +3379,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -3461,7 +3461,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -3517,7 +3517,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -3570,7 +3570,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -3640,7 +3640,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -3719,7 +3719,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -3789,7 +3789,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -3872,7 +3872,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "select-zotero"
      ],
      "detail": [
@@ -3926,7 +3926,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -3995,7 +3995,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -4056,7 +4056,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -4126,7 +4126,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -4200,7 +4200,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -4244,7 +4244,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -4323,7 +4323,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -4393,7 +4393,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -4463,7 +4463,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -4550,7 +4550,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "select-zotero"
      ],
      "detail": [
@@ -4599,7 +4599,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -4647,7 +4647,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -4721,7 +4721,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -4769,7 +4769,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -4852,7 +4852,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -4900,7 +4900,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "select-zotero"
      ],
      "detail": [
@@ -5016,7 +5016,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -5081,7 +5081,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -5151,7 +5151,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -5216,7 +5216,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -5255,7 +5255,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -5302,7 +5302,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -5360,7 +5360,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -5430,7 +5430,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -5500,7 +5500,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -5565,7 +5565,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -5658,7 +5658,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "select-zotero"
      ],
      "detail": [
@@ -5698,7 +5698,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -5737,7 +5737,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -5784,7 +5784,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "select-zotero"
      ],
      "detail": [
@@ -5824,7 +5824,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -5863,7 +5863,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -5938,7 +5938,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -6008,7 +6008,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -6056,7 +6056,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -6121,7 +6121,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -6186,7 +6186,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -6225,7 +6225,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -6292,7 +6292,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -6357,7 +6357,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -6422,7 +6422,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -6492,7 +6492,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -6593,7 +6593,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "select-zotero"
      ],
      "detail": [
@@ -6642,7 +6642,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -6690,7 +6690,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "select-zotero"
      ],
      "detail": [
@@ -6734,7 +6734,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -6773,7 +6773,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -6812,7 +6812,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -6883,7 +6883,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -6930,7 +6930,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "select-zotero"
      ],
      "detail": [
@@ -6970,7 +6970,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -7009,7 +7009,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -7074,7 +7074,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -7139,7 +7139,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -7223,7 +7223,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -7288,7 +7288,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -7353,7 +7353,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -7450,7 +7450,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -7497,7 +7497,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "select-zotero"
      ],
      "detail": [
@@ -7537,7 +7537,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -7576,7 +7576,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -7615,7 +7615,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "select-zotero"
      ],
      "detail": [
@@ -7659,7 +7659,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -7726,7 +7726,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -7800,7 +7800,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -7848,7 +7848,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -7922,7 +7922,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -7987,7 +7987,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -8052,7 +8052,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -8115,7 +8115,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -8189,7 +8189,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -8254,7 +8254,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -8319,7 +8319,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -8412,7 +8412,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -8460,7 +8460,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "select-zotero"
      ],
      "detail": [
@@ -8505,7 +8505,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "select-zotero"
      ],
      "detail": [
@@ -8549,7 +8549,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -8588,7 +8588,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -8627,7 +8627,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -8694,7 +8694,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -8733,7 +8733,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -8798,7 +8798,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -8863,7 +8863,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -8910,7 +8910,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -8975,7 +8975,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -9033,7 +9033,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -9098,7 +9098,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -9163,7 +9163,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -9228,7 +9228,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -9321,7 +9321,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -9360,7 +9360,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -9412,7 +9412,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "select-zotero"
      ],
      "detail": [
@@ -9452,7 +9452,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "select-zotero"
      ],
      "detail": [
@@ -9492,7 +9492,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -9531,7 +9531,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -9598,7 +9598,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -9663,7 +9663,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -9702,7 +9702,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -9741,7 +9741,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -9784,7 +9784,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -9831,7 +9831,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -9924,7 +9924,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -9989,7 +9989,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -10054,7 +10054,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -10119,7 +10119,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -10212,7 +10212,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "select-zotero"
      ],
      "detail": [
@@ -10252,7 +10252,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -10291,7 +10291,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -10330,7 +10330,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -10373,7 +10373,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -10420,7 +10420,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "select-zotero"
      ],
      "detail": [
@@ -10484,7 +10484,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -10558,7 +10558,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -10623,7 +10623,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -10662,7 +10662,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -10727,7 +10727,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -10774,7 +10774,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -10832,7 +10832,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -10906,7 +10906,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -10971,7 +10971,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -11060,7 +11060,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "select-zotero"
      ],
      "detail": [
@@ -11104,7 +11104,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -11143,7 +11143,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "select-zotero"
      ],
      "detail": [
@@ -11187,7 +11187,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -11234,7 +11234,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -11273,7 +11273,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -11340,7 +11340,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -11379,7 +11379,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -11418,7 +11418,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -11465,7 +11465,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -11504,7 +11504,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -11569,7 +11569,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -11653,7 +11653,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -11718,7 +11718,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -11783,7 +11783,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],
@@ -11872,7 +11872,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -11911,7 +11911,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -11950,7 +11950,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -11997,7 +11997,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -12036,7 +12036,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "select-zotero"
      ],
      "detail": [
@@ -12076,7 +12076,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "select-zotero"
      ],
      "detail": [
@@ -12125,7 +12125,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "select-zotero"
      ],
      "detail": [
@@ -12165,7 +12165,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "select-zotero"
      ],
      "detail": [
@@ -12205,7 +12205,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -12244,7 +12244,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -12283,7 +12283,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -12331,7 +12331,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "select-zotero"
      ],
      "detail": [
@@ -12371,7 +12371,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "select-zotero"
      ],
      "detail": [
@@ -12411,7 +12411,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -12450,7 +12450,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -12489,7 +12489,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -12528,7 +12528,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -12571,7 +12571,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink"
+      "paste-wikilink"
      ],
      "detail": [
       {
@@ -12624,7 +12624,7 @@
       "copy-path",
       "reveal",
       "quicklook",
-      "copy-wikilink",
+      "paste-wikilink",
       "open-note",
       "select-zotero"
      ],

@@ -106,7 +106,7 @@ Default hotkey `⌥Space`, configurable in settings:
 | `⌘⇧.` | Copy the absolute path | same |
 | `⌘⇧F` | Show in Finder (file selected) | same |
 | `⌘Y` / Space on an empty query field | Quick Look | same |
-| `⌘L` | Copy `[[citekey]]` | Copy `[[Note name]]` |
+| `⌘L` | Paste `[[citekey]]` | Paste `[[Note name]]` |
 | `⌘O` | Open the literature note (see [Literature notes](#literature-notes-collapse)) | — |
 | `⌘⇧Z` | Select the item in Zotero | — |
 | Drag the row | Drags the file (a file URL) into any app or the Finder | same |
@@ -785,7 +785,7 @@ S42. `semantic wait capped at 400 ms, then keyword results`
   - Claude desktop or a browser LLM uploads it;
   - Terminal pastes the path;
   - TextEdit (rich) inserts an attachment.
-- [ ] **N-M5:** `⌘⇧↵` pastes the passage with its citation; `⌘⌥C` and `⌘L` copy correctly.
+- [ ] **N-M5:** `⌘⇧↵` pastes the passage with its citation; `⌘⌥C` copies and `⌘L` pastes the wikilink correctly.
 - [ ] **N-M6:** Dragging a row into Mail, the Finder and a browser upload field works.
 - [ ] **N-M7:** `⌘⇧F` reveals the file and `⌘Y` Quick Looks it.
 - [ ] **N-M8:** With no Accessibility permission, you see the toast and the file is copied. Grant permission in the system pane → pasting works without restarting. After a rebuild with the Personal Team signature, the permission is still granted.

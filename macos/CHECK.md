@@ -46,7 +46,7 @@ saw, in `docs/DECISIONS_AND_GAPS.md` (or just tell Claude).
 | 3.3b | Outlook on the web: if the attachment shows "Something went wrong while the document preview was being created", (a) wait a minute and click it again, (b) Download it and open it, (c) attach the **same** PDF with Outlook's own Attach button | (b) opens the full PDF. If (c) gives the same preview error, it's Outlook's preview of that PDF, not the app (the app's paste was verified to hand Firefox the exact file) |
 | 3.4 | Same in Terminal | The path is pasted (that's what Terminal does with a file) |
 | 3.5 | In a text field anywhere, ⌥Space, **⌘⇧↵** on a result | The passage is pasted with its citation, e.g. `"…" (Roth et al., 2023, p. 6)` |
-| 3.6 | ⌘⌥C, then ⌘V somewhere; ⌘L, then ⌘V | The passage with citation; `[[citekey]]` (or `[[Note name]]`) |
+| 3.6 | ⌘⌥C, then ⌘V somewhere; ⌘L in a text field | The passage with citation; `[[citekey]]` (or `[[Note name]]`) pasted straight in |
 | 3.7 | ⌘⇧C on a result, then ⌘V in a Finder window or a Mail message | The file is copied |
 | 3.8 | Drag a row into a Mail message, onto the Desktop, into a browser upload box | The file goes there |
 | 3.9 | ⌘⇧F on a result | Finder opens with the file selected |
