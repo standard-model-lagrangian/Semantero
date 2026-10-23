@@ -8,7 +8,7 @@ Embedding installs (implemented; owner is judging them): [docs/EMBED_INSTALLS.md
 Decisions log: [docs/DECISIONS_AND_GAPS.md](docs/DECISIONS_AND_GAPS.md). Manual checklist: [docs/MANUAL_CHECKS.md](docs/MANUAL_CHECKS.md).
 **Two setups share this repo: Obsidian only (plugin + watcher; `config.toml` ships with `[notes] enabled = false`) and Global (+ notes index + Daito Search.app; `enabled = true` in `config.local.toml`, `make install-global`). Anything you add must keep the Obsidian-only setup working without Xcode, Node or a notes index. Install tiers and tools: [docs/INSTALL.md](docs/INSTALL.md). Architecture, commands, workflows and gotchas: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).** Index of all docs: [docs/README.md](docs/README.md).
 
-**Before committing: `make check`** (ruff, tsc ×2, the Python, plugin, launcher-core and Swift suites, and a check that the committed `main.js` and `launcher-core/dist/ranker.js` match their sources). Fresh clone: `make dev-setup` first.
+**Before committing: `make check`** (ruff, tsc ×2, the Python, plugin, launcher-core and Swift suites, and a check that the committed `main.js` and `launcher-core/dist/ranker.js` match their sources). GitHub Actions runs the same minus Swift (`make ci`) on every PR and push to `main`. Fresh clone: `make dev-setup` first.
 
 ---
 

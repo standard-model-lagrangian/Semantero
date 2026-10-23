@@ -4,9 +4,12 @@ RUFF   ?= $(shell command -v ruff 2>/dev/null || echo uvx ruff)
 PLUGIN := obsidian/paper-search
 LAUNCHER := launcher-core
 
-.PHONY: check test test-py test-ts test-launcher test-swift lint typecheck build bundle-fresh fixtures record-conformance app install-app bench-app app-selftest dev-setup install-global pplx-convert pplx-setup test-pplx
+.PHONY: check ci test test-py test-ts test-launcher test-swift lint typecheck build bundle-fresh fixtures record-conformance app install-app bench-app app-selftest dev-setup install-global pplx-convert pplx-setup test-pplx
 
 check: lint typecheck test bundle-fresh
+
+# What GitHub Actions runs (.github/workflows/ci.yml): `check` without the Swift suite, which stays local.
+ci: lint typecheck test-py test-ts test-launcher bundle-fresh
 
 # Everything a fresh clone needs for `make check` (test-swift additionally needs full Xcode).
 dev-setup:

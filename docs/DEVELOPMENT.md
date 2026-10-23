@@ -64,9 +64,12 @@ Obsidian-only.
 ```bash
 make dev-setup     # .venv (+ requirements), npm install in obsidian/paper-search and launcher-core
 make check         # ruff, tsc ×2, all four test suites, committed bundles up to date
+make ci            # the same without the Swift suite: what GitHub Actions runs
 ```
 
 `make check` needs full Xcode for `test-swift` (Swift Testing) and for the App Intents metadata in `make app`. Everything else, including building and running the app itself, works with the Command Line Tools. Keep it that way: users of the Global setup are told Xcode is optional ([INSTALL.md](INSTALL.md#do-i-need-xcode)).
+
+**CI** ([.github/workflows/ci.yml](../.github/workflows/ci.yml)) runs `make ci` on Ubuntu with Python 3.11 (the oldest supported) and Node 26 on every pull request and every push to `main`. The Swift suite and `make app-selftest` stay local: they need macOS 26 and, for the self-test, a screen. The PDF extraction tests in `tests/test_search_index.py` need `pdftotext`; without poppler they skip, except on CI, which installs it.
 
 | Command | What |
 |---|---|
@@ -183,7 +186,7 @@ the morning brief shows as `⚠ Setup:` lines.
 
 ## Releasing a change
 
-1. `make check` green (with rebuilt `main.js` / `ranker.js` committed alongside their sources).
+1. `make check` green (with rebuilt `main.js` / `ranker.js` committed alongside their sources). CI repeats the non-Swift half on the PR.
 2. For launcher changes: `make app-selftest`, then the relevant rows of `macos/CHECK.md` on the installed app.
 3. Record decisions, measurements and deviations from the spec in [DECISIONS_AND_GAPS.md](DECISIONS_AND_GAPS.md).
 4. Never commit personal data: no real note titles or vault contents in docs, fixtures or tests. Personal config goes
