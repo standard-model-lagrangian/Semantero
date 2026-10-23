@@ -8,12 +8,16 @@ public actor IntentSearchService {
 
     private let ranker: Ranker
     private let embedder: (@Sendable (String) async throws -> [Float])?
+    private let rowScorer: (@Sendable (String, Scope) async throws -> RowScores)?
     private let sleeper: Sleeper
     private let semanticWait: Double
 
-    public init(ranker: Ranker, embedder: (@Sendable (String) async throws -> [Float])?, sleeper: Sleeper = SystemSleeper(),
+    /// `rowScorer` (the pplx profile) takes the place of `embedder` when set.
+    public init(ranker: Ranker, embedder: (@Sendable (String) async throws -> [Float])?,
+                rowScorer: (@Sendable (String, Scope) async throws -> RowScores)? = nil, sleeper: Sleeper = SystemSleeper(),
                 semanticWait: Double = 0.4) {
-        self.ranker = ranker; self.embedder = embedder; self.sleeper = sleeper; self.semanticWait = semanticWait
+        self.ranker = ranker; self.embedder = embedder; self.rowScorer = rowScorer; self.sleeper = sleeper
+        self.semanticWait = semanticWait
     }
 
     /// Hybrid results, but never wait longer than `semanticWait` seconds for the query vector: after that, keyword
@@ -22,12 +26,18 @@ public actor IntentSearchService {
         let q = query.trimmingCharacters(in: .whitespaces)
         if q.isEmpty { return await suggested() }
         let keyword = (try? await ranker.keyword(q, scope: .all, limit: Self.maxResults)) ?? []
-        guard let embedder, await ranker.shouldRunSemantic(q) else { return keyword }
+        guard embedder != nil || rowScorer != nil, await ranker.shouldRunSemantic(q) else { return keyword }
         let ranker = self.ranker, sleeper = self.sleeper, wait = semanticWait
+        let embedder = self.embedder, rowScorer = self.rowScorer
         enum Race: Sendable { case semantic([ResultVM]?), timeout }
         return await withTaskGroup(of: Race.self) { group in
             group.addTask {
-                guard let v = try? await embedder(q) else { return .semantic(nil) }
+                if let rowScorer {
+                    guard let s = try? await rowScorer(q, .all) else { return .semantic(nil) }
+                    return .semantic(try? await ranker.hybridFromRowScores(q, papersScores: s.papers, notesScores: s.notes,
+                                                                           scope: .all, limit: Self.maxResults))
+                }
+                guard let embedder, let v = try? await embedder(q) else { return .semantic(nil) }
                 return .semantic(try? await ranker.hybrid(q, queryVector: v, scope: .all, limit: Self.maxResults))
             }
             group.addTask { try? await sleeper.sleep(seconds: wait); return .timeout }

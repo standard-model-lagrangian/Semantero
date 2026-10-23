@@ -4,6 +4,7 @@ A personal planning and research productivity layer over Obsidian notes and Zote
 
 Design records (implemented; read for rationale, not as a to-do list): [docs/SPEC.md](docs/SPEC.md), [docs/SEARCH_SPEC.md](docs/SEARCH_SPEC.md), [docs/INTEGRATION_SPEC.md](docs/INTEGRATION_SPEC.md).
 Launcher (implemented; manual checks and the Spotlight spikes outstanding, see the log in DECISIONS_AND_GAPS.md): [docs/LAUNCHER_SPEC.md](docs/LAUNCHER_SPEC.md), a native macOS app (glass panel + Spotlight) over papers and vault notes; manual checklist [macos/CHECK.md](macos/CHECK.md).
+Embedding installs (implemented; owner is judging them): [docs/EMBED_INSTALLS.md](docs/EMBED_INSTALLS.md), one index per embedding model in `profiles.toml`, switched with `planner profile use`; the pplx-embed-v2-late profile runs frozen on a pinned llama.cpp through `planner/pplxd.py` ([pplx/README.md](pplx/README.md)).
 Decisions log: [docs/DECISIONS_AND_GAPS.md](docs/DECISIONS_AND_GAPS.md). Manual checklist: [docs/MANUAL_CHECKS.md](docs/MANUAL_CHECKS.md).
 **Two setups share this repo: Obsidian only (plugin + watcher; `config.toml` ships with `[notes] enabled = false`) and Global (+ notes index + Daito Search.app; `enabled = true` in `config.local.toml`, `make install-global`). Anything you add must keep the Obsidian-only setup working without Xcode, Node or a notes index. Install tiers and tools: [docs/INSTALL.md](docs/INSTALL.md). Architecture, commands, workflows and gotchas: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).** Index of all docs: [docs/README.md](docs/README.md).
 
@@ -52,7 +53,7 @@ Decisions log: [docs/DECISIONS_AND_GAPS.md](docs/DECISIONS_AND_GAPS.md). Manual 
 
 ## Assumptions
 
-- macOS, Apple silicon, Homebrew. Python 3.11+ (venv currently on Homebrew 3.15). Only third-party dependency: `anthropic` (weekly review and health checks).
+- macOS, Apple silicon, Homebrew. Python 3.11+ (venv currently on Homebrew 3.15). Only third-party dependency: `anthropic` (weekly review and health checks). The optional pplx profile's service (`planner/pplxd.py`) runs from its own venv with numpy (`make pplx-setup`); nothing else imports numpy.
 - Node 26.4+ (natively executes `.ts` tests without transpile step).
 - Vault at `~/Documents/Obsidian Vault`. Daily notes are `YYYY-MM-DD.md` at the vault root. Future-dated files are flagged by `doctor`.
 - Zotero database at `~/Zotero/zotero.sqlite`. Local Ollama running `qwen3-embedding:0.6b` at `http://127.0.0.1:11434`.
@@ -70,6 +71,8 @@ Decisions log: [docs/DECISIONS_AND_GAPS.md](docs/DECISIONS_AND_GAPS.md). Manual 
 planner/                __main__ (CLI), extract, threads, fixes, stats, brief, weekly, health, llm, vault, config
                         searchindex.py (Zotero index builder), htmltext.py (snapshot text), zotwatch.py (incremental watcher)
                         mdtext.py (Markdown cleaning/sections/chunks), notesindex.py (vault notes index)
+                        profiles.py (embedding profiles), pplx.py (pplx client, stdlib), pplxd.py (pplx service, numpy)
+pplx/                   frozen pplx-embed-v2-late: convert/ (stage, GGUF, parity), requirements-pplxd.txt
 obsidian/paper-search/  Obsidian plugin: src/ (engine, indexstore, bm25, modal, inline, litnote, passage, related)
                         test/ (unit & perf benchmarks), scripts/ (make-synthetic-index, eval-related)
 launcher-core/          launcher ranking core: src/ (corpora, merge, query, vm, paths, urls, cite, actions, api), shortcuts.json,
@@ -111,6 +114,7 @@ Run from the project folder with `.venv/bin/python -m planner …`:
 | `search watch-run` | watcher execution step invoked by launchd on sqlite changes |
 | `notes index [--full]` | build or update the vault notes search index (also runs on every launchd tick) |
 | `notes stats` | notes per kind, chunks, literature notes matched, excluded, model, age |
+| `profile list` / `profile build NAME [--full]` / `profile use NAME` | embedding profiles (`profiles.toml`): list, build one without touching the live index, switch the live index (docs/EMBED_INSTALLS.md) |
 | `compare DIR…`, `models groq`, `prompt D` | evaluation and debugging |
 | `--model SPEC`, `--data DIR` (global) | override extraction model or data folder (for comparisons) |
 

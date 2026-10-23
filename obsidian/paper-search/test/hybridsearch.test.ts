@@ -58,11 +58,11 @@ test("HS2 keyword/semantic with snippets:false skip snippet work but keep rankin
   assert.ok(bare.every((h) => h.snippet === ""));
 });
 
-test("HS3 the modal and @@ suggestions use hybridSearch, not a merge of truncated lists", () => {
+test("HS3 the modal and @@ suggestions use hybridSearch(FromScores), not a merge of truncated lists", () => {
   const src = path.join(import.meta.dirname, "..", "src");
   for (const f of ["modal.ts", "inline.ts"]) {
     const code = fs.readFileSync(path.join(src, f), "utf8");
-    assert.ok(code.includes("hybridSearch("), `${f} should call hybridSearch`);
+    assert.ok(/hybridSearch(FromScores)?\(/.test(code), `${f} should call hybridSearch or hybridSearchFromScores`);
     assert.ok(!/\bhybrid\(/.test(code), `${f} still merges with hybrid() directly`);
   }
 });

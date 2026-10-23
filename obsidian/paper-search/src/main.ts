@@ -15,6 +15,8 @@ import { PaperSearchModal } from "./modal.ts";
 import { checkHotkeyConflict } from "./hotkey.ts";
 import { formatCitation } from "./litnote.ts";
 import { embedQuery } from "./ollama.ts";
+import { semanticScores } from "./semantic.ts";
+import type { LoadedIndex } from "./engine.ts";
 import { createPaperSearchSuggestClass, InlineSuggestController } from "./inline.ts";
 import { createRelatedPapersViewClass, RelatedPapersController } from "./related.ts";
 import { ActiveEditorTracker, editorSnapshot } from "./editortracker.ts";
@@ -107,6 +109,8 @@ export default class PaperSearchPlugin extends Plugin {
           dims: ix.dims,
         });
       },
+      rowScores: (queryText: string, ix: LoadedIndex) =>
+        this.semanticScoresFor(ix, queryText, ix.manifest?.query_instruction || "Given a query, retrieve relevant research papers"),
     };
 
     const suggestController = new InlineSuggestController({
@@ -135,6 +139,8 @@ export default class PaperSearchPlugin extends Plugin {
           dims: ix.dims,
         });
       },
+      rowScores: (text: string, ix: LoadedIndex, instruction?: string) =>
+        this.semanticScoresFor(ix, text, instruction ?? this.settings.relatedInstruction),
     };
 
     const relatedController = new RelatedPapersController({
@@ -224,6 +230,11 @@ export default class PaperSearchPlugin extends Plugin {
     } catch {
       // Hotkey manager check failed gracefully
     }
+  }
+
+  /** Per-row semantic scores of `text` over `ix`, from the backend that built it (semantic.ts). Throws when it is down. */
+  async semanticScoresFor(ix: LoadedIndex, text: string, instruction: string): Promise<Float64Array | null> {
+    return (await semanticScores(requestUrl, ix, text, { ollamaUrl: this.settings.ollamaUrl, instruction })).scores;
   }
 
   async loadSettings() {

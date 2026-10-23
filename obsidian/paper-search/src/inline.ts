@@ -1,4 +1,4 @@
-import { keyword, hybridSearch } from "./engine.ts";
+import { keyword, hybridSearchFromScores, rowScores, type LoadedIndex } from "./engine.ts";
 import { findTrigger, isExcludedContext, formatCitation } from "./cite.ts";
 import { shouldRunSemantic } from "./rank.ts";
 import { ensureLiteratureNote, type LitNoteSettings, type VaultLike, type MetadataCacheLike } from "./litnote.ts";
@@ -130,6 +130,8 @@ export interface InlineSuggestSettings extends LitNoteSettings {
 
 export interface EmbedderLike {
   embedQuery(text: string): Promise<Float32Array | null>;
+  /** Per-row scores for any backend (semantic.ts); when present it is used instead of embedQuery. Throws when down. */
+  rowScores?(text: string, ix: LoadedIndex): Promise<ArrayLike<number> | null>;
 }
 
 export interface IndexStoreLike {
@@ -261,18 +263,25 @@ export class InlineSuggestController {
       this.debounceTimer = this.setTimeoutFn(async () => {
         this.debounceTimer = null;
         try {
-          const qVec = await this.embedder!.embedQuery(query);
-          if (seq !== this.currentSeq) {
-            // Outdated response (I5): drop it
-            return;
+          let scores: ArrayLike<number> | null;
+          if (this.embedder!.rowScores) {
+            scores = await this.embedder!.rowScores(query, index);
+            if (seq !== this.currentSeq) return; // Outdated response (I5): drop it
+          } else {
+            const qVec = await this.embedder!.embedQuery(query);
+            if (seq !== this.currentSeq) {
+              // Outdated response (I5): drop it
+              return;
+            }
+
+            if (!qVec) {
+              this.handleOllamaDown(initialItems, suggestInstance);
+              return;
+            }
+            scores = rowScores(index, qVec);
           }
 
-          if (!qVec) {
-            this.handleOllamaDown(initialItems, suggestInstance);
-            return;
-          }
-
-          const merged = hybridSearch(index, query, qVec, limit);
+          const merged = hybridSearchFromScores(index, query, scores, limit);
           const mergedItems: SuggestionItem[] = merged.map((h) => ({
             type: "paper",
             paper: index.papers[h.paper],

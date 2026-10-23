@@ -330,3 +330,29 @@ chunk text out of JavaScript entirely (Python would have to write a second forma
 with `[notes] enabled = false`, so the Obsidian-only setup never reads notes and `planner doctor` doesn't expect a
 notes index; the global setup opts in in `config.local.toml` (test `TestShippedConfig` pins the shipped default).
 `make install-global` refuses to run until the notes index is enabled, so private-note excludes are set first.
+
+### Embedding installs (23 Oct 2026)
+
+Plan: [EMBED_BENCH_PLAN.md](EMBED_BENCH_PLAN.md); guide: [EMBED_INSTALLS.md](EMBED_INSTALLS.md). The plan's separate
+side-by-side bench app was replaced, at the owner's request, by **profiles**: one index per model, switched in the real
+plugin and app (`planner profile list|build|use`, `profiles.toml`, `<data_dir>/profile.json` → `[search]` overrides in
+`config.load`). A switch is two folder renames per corpus under both index locks; only the live profile is kept fresh.
+
+- **Lineup:** Qwen3-Embedding 0.6B (Q8_0, 1024), 4B (Q8_0, 2560), 8B (Q4_K_M, 4096; Q8_0 is 8.1 GB), and
+  pplx-embed-v2-late-0.6b. The 9B pplx models don't fit next to anything else on 16 GB and were not tried.
+- **pplx runs frozen** on llama.cpp `b11829` (`pplx/`): the converter needed a text-only staging copy and two metadata
+  keys (bidirectional attention, pooling none); the Dense projection, skiplist and normalisation run in `pplxd`. Parity
+  against sentence-transformers 6.2.0: ids 70/70, per-token cosine ≥ 0.99993 at Q8_0, top-1 20/20.
+- **Late interaction in a one-vector-per-row index:** `vectors.f32` holds each row's mean token vector, whose SHA-256 is
+  the key into an append-only token cache outside the vault. No change to the index format, the incremental reuse or
+  the swaps; manifests of pplx indexes add `backend` and `backend_url`. Readers get per-row MaxSim scores from `pplxd`
+  (`/rowscores`, checked against the loaded `content_hash`) and rank them with the existing row-score paths:
+  `hybridSearchFromScores` / `semanticFromRowScores` in the plugin, `hybridFromRowScores` in the app (now on `Ranker`).
+- **Scores:** pplx returns MaxSim / query tokens. `relatedMinScore` stays at its 0.6B calibration for every profile.
+- **numpy** is a dependency of `pplxd` only, in its own venv; the main venv still has only `anthropic`, and the
+  service's tests run under `make test-pplx` (skipped when that venv is missing).
+- **Build cost** dominates: on the M4, Ollama embeds the 4B at ~45–65 s per batch of 32 chunks (~4 h for the library),
+  the 8B slower. Builds run one at a time.
+- Open: which model wins (the owner judges by use); if a bigger Qwen wins, whether its 1024-dim Matryoshka cut (derivable
+  from stored vectors) is as good; if pplx wins, a Swift MaxSim (Accelerate) instead of the service is possible but
+  not needed for speed.

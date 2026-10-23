@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- The pplx-embed-v2-late service (planner/pplxd.py), only needed while a pplx profile exists.
+         Installed by `make pplx-setup`. Idle cost: a Python process; llama-server unloads the model after 5 idle minutes. -->
+    <key>Label</key>
+    <string>com.planner.pplxd</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/frederick/Library/Application Support/daito/pplxd-venv/bin/python</string>
+        <string>-m</string>
+        <string>planner.pplxd</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/frederick/Visual Studio /productivity work </string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/Users/frederick/Visual Studio /productivity work /logs/pplxd.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/frederick/Visual Studio /productivity work /logs/pplxd.log</string>
+</dict>
+</plist>

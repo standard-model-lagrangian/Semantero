@@ -8,7 +8,7 @@ import urllib.parse
 from collections import Counter
 from datetime import date, datetime, timedelta
 
-from . import brief, config, fixes, health, notesindex, searchindex, stats, threads, vault, weekly
+from . import brief, config, fixes, health, notesindex, profiles, searchindex, stats, threads, vault, weekly
 from .extract import PROMPT, PROMPT_VERSION, extract, user_message
 from .llm import OPENAI_COMPAT, LLMError, chat_json, list_models
 
@@ -562,6 +562,44 @@ def cmd_notes(cfg, args):
             print(f"  skipped {item}")
 
 
+def _build_profile(pc, full: bool) -> None:
+    res = searchindex.build_index(pc, full=full)
+    if res.get("changed", True):
+        print(f"  papers: {res['papers']} ({res['chunks']} chunks) in {res['elapsed']:.0f}s", flush=True)
+    if res.get("missing_vectors"):
+        raise SystemExit(f"  {res['missing_vectors']} texts were not embedded: is the embedding service running?")
+    if notesindex.notes_enabled(pc):
+        res = notesindex.build_index(pc, full=full)
+        print(f"  notes: {res['notes']} ({res['chunks']} chunks, {res['embedded']} embedded) in {res['elapsed']:.0f}s",
+              flush=True)
+        if res["missing_vectors"]:
+            raise SystemExit(f"  {res['missing_vectors']} note texts were not embedded")
+
+
+def cmd_profile(cfg, args):
+    if args.profile_cmd == "list":
+        for r in profiles.status(cfg):
+            mark = "*" if r["active"] else " "
+            built = ", ".join(f"{c} {i['mb']} MB ({i['built_at']})" for c, i in r["info"].items()
+                              if r["built"].get(c)) or "not built"
+            print(f"{mark} {r['name']:<14} {r['model']:<34} {r['dims']:>5}d  {built}")
+        print("* = live. Switch with: planner profile use NAME")
+    elif args.profile_cmd == "build":
+        pc = profiles.profile_cfg(cfg, args.name)
+        print(f"building {args.name} ({pc.search['model']}, {pc.search['dims']} dims) in {pc.data_dir}", flush=True)
+        _build_profile(pc, args.full)
+    elif args.profile_cmd == "use":
+        try:
+            print(profiles.use(cfg, args.name))
+        except profiles.ProfileError as e:
+            sys.exit(str(e))
+        cfg = config.load()
+        if args.data:
+            cfg.data_dir = cfg.vault / args.data
+        print("catching up with changes since it was built…", flush=True)
+        _build_profile(cfg, False)
+
+
 def main():
     p = argparse.ArgumentParser(prog="planner")
     p.add_argument("--model", help='override the extraction model, e.g. "groq:qwen/qwen3-32b"')
@@ -579,6 +617,14 @@ def main():
     nc_sub.add_parser("stats", help="notes per kind, chunks, literature notes, excluded, model, age")
     nc_idx = nc_sub.add_parser("index", help="build or update the notes index")
     nc_idx.add_argument("--full", action="store_true", help="force full rebuild")
+    pf = sub.add_parser("profile", help="embedding profiles: list, build or switch the live search index (profiles.toml)")
+    pf_sub = pf.add_subparsers(dest="profile_cmd", required=True)
+    pf_sub.add_parser("list", help="every profile: model, dims, built or not, size, age; * marks the live one")
+    pf_b = pf_sub.add_parser("build", help="build or update a profile's papers + notes index (the live one is untouched)")
+    pf_b.add_argument("name")
+    pf_b.add_argument("--full", action="store_true", help="force a full rebuild")
+    pf_u = pf_sub.add_parser("use", help="make a built profile the live index, then catch it up")
+    pf_u.add_argument("name")
     b = sub.add_parser("backfill", help="extract all daily notes into .planner/")
     b.add_argument("--force", action="store_true", help="re-extract even cached notes")
     b.add_argument("--limit", type=int, help="only the most recent N notes")
@@ -623,7 +669,7 @@ def main():
     cmds = {"backfill": cmd_backfill, "show": cmd_show, "prompt": cmd_prompt, "compare": cmd_compare, "models": cmd_models,
             "brief": cmd_brief, "nightly": cmd_nightly, "weekly": cmd_weekly,
             "morning": cmd_morning, "doctor": cmd_doctor, "threads": cmd_threads, "remind": cmd_remind,
-            "search": cmd_search, "notes": cmd_notes}
+            "search": cmd_search, "notes": cmd_notes, "profile": cmd_profile}
     try:
         cmds[args.cmd](cfg, args)
     except LLMError as e:

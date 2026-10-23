@@ -4,7 +4,7 @@ public enum SemanticState: Sendable, Equatable {
     case notRun            // the query is too short to embed
     case pending           // keyword results shown, semantic on its way
     case merged            // semantic results merged in
-    case off(String)       // why semantic search is off (Ollama unreachable, index has no vectors, ...)
+    case off(String)       // why semantic search is off (Ollama or the pplx service unreachable, no vectors, ...)
 }
 
 public struct QueryUpdate: Sendable, Equatable {
@@ -23,6 +23,8 @@ public actor QueryController {
     private let debounce: Double
     private var limit: Int
     private var embedder: (@Sendable (String) async throws -> [Float])?
+    private var rowScorer: (@Sendable (String, Scope) async throws -> RowScores)?
+    private var unreachable = "Ollama not reachable"
     private var warm: (@Sendable () async -> Void)?
     private var semanticAvailable = true
     private var semanticOffReason: String?
@@ -43,9 +45,22 @@ public actor QueryController {
     public func configure(embedder: (@Sendable (String) async throws -> [Float])?, warmUp: (@Sendable () async -> Void)? = nil,
                           offReason: String? = nil) {
         self.embedder = embedder
+        self.rowScorer = nil
+        self.unreachable = "Ollama not reachable"
         self.warm = warmUp
         semanticAvailable = embedder != nil
         semanticOffReason = embedder == nil ? (offReason ?? "semantic search is off") : nil
+    }
+
+    /// Configure semantic search by row scores from a service (the pplx profile: late interaction has no query vector).
+    public func configure(rowScorer: @escaping @Sendable (String, Scope) async throws -> RowScores,
+                          warmUp: (@Sendable () async -> Void)? = nil, unreachable: String) {
+        self.embedder = nil
+        self.rowScorer = rowScorer
+        self.unreachable = unreachable
+        self.warm = warmUp
+        semanticAvailable = true
+        semanticOffReason = nil
     }
 
     public func panelOpened() async { await warm?() }
@@ -78,16 +93,24 @@ public actor QueryController {
 
     private func semanticPhase(seq mySeq: Int, query q: String, scope s: Scope, keyword kw: [ResultVM]) async {
         do { try await sleeper.sleep(seconds: debounce) } catch { return }
-        guard mySeq == seq, let embedder else { return }
+        guard mySeq == seq, embedder != nil || rowScorer != nil else { return }
         do {
-            let vector = try await embedder(q)
-            guard mySeq == seq else { return }
-            let merged = try await ranker.hybrid(q, queryVector: vector, scope: s, limit: limit)
+            let merged: [ResultVM]
+            if let rowScorer {
+                let scores = try await rowScorer(q, s)
+                guard mySeq == seq else { return }
+                merged = try await ranker.hybridFromRowScores(q, papersScores: scores.papers, notesScores: scores.notes,
+                                                              scope: s, limit: limit)
+            } else {
+                let vector = try await embedder!(q)
+                guard mySeq == seq else { return }
+                merged = try await ranker.hybrid(q, queryVector: vector, scope: s, limit: limit)
+            }
             guard mySeq == seq else { return }
             onUpdate(QueryUpdate(seq: mySeq, query: q, scope: s, results: merged, semantic: .merged))
         } catch {
             guard mySeq == seq else { return }
-            onUpdate(QueryUpdate(seq: mySeq, query: q, scope: s, results: kw, semantic: .off("Ollama not reachable")))
+            onUpdate(QueryUpdate(seq: mySeq, query: q, scope: s, results: kw, semantic: .off(unreachable)))
         }
     }
 }

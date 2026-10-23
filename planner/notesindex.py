@@ -164,6 +164,8 @@ def build_index(
     batch_size = int(cfg.search.get("batch_size", 32))
     keep_alive = cfg.search.get("keep_alive", "5m")
     ollama_url = cfg.search.get("ollama_url", "http://localhost:11434")
+    backend = cfg.search.get("backend", "ollama")   # "pplx": the pplx-embed-v2-late profile (planner/pplx.py)
+    pplx_url = cfg.search.get("pplx_url", "http://127.0.0.1:11435")
 
     with named_lock(cfg, "notes.lock", timeout=lock_timeout, blocking=blocking):
         if tmp_dir.exists():
@@ -288,7 +290,7 @@ def build_index(
                     else:
                         vecs = embed.embed(pending, model=model, dims=dims, batch_size=batch_size,
                                            keep_alive=keep_alive, ollama_url=ollama_url,
-                                           max_retries=1 if allow_fallback else 3)
+                                           max_retries=1 if allow_fallback else 3, backend=backend, pplx_url=pplx_url)
                     for t, v in zip(pending, vecs):
                         new_vec[_sha(t)] = v
                 except Exception as e:
@@ -358,6 +360,9 @@ def build_index(
                 "papers": len(entries), "chunks": len(chunks_data),
                 "excluded": excluded, "missing_vectors": missing, "degraded": bool(missing),
             }
+            if backend != "ollama":
+                manifest["backend"] = backend   # readers score rows through that backend's service, at backend_url
+                manifest["backend_url"] = pplx_url
             tmp_dir.mkdir(parents=True, exist_ok=True)
             write_json(tmp_dir / "manifest.json", manifest)
             write_json(tmp_dir / "papers.json", entries)

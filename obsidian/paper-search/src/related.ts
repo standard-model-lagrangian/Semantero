@@ -1,6 +1,6 @@
 import { extractPassage } from "./passage.ts";
 import { citedKeys, formatCitation } from "./cite.ts";
-import { semantic, type Hit, type LoadedIndex } from "./engine.ts";
+import { rowScores, semanticFromRowScores, type Hit, type LoadedIndex } from "./engine.ts";
 import { ensureLiteratureNote, type LitNoteSettings, type VaultLike, type MetadataCacheLike } from "./litnote.ts";
 import type { PaperMetadata } from "./bm25.ts";
 import { editorSnapshot, type ActiveEditorTracker } from "./editortracker.ts";
@@ -16,6 +16,8 @@ export interface RelatedSettings extends LitNoteSettings {
 
 export interface RelatedEmbedderLike {
   embedQuery(text: string, instruction?: string): Promise<Float32Array | null>;
+  /** Per-row scores for any backend (semantic.ts); when present it is used instead of embedQuery. Throws when down. */
+  rowScores?(text: string, ix: LoadedIndex, instruction?: string): Promise<ArrayLike<number> | null>;
 }
 
 export interface RelatedIndexStoreLike {
@@ -198,7 +200,8 @@ export class RelatedPapersController {
 
     try {
       const instruction = this.settings.relatedInstruction;
-      const qVec = await this.embedder.embedQuery(passage, instruction);
+      const byScores = !!this.embedder.rowScores;
+      const qVec = byScores ? null : await this.embedder.embedQuery(passage, instruction);
 
       // Switching notes mid-refresh or older refresh arriving drops response (P3, P4)
       if (seq !== this.currentSeq) return;
@@ -213,17 +216,25 @@ export class RelatedPapersController {
         return;
       }
 
-      if (!qVec) {
-        this.handleOllamaDown();
-        return;
+      let scores: ArrayLike<number> | null;
+      if (byScores) {
+        scores = await this.embedder.rowScores!(passage, ix, instruction);
+        if (seq !== this.currentSeq) return;
+        if (this.activeFilePath !== pathAtStart) {
+          this.resetToEmpty();
+          return;
+        }
+      } else {
+        if (!qVec) {
+          this.handleOllamaDown();
+          return;
+        }
+        scores = rowScores(ix, qVec);
       }
 
       // Semantic search candidates
       const minScore = this.settings.relatedMinScore ?? 0.25;
-      const candidates = semantic(ix, qVec, passage, {
-        limit: 50,
-        minScore,
-      });
+      const candidates = scores ? semanticFromRowScores(ix, scores, passage, { limit: 50, minScore }) : [];
 
       this.citedKeysSet = new Set([...citedKeys(noteText)].map((k) => k.toLowerCase()));
       this.allHits = candidates;

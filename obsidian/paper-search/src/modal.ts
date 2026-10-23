@@ -6,8 +6,9 @@ import {
   requestUrl,
 } from "obsidian";
 import type PaperSearchPlugin from "./main.ts";
-import { keyword, hybridSearch, type Hit, type LoadedIndex } from "./engine.ts";
-import { DEFAULT_KEEP_ALIVE, embedQuery, warmUp } from "./ollama.ts";
+import { keyword, hybridSearchFromScores, type Hit, type LoadedIndex } from "./engine.ts";
+import { DEFAULT_KEEP_ALIVE } from "./ollama.ts";
+import { isPplx, warmSemantic } from "./semantic.ts";
 import { shouldRunSemantic, SemanticCoordinator } from "./rank.ts";
 import { ensureLiteratureNote, formatCitation } from "./litnote.ts";
 import { hitUrl, selectItemUrl } from "./zotero.ts";
@@ -44,14 +45,10 @@ export class PaperSearchModal extends SuggestModal<SearchModalItem> {
     // Background ensureFresh check
     this.plugin.indexStore.ensureFresh().catch(() => {});
 
-    // Warm up Ollama
+    // Warm up the query model (Ollama's, or the pplx service's)
     const ix = this.plugin.indexStore.getIndex();
     if (ix?.manifest?.model) {
-      warmUp(requestUrl, {
-        url: this.plugin.settings.ollamaUrl,
-        model: ix.manifest.model,
-        keepAlive: DEFAULT_KEEP_ALIVE,
-      });
+      warmSemantic(requestUrl, ix, this.plugin.settings.ollamaUrl, DEFAULT_KEEP_ALIVE);
     }
 
     // Add status footer
@@ -146,13 +143,7 @@ export class PaperSearchModal extends SuggestModal<SearchModalItem> {
     if (!ix.vectors) return;
 
     try {
-      const qVec = await embedQuery(requestUrl, {
-        url: this.plugin.settings.ollamaUrl,
-        model: ix.manifest.model,
-        instruction: ix.manifest.query_instruction,
-        query,
-        dims: ix.dims,
-      });
+      const scores = await this.plugin.semanticScoresFor(ix, query, ix.manifest.query_instruction);
 
       if (!this.coordinator.isCurrent(seq)) {
         return; // Stale response dropped
@@ -162,7 +153,7 @@ export class PaperSearchModal extends SuggestModal<SearchModalItem> {
 
       // Semantic search + Hybrid merge
       // Merge over the full ranked lists, not the 12 shown while typing.
-      const mergedHits = hybridSearch(ix, query, qVec, this.plugin.settings.limit);
+      const mergedHits = hybridSearchFromScores(ix, query, scores, this.plugin.settings.limit);
 
       const newItems: SearchModalItem[] = mergedHits.map((h) => ({
         hit: h,
@@ -183,7 +174,7 @@ export class PaperSearchModal extends SuggestModal<SearchModalItem> {
       (this as any).chooser?.setSuggestions(newItems);
       (this as any).chooser?.setSelectedItem(newSelectedIdx);
     } catch {
-      this.updateFooter("semantic off: Ollama not reachable");
+      this.updateFooter(`semantic off: ${isPplx(ix) ? "pplx service" : "Ollama"} not reachable`);
     }
   }
 

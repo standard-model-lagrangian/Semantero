@@ -164,6 +164,14 @@ final class FakeRanker: Ranker, @unchecked Sendable {
         await hybridDelay?(query)
         return hybridResults(query, scope)
     }
+    private var _rowScoreCalls: [(query: String, papers: Data?, notes: Data?)] = []
+    var rowScoreCalls: [(query: String, papers: Data?, notes: Data?)] { lock.lock(); defer { lock.unlock() }; return _rowScoreCalls }
+    func hybridFromRowScores(_ query: String, papersScores: Data?, notesScores: Data?, scope: Scope,
+                             limit: Int) async throws -> [ResultVM] {
+        if notLoaded { throw RankerError("no index loaded") }
+        lock.withLock { _rowScoreCalls.append((query, papersScores, notesScores)) }
+        return [vm("S:\(query)")]
+    }
     func recent(limit: Int) async throws -> [ResultVM] {
         if notLoaded { throw RankerError("no index loaded") }
         return Array(recentResults.prefix(limit))

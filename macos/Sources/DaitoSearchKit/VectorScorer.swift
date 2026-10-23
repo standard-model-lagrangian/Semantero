@@ -57,6 +57,11 @@ public actor AcceleratedRanker: NotesReloading {
     public func recent(limit: Int) async throws -> [ResultVM] { try await inner.recent(limit: limit) }
     public func lookup(ids: [String]) async throws -> [ResultVM] { try await inner.lookup(ids: ids) }
 
+    public func hybridFromRowScores(_ query: String, papersScores: Data?, notesScores: Data?, scope: Scope,
+                                    limit: Int) async throws -> [ResultVM] {
+        try await inner.hybridFromRowScores(query, papersScores: papersScores, notesScores: notesScores, scope: scope, limit: limit)
+    }
+
     public func hybrid(_ query: String, queryVector: [Float], scope: Scope, limit: Int) async throws -> [ResultVM] {
         guard let status = lastStatus, let dims = status.dims else {
             return try await inner.keyword(query, scope: scope, limit: limit)

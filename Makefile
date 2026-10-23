@@ -4,7 +4,7 @@ RUFF   ?= $(shell command -v ruff 2>/dev/null || echo uvx ruff)
 PLUGIN := obsidian/paper-search
 LAUNCHER := launcher-core
 
-.PHONY: check test test-py test-ts test-launcher test-swift lint typecheck build bundle-fresh fixtures record-conformance app install-app bench-app app-selftest dev-setup install-global
+.PHONY: check test test-py test-ts test-launcher test-swift lint typecheck build bundle-fresh fixtures record-conformance app install-app bench-app app-selftest dev-setup install-global pplx-convert pplx-setup test-pplx
 
 check: lint typecheck test bundle-fresh
 
@@ -15,7 +15,7 @@ dev-setup:
 	cd $(PLUGIN) && npm install
 	cd $(LAUNCHER) && npm install
 
-test: test-py test-ts test-launcher test-swift
+test: test-py test-ts test-launcher test-swift test-pplx
 
 test-py:
 	$(PY) -m unittest discover -s tests
@@ -83,3 +83,23 @@ fixtures:
 
 record-conformance:
 	cd $(LAUNCHER) && npm run record
+
+# Embedding profiles (profiles.toml, docs/EMBED_INSTALLS.md). The pplx-embed-v2-late profile needs a frozen model and
+# its service: `make pplx-convert` once (downloads, converts, checks parity), then `make pplx-setup`.
+PPLX_VENV := $(HOME)/Library/Application Support/daito/pplxd-venv
+
+pplx-convert:
+	bash pplx/convert/convert.sh
+
+pplx-setup:
+	test -x "$(PPLX_VENV)/bin/python" || uv venv --python 3.12 "$(PPLX_VENV)"
+	uv pip install --python "$(PPLX_VENV)/bin/python" -r pplx/requirements-pplxd.txt
+	mkdir -p logs
+	cp launchd/com.planner.pplxd.plist ~/Library/LaunchAgents/
+	launchctl bootout gui/$$(id -u)/com.planner.pplxd 2>/dev/null || true
+	launchctl bootstrap gui/$$(id -u) ~/Library/LaunchAgents/com.planner.pplxd.plist
+
+# The service tests need numpy, which only the pplxd venv has; skipped (with a note) when it doesn't exist.
+test-pplx:
+	@if [ -x "$(PPLX_VENV)/bin/python" ]; then "$(PPLX_VENV)/bin/python" -m unittest tests.test_pplx; \
+	else echo "test-pplx: skipped (no pplxd venv; make pplx-setup)"; fi

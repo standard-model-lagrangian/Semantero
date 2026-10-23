@@ -1100,11 +1100,6 @@ function semanticFromRowScores(ix, scores, query, opts) {
   }
   return hits;
 }
-function semantic(ix, qVec, query, opts) {
-  const scores = rowScores(ix, qVec, opts?.exclude);
-  if (!scores) return [];
-  return semanticFromRowScores(ix, scores, query, opts);
-}
 function hybrid(keywordHits, semanticHits, limit = 10, k = 60) {
   if (keywordHits.length === 0 && semanticHits.length === 0) {
     return [];
@@ -1160,10 +1155,10 @@ function hybrid(keywordHits, semanticHits, limit = 10, k = 60) {
   }
   return hits;
 }
-function hybridSearch(ix, query, qVec, limit) {
+function hybridSearchFromScores(ix, query, scores, limit) {
   const n = ix.papers.length;
   const kw = keyword(ix, query, n, { snippets: false });
-  const sem = semantic(ix, qVec, query, { limit: n, snippets: false });
+  const sem = scores ? semanticFromRowScores(ix, scores, query, { limit: n, snippets: false }) : [];
   return fillSnippets(ix, hybrid(kw, sem, limit), query);
 }
 
@@ -1231,6 +1226,62 @@ async function warmUp(requestUrl3, options) {
     });
   } catch {
   }
+}
+
+// src/semantic.ts
+function isPplx(ix) {
+  return ix.manifest?.backend === "pplx";
+}
+async function semanticScores(requestUrl3, ix, text, opts) {
+  if (!ix.vectors || ix.totalRows === 0) return { scores: null };
+  if (isPplx(ix)) {
+    const scores = await pplxRowScores(requestUrl3, ix.manifest.backend_url, text, "search", ix.manifest.content_hash);
+    if (scores.length !== ix.totalRows) throw new Error("pplx scores do not match the loaded index");
+    if (opts.exclude && opts.exclude.size > 0) {
+      for (let r = 0; r < scores.length; r++) if (opts.exclude.has(ix.rowToPaper[r])) scores[r] = 0;
+    }
+    return { scores };
+  }
+  const qVec = await embedQuery(requestUrl3, {
+    url: opts.ollamaUrl,
+    model: ix.manifest.model,
+    instruction: opts.instruction,
+    query: text,
+    dims: ix.dims,
+    keepAlive: opts.keepAlive
+  });
+  return { scores: rowScores(ix, qVec, opts.exclude) };
+}
+async function pplxRowScores(requestUrl3, url, text, corpus, expectHash) {
+  const resp = await requestUrl3({
+    url: `${(url || "http://127.0.0.1:11435").replace(/\/+$/, "")}/rowscores`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, corpora: [corpus] })
+  });
+  const c = resp.json?.corpora?.[corpus];
+  if (!c || c.error) throw new Error(`pplx service: ${c?.error ?? "no scores"}`);
+  if (expectHash && c.content_hash !== expectHash) throw new Error("pplx service has another build of the index loaded");
+  const bin = atob(c.scores);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const f32 = new Float32Array(bytes.buffer, 0, bytes.length >> 2);
+  return Float64Array.from(f32);
+}
+async function warmSemantic(requestUrl3, ix, ollamaUrl, keepAlive) {
+  if (isPplx(ix)) {
+    try {
+      await requestUrl3({
+        url: `${(ix.manifest.backend_url || "http://127.0.0.1:11435").replace(/\/+$/, "")}/warm`,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}"
+      });
+    } catch {
+    }
+    return;
+  }
+  await warmUp(requestUrl3, { url: ollamaUrl, model: ix.manifest.model, keepAlive });
 }
 
 // src/rank.ts
@@ -1503,11 +1554,7 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
     });
     const ix = this.plugin.indexStore.getIndex();
     if (ix?.manifest?.model) {
-      warmUp(import_obsidian.requestUrl, {
-        url: this.plugin.settings.ollamaUrl,
-        model: ix.manifest.model,
-        keepAlive: DEFAULT_KEEP_ALIVE
-      });
+      warmSemantic(import_obsidian.requestUrl, ix, this.plugin.settings.ollamaUrl, DEFAULT_KEEP_ALIVE);
     }
     const modalEl = this.modalEl;
     this.footerEl = modalEl.createDiv({ cls: "paper-search-footer" });
@@ -1581,18 +1628,12 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
   async runSemantic(query, ix, seq) {
     if (!ix.vectors) return;
     try {
-      const qVec = await embedQuery(import_obsidian.requestUrl, {
-        url: this.plugin.settings.ollamaUrl,
-        model: ix.manifest.model,
-        instruction: ix.manifest.query_instruction,
-        query,
-        dims: ix.dims
-      });
+      const scores = await this.plugin.semanticScoresFor(ix, query, ix.manifest.query_instruction);
       if (!this.coordinator.isCurrent(seq)) {
         return;
       }
       this.updateFooter("");
-      const mergedHits = hybridSearch(ix, query, qVec, this.plugin.settings.limit);
+      const mergedHits = hybridSearchFromScores(ix, query, scores, this.plugin.settings.limit);
       const newItems = mergedHits.map((h) => ({
         hit: h,
         paperIndex: h.paper
@@ -1608,7 +1649,7 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
       this.chooser?.setSuggestions(newItems);
       this.chooser?.setSelectedItem(newSelectedIdx);
     } catch {
-      this.updateFooter("semantic off: Ollama not reachable");
+      this.updateFooter(`semantic off: ${isPplx(ix) ? "pplx service" : "Ollama"} not reachable`);
     }
   }
   renderSuggestion(item, el) {
@@ -2000,15 +2041,22 @@ var InlineSuggestController = class {
       this.debounceTimer = this.setTimeoutFn(async () => {
         this.debounceTimer = null;
         try {
-          const qVec = await this.embedder.embedQuery(query);
-          if (seq !== this.currentSeq) {
-            return;
+          let scores;
+          if (this.embedder.rowScores) {
+            scores = await this.embedder.rowScores(query, index);
+            if (seq !== this.currentSeq) return;
+          } else {
+            const qVec = await this.embedder.embedQuery(query);
+            if (seq !== this.currentSeq) {
+              return;
+            }
+            if (!qVec) {
+              this.handleOllamaDown(initialItems, suggestInstance);
+              return;
+            }
+            scores = rowScores(index, qVec);
           }
-          if (!qVec) {
-            this.handleOllamaDown(initialItems, suggestInstance);
-            return;
-          }
-          const merged = hybridSearch(index, query, qVec, limit);
+          const merged = hybridSearchFromScores(index, query, scores, limit);
           const mergedItems = merged.map((h) => ({
             type: "paper",
             paper: index.papers[h.paper],
@@ -2399,7 +2447,8 @@ var RelatedPapersController = class {
     }
     try {
       const instruction = this.settings.relatedInstruction;
-      const qVec = await this.embedder.embedQuery(passage, instruction);
+      const byScores = !!this.embedder.rowScores;
+      const qVec = byScores ? null : await this.embedder.embedQuery(passage, instruction);
       if (seq !== this.currentSeq) return;
       if (this.activeFilePath !== pathAtStart) {
         this.resetToEmpty();
@@ -2410,15 +2459,23 @@ var RelatedPapersController = class {
         this.setState("index-loading");
         return;
       }
-      if (!qVec) {
-        this.handleOllamaDown();
-        return;
+      let scores;
+      if (byScores) {
+        scores = await this.embedder.rowScores(passage, ix, instruction);
+        if (seq !== this.currentSeq) return;
+        if (this.activeFilePath !== pathAtStart) {
+          this.resetToEmpty();
+          return;
+        }
+      } else {
+        if (!qVec) {
+          this.handleOllamaDown();
+          return;
+        }
+        scores = rowScores(ix, qVec);
       }
       const minScore = this.settings.relatedMinScore ?? 0.25;
-      const candidates = semantic(ix, qVec, passage, {
-        limit: 50,
-        minScore
-      });
+      const candidates = scores ? semanticFromRowScores(ix, scores, passage, { limit: 50, minScore }) : [];
       this.citedKeysSet = new Set([...citedKeys(noteText)].map((k) => k.toLowerCase()));
       this.allHits = candidates;
       this.showHiddenCited = false;
@@ -2709,7 +2766,8 @@ var PaperSearchPlugin = class extends import_obsidian2.Plugin {
           query: queryText,
           dims: ix.dims
         });
-      }
+      },
+      rowScores: (queryText, ix) => this.semanticScoresFor(ix, queryText, ix.manifest?.query_instruction || "Given a query, retrieve relevant research papers")
     };
     const suggestController = new InlineSuggestController({
       indexStore: this.indexStore,
@@ -2733,7 +2791,8 @@ var PaperSearchPlugin = class extends import_obsidian2.Plugin {
           query: text,
           dims: ix.dims
         });
-      }
+      },
+      rowScores: (text, ix, instruction) => this.semanticScoresFor(ix, text, instruction ?? this.settings.relatedInstruction)
     };
     const relatedController = new RelatedPapersController({
       indexStore: this.indexStore,
@@ -2809,6 +2868,10 @@ var PaperSearchPlugin = class extends import_obsidian2.Plugin {
       }
     } catch {
     }
+  }
+  /** Per-row semantic scores of `text` over `ix`, from the backend that built it (semantic.ts). Throws when it is down. */
+  async semanticScoresFor(ix, text, instruction) {
+    return (await semanticScores(import_obsidian2.requestUrl, ix, text, { ollamaUrl: this.settings.ollamaUrl, instruction })).scores;
   }
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());

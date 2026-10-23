@@ -9,9 +9,20 @@ public protocol Ranker: Sendable {
     func shouldRunSemantic(_ query: String) async -> Bool
     func keyword(_ query: String, scope: Scope, limit: Int) async throws -> [ResultVM]
     func hybrid(_ query: String, queryVector: [Float], scope: Scope, limit: Int) async throws -> [ResultVM]
+    /// Hybrid from Float32 row scores computed elsewhere (Accelerate, or the pplx service for a late-interaction index).
+    func hybridFromRowScores(_ query: String, papersScores: Data?, notesScores: Data?, scope: Scope,
+                             limit: Int) async throws -> [ResultVM]
     func recent(limit: Int) async throws -> [ResultVM]
     /// Results for remembered ids (Spotlight), in the order asked; unknown ids are skipped.
     func lookup(ids: [String]) async throws -> [ResultVM]
+}
+
+public extension Ranker {
+    /// Rankers without a row-score path rank by keyword.
+    func hybridFromRowScores(_ query: String, papersScores: Data?, notesScores: Data?, scope: Scope,
+                             limit: Int) async throws -> [ResultVM] {
+        try await keyword(query, scope: scope, limit: limit)
+    }
 }
 
 /// A ranker that can replace only the notes corpus, reusing the loaded papers corpus. Used when only the notes index

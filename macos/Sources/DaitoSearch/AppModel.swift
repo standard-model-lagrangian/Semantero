@@ -212,6 +212,12 @@ final class AppModel {
     }
 
     private func configureEmbedding(from s: RankerStatus) async {
+        if let controller, s.anySemantic, let pplx = pplxClient(for: s) {
+            await controller.configure(rowScorer: { try await pplx.rowScores($0, scope: $1) }, warmUp: { await pplx.warmUp() },
+                                       unreachable: "pplx service not reachable")
+            intentService = IntentSearchService(ranker: ranker!, embedder: nil, rowScorer: { try await pplx.rowScores($0, scope: $1) })
+            return
+        }
         guard let controller, let model = s.model, let dims = s.dims, let instruction = s.queryInstruction, s.anySemantic,
               let url = URL(string: settings.ollamaURL) else {
             await controller?.configure(embedder: nil, offReason: s.anySemantic ? "Ollama URL is invalid" : "the index has no vectors")
@@ -222,6 +228,23 @@ final class AppModel {
                                   keepAlive: settings.ollamaKeepAlive)
         await controller.configure(embedder: { try await client.embedQuery($0) }, warmUp: { await client.warmUp() })
         intentService = IntentSearchService(ranker: ranker!, embedder: { try await client.embedQuery($0) })
+    }
+
+    /// The index was built by the pplx-embed-v2-late profile (`backend: "pplx"` in its manifests): semantic scores come
+    /// from the pplx service, checked against the builds loaded now (`status` comes from the same reload).
+    private func pplxClient(for s: RankerStatus) -> PplxClient? {
+        let dirs = IndexFiles.corpusDirs(vault: vaultURL)
+        let manifest = { (dir: URL) in
+            (try? Data(contentsOf: dir.appendingPathComponent("manifest.json")))
+                .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+        }
+        let pm = manifest(dirs.papers), nm = manifest(dirs.notes)
+        guard (pm?["backend"] ?? nm?["backend"]) as? String == "pplx" else { return nil }
+        var hashes: [Scope: String] = [:]
+        if s.papers?.semantic == true, let h = pm?["content_hash"] as? String { hashes[.papers] = h }
+        if s.notes?.semantic == true, let h = nm?["content_hash"] as? String { hashes[.notes] = h }
+        let url = URL(string: (pm?["backend_url"] ?? nm?["backend_url"]) as? String ?? "http://127.0.0.1:11435")
+        return url.map { PplxClient(baseURL: $0, expectedHashes: hashes) }
     }
 
     private func syncSpotlight() async {
