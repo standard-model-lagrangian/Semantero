@@ -13,6 +13,7 @@ final class SearchPanel: NSPanel {
 @MainActor
 final class PanelController: NSObject, PanelControl, NSWindowDelegate, @unchecked Sendable {
     static let width: CGFloat = 760
+    static let cornerRadius: CGFloat = 22
     private let model: AppModel
     private let panel: SearchPanel
     private var clickMonitor: Any?
@@ -32,6 +33,12 @@ final class PanelController: NSObject, PanelControl, NSWindowDelegate, @unchecke
         panel.delegate = self
         let host = NSHostingView(rootView: SearchView(model: model))
         host.sizingOptions = [.preferredContentSize]
+        // The window server draws a borderless window's shadow from its pixels. Clip them to the glass's rounded shape so
+        // nothing square is left at the corners for the shadow to trace.
+        host.wantsLayer = true
+        host.layer?.cornerRadius = Self.cornerRadius
+        host.layer?.cornerCurve = .continuous
+        host.layer?.masksToBounds = true
         panel.contentView = host
     }
 
@@ -52,6 +59,9 @@ final class PanelController: NSObject, PanelControl, NSWindowDelegate, @unchecke
         model.panelWillShow()
         position()
         panel.makeKeyAndOrderFront(nil)
+        // The shadow is cached from the last time the panel was on screen, maybe at another height; rebuild it once
+        // this frame's content is drawn.
+        DispatchQueue.main.async { [weak self] in self?.panel.invalidateShadow() }
         clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             Task { @MainActor in
                 guard let self, self.isVisible, !self.panel.frame.contains(NSEvent.mouseLocation) else { return }
@@ -77,6 +87,9 @@ final class PanelController: NSObject, PanelControl, NSWindowDelegate, @unchecke
         let top = screen.visibleFrame.maxY - screen.visibleFrame.height * 0.22
         panel.setFrameTopLeftPoint(NSPoint(x: x, y: top))
     }
+
+    /// The panel grows and shrinks with the results; a shadow kept from the old size shows as a square outline.
+    func windowDidResize(_ notification: Notification) { panel.invalidateShadow() }
 
     /// Hide when focus moves elsewhere, except to Quick Look opened from the panel (⌘Y).
     func windowDidResignKey(_ notification: Notification) {

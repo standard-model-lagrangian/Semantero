@@ -76,12 +76,12 @@ struct SearchView: View {
                 }
             }
             .frame(width: PanelController.width)
-            .glassEffect(.regular, in: .rect(cornerRadius: 22))
+            .glassEffect(.regular, in: .rect(cornerRadius: PanelController.cornerRadius))
         }
         // Outside the glass container, so the menu is not turned into glass itself.
         .overlay {
             if model.showActionMenu {
-                RoundedRectangle(cornerRadius: 22).fill(.black.opacity(0.22))
+                RoundedRectangle(cornerRadius: PanelController.cornerRadius).fill(.black.opacity(0.22))
                     .onTapGesture { model.showActionMenu = false }
                     .accessibilityHidden(true)
             }
