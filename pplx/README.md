@@ -46,7 +46,7 @@ The conversion is deterministic: rerunning it reproduces the same Q8_0 file, byt
 The first run showed 59 "token mismatches": those were the reference batch's right-padding, not real differences
 (`reference.py` now strips them).
 
-## Running (`make pplx-setup`)
+## Running (`pplx/install-service.sh`: run by `setup-search.sh` and `make pplx-setup`)
 
 `planner/pplxd.py` runs from its own venv (Python 3.12 + numpy, pinned in `requirements-pplxd.txt`) as the launchd job
 `com.planner.pplxd`, on `127.0.0.1:11435`:

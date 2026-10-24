@@ -88,19 +88,15 @@ record-conformance:
 	cd $(LAUNCHER) && npm run record
 
 # Embedding profiles (profiles.toml, docs/EMBED_INSTALLS.md). The pplx-embed-v2-late profile needs a frozen model and
-# its service: `make pplx-convert` once (downloads, converts, checks parity), then `make pplx-setup`.
+# its service: `make pplx-convert` once (downloads, converts, checks parity), then `make pplx-setup`. setup-search.sh
+# runs both for new installs.
 PPLX_VENV := $(HOME)/Library/Application Support/Semantero/pplxd-venv
 
 pplx-convert:
 	bash pplx/convert/convert.sh
 
 pplx-setup:
-	test -x "$(PPLX_VENV)/bin/python" || uv venv --python 3.12 "$(PPLX_VENV)"
-	uv pip install --python "$(PPLX_VENV)/bin/python" -r pplx/requirements-pplxd.txt
-	mkdir -p logs
-	cp launchd/com.planner.pplxd.plist ~/Library/LaunchAgents/
-	launchctl bootout gui/$$(id -u)/com.planner.pplxd 2>/dev/null || true
-	launchctl bootstrap gui/$$(id -u) ~/Library/LaunchAgents/com.planner.pplxd.plist
+	bash pplx/install-service.sh
 
 # The service tests need numpy, which only the pplxd venv has; skipped (with a note) when it doesn't exist.
 test-pplx:

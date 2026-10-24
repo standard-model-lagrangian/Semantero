@@ -35,7 +35,7 @@ Decisions log: [docs/DECISIONS_AND_GAPS.md](docs/DECISIONS_AND_GAPS.md). Manual 
 - **`macos/`** (SwiftPM, no dependencies): `SemanteroKit` (testable: `JSCRanker`, `AcceleratedRanker`, query controller, action executor, index reloader, Spotlight donor) and `Semantero` (menu bar app: non-activating glass panel, settings, App Intents). `make install-app` builds and installs it. Debug aids: `SEMANTERO_SELFTEST=<json>` (see `make app-selftest`), `SEMANTERO_DEBUG=1` (reloads, compactions, watchdog), `SEMANTERO_SHOW_PANEL="<query>"`, `SEMANTERO_SNAPSHOT=<png>` (saves the panel view; needs no screen permission). The ranker choice (JavaScriptCore + Accelerate vector pass) is recorded in `docs/DECISIONS_AND_GAPS.md`.
 
 ### 2. Paper Search & Literature Discovery Layer
-- **Local Hybrid Search Engine**: Precomputed inverted-index BM25 with prefix expansion (top-64 candidate selection via dual binary search) and dense vector search (`qwen3-embedding:0.6b` via local Ollama). Scoring combines signals via Reciprocal Rank Fusion ($k=60$).
+- **Local Hybrid Search Engine**: Precomputed inverted-index BM25 with prefix expansion (top-64 candidate selection via dual binary search) and dense vector search (new installs: pplx-embed-v2-late via `planner/pplxd.py`; `config.toml`'s `[search]` and `--model qwen`: `qwen3-embedding:0.6b` via local Ollama). Scoring combines signals via Reciprocal Rank Fusion ($k=60$).
 - **Obsidian Paper Search Plugin** (`obsidian/paper-search`):
   - **Search Modal (`PaperSearchModal`)**: Instant paper search. `Enter` opens the PDF in Zotero at the matching page (a web-snapshot match opens the snapshot via `zotero://open/library/items/<attKey>`, no page); `Cmd+Enter` inserts the citation (default `[[{{citekey}}]]`) and ensures the literature note exists; `Alt+Enter` opens the literature note, creating it if needed; `Shift+Enter` selects the item in Zotero.
   - **Inline Citations (`@@`)**: `EditorSuggest` autocompletion triggered anywhere in prose. Strictly excluded within code spans, math blocks, unclosed wikilinks, or frontmatter. Inserts citation in a single editor undo transaction and asynchronously creates the literature note.
@@ -53,10 +53,10 @@ Decisions log: [docs/DECISIONS_AND_GAPS.md](docs/DECISIONS_AND_GAPS.md). Manual 
 
 ## Assumptions
 
-- macOS, Apple silicon, Homebrew. Python 3.11+ (venv currently on Homebrew 3.15). Only third-party dependency: `anthropic` (weekly review and health checks). The optional pplx profile's service (`planner/pplxd.py`) runs from its own venv with numpy (`make pplx-setup`); nothing else imports numpy.
+- macOS, Apple silicon, Homebrew. Python 3.11+ (venv currently on Homebrew 3.15). Only third-party dependency: `anthropic` (weekly review and health checks). The pplx profile's service (`planner/pplxd.py`) runs from its own venv with numpy (`pplx/install-service.sh`, also `make pplx-setup`); nothing else imports numpy.
 - Node 26.4+ (natively executes `.ts` tests without transpile step).
 - Vault at `~/Documents/Obsidian Vault`. Daily notes are `YYYY-MM-DD.md` at the vault root. Future-dated files are flagged by `doctor`.
-- Zotero database at `~/Zotero/zotero.sqlite`. Local Ollama running `qwen3-embedding:0.6b` at `http://127.0.0.1:11434`.
+- Zotero database at `~/Zotero/zotero.sqlite`. Embeddings from the live profile: pplx-embed-v2-late via `com.planner.pplxd` at `http://127.0.0.1:11435` (what `setup-search.sh` installs by default; writes `<vault>/.planner/profile.json` for a fresh vault) or `qwen3-embedding:0.6b` via Ollama at `http://127.0.0.1:11434`.
 - Note format: plain-text headings `Flow`, `type A`, `type B`, `type C`, `status/done` (or `done`), `thoughts`, from `Templates/Daily.md`, which is shared with Obsidian's Daily Notes plugin via `.obsidian/daily-notes.json`. A: head-down high-friction work. B: open-ended but defined. C: exploratory. Older notes have no headings; the extractor infers types.
 - A day without a filled `done` section is "no record", not "nothing done". A note holding only the brief and the empty template is a skipped day.
 - A day starts at 04:00 (`[schedule] day_starts_hour`).

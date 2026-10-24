@@ -133,7 +133,7 @@ class TestDoctor(unittest.TestCase):
             res = health.check_search_tools(self.cfg())
             run.assert_not_called()
         self.assertFalse(res.ok)
-        self.assertIn("make pplx-setup", res.message)
+        self.assertIn("pplx/install-service.sh", res.message)
         with patch.object(pplx, "health", return_value={"ok": True, "model": "pplx-x"}):
             self.assertIsNone(health.check_search_tools(self.cfg()))
         with patch.object(pplx, "health", return_value={"ok": True, "model": "pplx-y"}):

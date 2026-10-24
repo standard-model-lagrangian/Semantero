@@ -28,8 +28,8 @@ ones you don't. Then it puts that index one keystroke away, in Obsidian and in e
 
 - **It finds the passage, not just the paper.** Results open at the matching page.
 - **It's fast.** Keyword results land on every keystroke (1.6 ms p95), semantic ones after a short pause (~200 ms).
-- **It's private.** Embeddings run on your machine through [Ollama](https://ollama.com). No accounts, no API keys, no
-  cloud, no subscription. Search works offline.
+- **It's private.** Embeddings run on your machine (pplx-embed-v2-late on a pinned llama.cpp, or Qwen3 through
+  [Ollama](https://ollama.com)). No accounts, no API keys, no cloud, no subscription. Search works offline.
 - **It keeps itself fresh.** Add a paper to Zotero and it is searchable about a minute later. You never re-index.
 
 ## What you get
@@ -58,7 +58,7 @@ flowchart LR
     Z[("Zotero<br/>sqlite + PDFs")] -->|change detected| W["Watcher<br/><sub>launchd · 20 s quiet window<br/>library fingerprint</sub>"]
     V[("Obsidian vault<br/>Markdown notes")] -->|every 5 min| N["Notes indexer"]
     W --> X["Extract + chunk<br/><sub>PDF text, web snapshots<br/>headers/refs stripped</sub>"]
-    X --> E["Embed locally<br/><sub>Ollama · qwen3-embedding</sub>"]
+    X --> E["Embed locally<br/><sub>pplx-embed-v2-late · or Qwen3 via Ollama</sub>"]
     N --> E
     E --> I[("Hybrid index<br/><sub>BM25 + vectors<br/>in your vault</sub>")]
     I --> P["Obsidian plugin<br/><sub>⌘⇧0 · @@ · related</sub>"]
@@ -69,8 +69,8 @@ flowchart LR
    fingerprint of the library. Nothing changed means nothing is rebuilt.
 2. **Extract.** New PDFs and web snapshots become clean text (running headers, footers and reference lists stripped),
    split into chunks that remember their page.
-3. **Embed.** Each chunk gets a vector from a small local model. If Ollama is off, the index stays keyword-only and
-   catches up later instead of failing.
+3. **Embed.** Each chunk gets vectors from a small local model. If the model isn't running, the index stays
+   keyword-only and catches up later instead of failing.
 4. **Rank.** A query runs through **BM25** (with prefix matching, so half-typed words work) and **dense similarity** at
    the same time; **Reciprocal Rank Fusion** merges the two lists, so exact terms and vague concepts both rise to the top.
 5. **Serve.** The index is written atomically into `.planner/` in your vault. The Obsidian plugin and the macOS app
@@ -85,7 +85,7 @@ flowchart LR
 |---|---|
 | Keyword search per keystroke, real library, in the app | **1.6 ms** p95 |
 | Hybrid scoring + merge, real library | **~8 ms** p95 |
-| Query embedding (Ollama warm) | **~190 ms** |
+| Query embedding (Qwen3 0.6B, Ollama warm) | **~190 ms** |
 | BM25 prefix search on a 3× synthetic library (25k chunks) | **1.5 ms** p95 |
 | App memory at rest | **~112 MB** |
 
@@ -103,12 +103,16 @@ flowchart LR
 
 You need a Mac, **[Zotero](https://www.zotero.org/)** with the **[Better BibTeX](https://retorque.re/zotero-better-bibtex/)**
 plugin (for citekeys), **[Obsidian](https://obsidian.md/)** with a vault, and **[Homebrew](https://brew.sh/)**.
-[Ollama](https://ollama.com) is recommended; the setup script offers to install it.
+The setup script installs the default embedding model, **pplx-embed-v2-late** (a one-off ~4 GB download and conversion,
+then about an hour per 9,000 paper texts for the first index). For a lighter install, `--model qwen` uses
+Qwen3-Embedding 0.6B through [Ollama](https://ollama.com) instead (~600 MB). Compare them on your own library:
+[docs/EMBED_INSTALLS.md](docs/EMBED_INSTALLS.md).
 
 ```bash
 git clone https://github.com/standard-model-lagrangian/Semantero.git
 cd Semantero
 ./setup-search.sh            # add --vault "/path/to/Vault" --zotero "/path/to/Zotero" if they're not in the default places
+                             # add --model qwen for the lighter Ollama model
 ```
 
 Then in Obsidian: **Settings → Community plugins → reload → enable "Semantero"**, and press `⌘⇧0`.
@@ -132,7 +136,7 @@ Step by step for both, switching between them, and uninstalling: **[docs/INSTALL
 
 | Command | What it does |
 |---|---|
-| `./setup-search.sh status` | Ollama, Python, index and watcher health (and whether the index is keyword-only) |
+| `./setup-search.sh status` | Embedding model, Python, index and watcher health (and whether the index is keyword-only) |
 | `./setup-search.sh index` | Update or rebuild the index now |
 | `./setup-search.sh logs` | Last 40 lines of the watcher log |
 | `./setup-search.sh watch` | Run the watcher in the foreground |

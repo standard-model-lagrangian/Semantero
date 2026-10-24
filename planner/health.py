@@ -290,7 +290,7 @@ def check_search_tools(cfg) -> Result | None:
         from . import pplx
         h = pplx.health(cfg.search.get("pplx_url", "http://127.0.0.1:11435"))
         if h is None:
-            return Result("search tools", False, "The pplx service (com.planner.pplxd) is not running. Fix: make pplx-setup")
+            return Result("search tools", False, "The pplx service (com.planner.pplxd) is not running. Fix: bash pplx/install-service.sh")
         if h.get("model") != model:
             return Result("search tools", False, f"The pplx service runs {h.get('model')}, but the index needs {model}. "
                           "Fix: launchctl kickstart -k gui/$(id -u)/com.planner.pplxd")

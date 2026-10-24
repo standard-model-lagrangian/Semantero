@@ -8,8 +8,8 @@ Semantero is one repository with two ways to use it. Pick one; you can switch la
 |---|---|---|
 | What you get | Paper search inside Obsidian: `⌘⇧0` pop-up over your Zotero library, `@@` inline citations, literature notes, related-papers panel. Index kept fresh in the background | Everything in Obsidian only, **plus** your vault's notes indexed, and **Semantero**: press **⌥Space in any app** to search papers *and* notes, paste the PDF into Mail/Teams/an LLM, copy citations, drag files; also in Spotlight |
 | Runs | Obsidian plugin + one background watcher | The same, plus a menu-bar app and the notes index |
-| You need | Zotero (+ Better BibTeX), Obsidian, Homebrew, Python 3.11+, poppler; Ollama optional | The same, plus macOS 26, Node.js, and Apple's free **Command Line Tools**. Full Xcode is optional: see [Do I need Xcode?](#do-i-need-xcode) |
-| Setup time | ~5 minutes | ~10 minutes (longer if you also download Xcode) |
+| You need | Zotero (+ Better BibTeX), Obsidian, Homebrew, Python 3.11+, poppler; uv for the default embedding model (or Ollama with `--model qwen`) | The same, plus macOS 26, Node.js, and Apple's free **Command Line Tools**. Full Xcode is optional: see [Do I need Xcode?](#do-i-need-xcode) |
+| Setup time | ~5 minutes of your time, plus the model download and the first index running on their own (see [tier 1](#tier-1-paper-search-in-obsidian)) | ~5 more minutes (longer if you also download Xcode) |
 | Code used | `planner/` (paper index, watcher), `obsidian/paper-search/` | also `planner/notesindex.py`, `launcher-core/`, `macos/` |
 
 The planner (daily brief, weekly review) is a separate, optional add-on for either setup: [tier 4](#tier-4-the-planner-daily-brief-threads-weekly-review).
@@ -77,12 +77,13 @@ Tier 1 is the **Obsidian only** setup; tiers 1–3 are **Global**; tier 4 (the p
 
 | Tier | What you get | Runs where | Needs |
 |---|---|---|---|
-| **1. Paper search in Obsidian** | `⌘⇧0` search pop-up over your Zotero library, `@@` inline citations, literature notes, related-papers panel; index kept fresh by a background watcher | Obsidian plugin + `com.planner.zotero-watch` (launchd) | Zotero, Obsidian, Homebrew, Python 3.11+, poppler, Ollama (optional) |
+| **1. Paper search in Obsidian** | `⌘⇧0` search pop-up over your Zotero library, `@@` inline citations, literature notes, related-papers panel; index kept fresh by a background watcher | Obsidian plugin + `com.planner.zotero-watch` and `com.planner.pplxd` (launchd) | Zotero, Obsidian, Homebrew, Python 3.11+, poppler, uv (or Ollama with `--model qwen`) |
 | **2. Notes index** | Your vault's Markdown notes searchable too (the index the launcher uses) | `planner notes index` | Tier 1's Python setup |
 | **3. Launcher app** | **⌥Space from any app** → glass panel over papers *and* notes; open, paste the PDF into Mail/Teams/LLMs, copy citations, drag files; Spotlight entries and a Spotlight action | `Semantero.app` (menu bar) | Tiers 1–2, Command Line Tools (full Xcode optional), Node + npm |
 | **4. Planner** (owner's setup) | Daily brief in today's note, `Threads.md`, weekly review, evening reminder | `com.planner.morning` (every 5 min), `com.planner.weekly` (launchd) | Tier 1's Python, API keys (Groq, Anthropic) |
 
-Everything runs locally. The only network calls are the planner's model calls (tier 4) and Ollama on `127.0.0.1`.
+Everything runs locally. Setup downloads the embedding model once (Hugging Face, GitHub for llama.cpp); after that the
+only network calls are the planner's model calls (tier 4) and the embedding service on `127.0.0.1`.
 
 ## Tools, and which tier needs them
 
@@ -95,7 +96,8 @@ Everything runs locally. The only network calls are the planner's model calls (t
 | [Obsidian](https://obsidian.md) | 1.x | 1+ | `brew install --cask obsidian` | An existing vault. Default `~/Documents/Obsidian Vault` |
 | Python | 3.11+ (3.15 here) | 1+ | `brew install python` | Standard library only, plus `anthropic` for tier 4. The setup script makes `.venv` |
 | poppler (`pdftotext`) | current | 1+ | `brew install poppler` | PDF text extraction |
-| [Ollama](https://ollama.com) + `qwen3-embedding:0.6b` | current | 1+ (optional) | `brew install ollama && brew services start ollama && ollama pull qwen3-embedding:0.6b` | Semantic search. Without it everything falls back to keyword search and fills in vectors once it's running |
+| [uv](https://docs.astral.sh/uv/) + pplx-embed-v2-late | uv current; model and llama.cpp pinned | 1+ (default model) | `brew install uv`; the setup script does the rest | Semantic search (the default). The script converts the model once into `~/Library/Application Support/Semantero/` (~4 GB of downloads, of which ~1.5 GB is kept at runtime) and runs it as `com.planner.pplxd`. Apple silicon only. Without it everything falls back to keyword search and fills in vectors once it's running |
+| [Ollama](https://ollama.com) + `qwen3-embedding:0.6b` | current | 1+ (`--model qwen`) | `brew install ollama && brew services start ollama && ollama pull qwen3-embedding:0.6b` | The lighter alternative (~600 MB), and the fallback if the pplx setup fails |
 | Command Line Tools (Swift compiler + macOS SDK) | for macOS 26 SDK | 3 | `xcode-select --install` | Enough to build and run the app. See [Do I need Xcode?](#do-i-need-xcode) |
 | Xcode (full app) | 26 or later (27.1 here) | 3 (optional), contributors | Mac App Store | Only for: the Spotlight "Search Everything" action (`appintentsmetadataprocessor`), the Swift test suite, and an easy stable signature. Then `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` |
 | Node.js + npm | 26 (26.4 here) | 3, and contributors | `brew install node` | Builds `launcher-core/dist/ranker.js` (the app's ranking engine) and runs the TypeScript tests. Older Node versions are untested |
@@ -119,11 +121,19 @@ Non-default locations: `./setup-search.sh --vault "/path/to/Vault" --zotero "/pa
 git-ignored `config.local.toml`, so `git pull` never conflicts with them. (`setup.sh` is an identical copy of
 `setup-search.sh`.)
 
+Pick the embedding model with `--model`: `pplx` (default) or `qwen`. Both are compared in
+[EMBED_INSTALLS.md](EMBED_INSTALLS.md); you can build the other one and switch later without reinstalling. The choice
+only applies to a vault with no index yet: an existing index keeps its model.
+
 The script:
 1. makes `.venv` with Python 3.11+ (installing it with Homebrew if needed);
-2. checks for `pdftotext`, Ollama and the embedding model, and offers to install them;
+2. checks for `pdftotext` and sets up the embedding model. For `pplx`: installs `uv`, runs `pplx/convert/convert.sh`
+   once (downloads a pinned llama.cpp and the model, converts it and checks it against the reference implementation),
+   then installs and starts the `com.planner.pplxd` service. If any of that fails it says so and falls back to
+   `qwen`. For `qwen`: checks for Ollama and pulls `qwen3-embedding:0.6b`;
 3. copies the plugin into `<vault>/.obsidian/plugins/semantero/`;
-4. checks your library has citekeys, then builds the first index into `<vault>/.planner/search/`;
+4. checks your library has citekeys, then builds the first index into `<vault>/.planner/search/` (with pplx, allow
+   about an hour per 9,000 paper texts; after that, a new paper takes seconds);
 5. writes and loads `~/Library/LaunchAgents/com.planner.zotero-watch.plist`. This re-indexes about 20 s after Zotero
    changes, plus an hourly retry while the index is keyword-only.
 
@@ -133,7 +143,7 @@ Check: `./setup-search.sh status`, or `.venv/bin/python -m planner doctor --sear
 
 | Command | What it does |
 |---|---|
-| `./setup-search.sh status` | Ollama, Python, index and watcher health |
+| `./setup-search.sh status` | Embedding model, Python, index and watcher health |
 | `./setup-search.sh index [--full]` | Rebuild the paper index now |
 | `./setup-search.sh logs` | Last lines of `logs/zotero-watch.log` |
 | `./setup-search.sh stop` / `start` | Unload / load the watcher |
@@ -274,6 +284,7 @@ updates the notes index on every run. Logs go to `logs/morning.log` and `logs/we
 |---|---|
 | Launcher | First menu bar → Settings… → untick the three Spotlight boxes → Save (this removes its Spotlight entries). Then Quit, and `rm -rf "/Applications/Semantero.app" ~/Library/Application\ Support/Semantero\ Search`; `defaults delete dev.semantero.app` |
 | Watcher | `./setup-search.sh stop` and `rm ~/Library/LaunchAgents/com.planner.zotero-watch.plist` |
+| pplx model and service | See [EMBED_INSTALLS.md → Removing](EMBED_INSTALLS.md#removing) |
 | Planner jobs | `launchctl bootout gui/$(id -u)/com.planner.morning` (and `.weekly`), then remove the plists |
 | Plugin | Disable it in Obsidian, then delete `<vault>/.obsidian/plugins/semantero` |
 | Indexes and state | `<vault>/.planner/` (indexes, sidecars, state). Your notes are not touched |
@@ -286,6 +297,7 @@ updates the notes index on every run. Logs go to `logs/morning.log` and `logs/we
 |---|---|
 | Launcher says "isn't allowed to read your vault" | Allow Documents in Privacy & Security → Files and Folders, then menu bar → Reload Indexes |
 | ⌘↵ only copies ("press ⌘V" toast) | Allow Semantero under Privacy & Security → Accessibility. With an ad hoc signature this resets on each reinstall |
+| Grey dot "semantic off: pplx service not reachable" | `bash pplx/install-service.sh` reinstalls and restarts it; its log is `logs/pplxd.log` |
 | Grey dot "semantic off: Ollama not reachable" | `brew services start ollama`; `ollama list` should include `qwen3-embedding:0.6b` |
 | `_LSOpenURLsWithCompletionHandler() failed with error -600` after reinstalling | The old copy was still quitting: run `open` again (or put `sleep 1` before it) |
 | ⌥Space does something else | Another app has it (e.g. an assistant's quick-entry key). Pick another hotkey in Settings |

@@ -3,17 +3,18 @@
 <plist version="1.0">
 <dict>
     <!-- The pplx-embed-v2-late service (planner/pplxd.py), only needed while a pplx profile exists.
-         Installed by `make pplx-setup`. Idle cost: a Python process; llama-server unloads the model after 5 idle minutes. -->
+         A template: pplx/install-service.sh (run by setup-search.sh and `make pplx-setup`) fills in the home
+         and checkout paths. Idle cost: a Python process; llama-server unloads the model after 5 idle minutes. -->
     <key>Label</key>
     <string>com.planner.pplxd</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/frederick/Library/Application Support/Semantero/pplxd-venv/bin/python</string>
+        <string>__HOME__/Library/Application Support/Semantero/pplxd-venv/bin/python</string>
         <string>-m</string>
         <string>planner.pplxd</string>
     </array>
     <key>WorkingDirectory</key>
-    <string>/Users/frederick/Visual Studio /productivity work </string>
+    <string>__REPO__</string>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
@@ -30,8 +31,8 @@
         <string>1</string>
     </dict>
     <key>StandardOutPath</key>
-    <string>/Users/frederick/Visual Studio /productivity work /logs/pplxd.log</string>
+    <string>__REPO__/logs/pplxd.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/frederick/Visual Studio /productivity work /logs/pplxd.log</string>
+    <string>__REPO__/logs/pplxd.log</string>
 </dict>
 </plist>

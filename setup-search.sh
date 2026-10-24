@@ -2,9 +2,10 @@
 # ==============================================================================
 # Semantero & Background Indexer Setup
 #
-# Sets up the local hybrid paper search engine (BM25 + Ollama embeddings),
-# installs the Obsidian plugin into your vault, builds your initial index from
-# Zotero, and registers the background launchd watcher daemon.
+# Sets up the local hybrid paper search engine (BM25 + embeddings: the frozen
+# pplx-embed-v2-late model by default, or qwen3-embedding:0.6b via Ollama with
+# --model qwen), installs the Obsidian plugin into your vault, builds your
+# initial index from Zotero, and registers the background launchd watcher daemon.
 # ==============================================================================
 
 set -eo pipefail
@@ -39,7 +40,7 @@ Usage:
 
 Commands:
   setup              Full end-to-end setup (default if no command given)
-  status             Check health of Ollama, index, and launchd background watcher
+  status             Check health of the embedding model, index, and launchd background watcher
   index [--full]     Build or update search index from Zotero
   watch              Run the watcher in the foreground (useful for debugging)
   start              Start / load background watcher daemon in launchd
@@ -49,6 +50,9 @@ Commands:
 Options:
   --vault <path>     Path to your Obsidian Vault (default: read from config.toml or ~/Documents/Obsidian Vault)
   --zotero <path>    Path to your Zotero directory (default: ~/Zotero)
+  --model <name>     Embedding model for a new install: pplx (default; pplx-embed-v2-late, a ~4 GB one-off
+                     download and conversion) or qwen (qwen3-embedding:0.6b via Ollama, ~600 MB, quicker to set up).
+                     An existing index keeps its model; switch with: planner profile build/use (docs/EMBED_INSTALLS.md)
   -h, --help         Show this help message
 EOF
 }
@@ -201,6 +205,98 @@ if is_custom_vault or is_custom_zotero:
 ' "$v" "$z" 2>/dev/null || true
 }
 
+# A value from the planner's resolved config (config.toml, config.local.toml and the live profile), or "" if unreadable
+planner_value() {
+    "$SCRIPT_DIR/.venv/bin/python" -c "from planner import config; c = config.load(); print($1)" 2>/dev/null || true
+}
+
+# Ollama and qwen3-embedding:0.6b (the --model qwen install)
+setup_ollama() {
+    if ! command -v ollama >/dev/null 2>&1; then
+        warn "Ollama is not installed. Dense semantic search requires Ollama."
+        warn "Install it via: brew install --cask ollama  (or visit https://ollama.com)"
+        return
+    fi
+    # Check if Ollama service is running
+    if ! curl -s -m 2 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
+        info "Starting Ollama..."
+        if command -v brew >/dev/null 2>&1 && brew services list 2>/dev/null | grep -q ollama; then
+            brew services start ollama >/dev/null 2>&1 || true
+        elif [[ -d "/Applications/Ollama.app" ]]; then
+            open -a Ollama >/dev/null 2>&1 || true
+        fi
+        sleep 3
+    fi
+
+    if curl -s -m 2 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
+        success "Ollama service is reachable"
+        local models
+        models=$(ollama list 2>/dev/null || true)
+        if [[ "$models" != *"qwen3-embedding"* ]]; then
+            info "Pulling qwen3-embedding:0.6b (fast, ~600MB)..."
+            ollama pull qwen3-embedding:0.6b
+            success "Downloaded qwen3-embedding:0.6b"
+        else
+            success "Model qwen3-embedding:0.6b is ready"
+        fi
+    else
+        warn "Could not connect to Ollama at http://127.0.0.1:11434."
+        warn "Keyword BM25 search will still work; start Ollama whenever you want semantic search."
+    fi
+}
+
+# pplx-embed-v2-late (the default install): convert the frozen model once, then start its service. Fails softly.
+setup_pplx() {
+    if [[ "$(uname -s)" != "Darwin" || "$(uname -m)" != "arm64" ]]; then
+        warn "pplx-embed-v2-late runs on a pinned macOS arm64 llama.cpp build only."
+        return 1
+    fi
+    if ! command -v uv >/dev/null 2>&1; then
+        if command -v brew >/dev/null 2>&1; then
+            info "Installing uv via Homebrew (Python environments for the model)..."
+            brew install uv || return 1
+        else
+            warn "uv is required for pplx (https://docs.astral.sh/uv/)."
+            return 1
+        fi
+    fi
+    local model_dir="$HOME/Library/Application Support/Semantero/models/pplx-embed-v2-late-0.6b@7bba8e7"
+    if [[ -f "$model_dir/SHA256SUMS" ]]; then
+        success "pplx-embed-v2-late is already converted"
+    else
+        info "Converting pplx-embed-v2-late (once: ~4 GB of downloads, then a conversion and parity check)..."
+        bash "$SCRIPT_DIR/pplx/convert/convert.sh" || return 1
+        success "Converted pplx-embed-v2-late (details: $model_dir/PARITY.md)"
+    fi
+    info "Starting the pplx service (com.planner.pplxd)..."
+    bash "$SCRIPT_DIR/pplx/install-service.sh" || return 1
+    local i
+    for i in 1 2 3 4 5 6 7 8 9 10; do
+        if curl -s -m 2 http://127.0.0.1:11435/health 2>/dev/null | grep -q '"ok": true'; then
+            success "pplx service is running at http://127.0.0.1:11435"
+            return 0
+        fi
+        sleep 1
+    done
+    warn "The pplx service did not answer; see logs/pplxd.log."
+    return 1
+}
+
+# Makes pplx-v2-late the live profile of a vault that has no index yet. An existing index is left as it is.
+choose_profile() {
+    local data_dir
+    data_dir="$(planner_value 'c.data_dir')"
+    [[ -n "$data_dir" ]] || return 0
+    if [[ ! -f "$data_dir/search/manifest.json" && ! -f "$data_dir/profile.json" ]]; then
+        mkdir -p "$data_dir"
+        echo '{"name": "pplx-v2-late"}' > "$data_dir/profile.json"
+        success "New index will use pplx-v2-late"
+    elif [[ "$(planner_value 'c.search.get("backend", "ollama")')" != "pplx" ]]; then
+        info "Your existing index keeps its model. To move it to pplx (takes about as long as a first build):"
+        info "  .venv/bin/python -m planner profile build pplx-v2-late && .venv/bin/python -m planner profile use pplx-v2-late"
+    fi
+}
+
 # ------------------------------------------------------------------------------
 # Action Handlers
 # ------------------------------------------------------------------------------
@@ -226,8 +322,14 @@ cmd_status() {
         warn "Poppler: pdftotext not found on PATH (run: brew install poppler)"
     fi
 
-    # 3. Ollama daemon & model
-    if curl -s -m 2 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
+    # 3. Embedding model: the live index's backend
+    if [[ "$(planner_value 'c.search.get("backend", "ollama")')" == "pplx" ]]; then
+        if curl -s -m 2 http://127.0.0.1:11435/health 2>/dev/null | grep -q '"ok": true'; then
+            success "pplx service: Running at http://127.0.0.1:11435 (pplx-embed-v2-late)"
+        else
+            warn "pplx service: Not answering (run: bash pplx/install-service.sh, or see logs/pplxd.log)"
+        fi
+    elif curl -s -m 2 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
         success "Ollama daemon: Running at http://localhost:11434"
         if command -v ollama >/dev/null 2>&1; then
             local models
@@ -268,7 +370,7 @@ try:
     c = m.get("chunks", "?")
     b = m.get("built_at", "unknown")
     miss = m.get("missing_vectors", 0)
-    note = f" - KEYWORD-ONLY for {miss} texts until Ollama runs" if miss else ""
+    note = f" - KEYWORD-ONLY for {miss} texts until the embedding model runs" if miss else ""
     print(f"{p} papers ({c} chunks), built {b}{note}")
 except Exception:
     print("present")
@@ -368,6 +470,7 @@ cmd_start() {
 cmd_setup() {
     local custom_vault=""
     local custom_zotero=""
+    local model="pplx"
 
     # Parse setup-specific arguments
     while [[ $# -gt 0 ]]; do
@@ -380,11 +483,17 @@ cmd_setup() {
                 custom_zotero="$2"
                 shift 2
                 ;;
+            --model)
+                model="$2"
+                shift 2
+                ;;
             *)
                 shift
                 ;;
         esac
     done
+
+    [[ "$model" == "pplx" || "$model" == "qwen" ]] || die "--model must be pplx or qwen (got: $model)"
 
     echo -e "${BOLD}======================================================${NC}"
     echo -e "${BOLD}       Semantero & Background Watcher Setup   ${NC}"
@@ -449,39 +558,17 @@ cmd_setup() {
         success "Poppler (pdftotext) is installed"
     fi
 
-    # 4. Ollama & Embedding Model
-    info "Step 3/6: Checking Ollama & embedding model (qwen3-embedding:0.6b)..."
-    if ! command -v ollama >/dev/null 2>&1; then
-        warn "Ollama is not installed. Dense semantic search requires Ollama."
-        warn "Install it via: brew install --cask ollama  (or visit https://ollama.com)"
+    # 4. Embedding model
+    if [[ "$model" == "pplx" ]]; then
+        info "Step 3/6: Setting up the embedding model (pplx-embed-v2-late)..."
+        if ! setup_pplx; then
+            warn "pplx setup failed; falling back to qwen3-embedding:0.6b via Ollama. Retry later with: ./setup-search.sh"
+            model="qwen"
+        fi
     else
-        # Check if Ollama service is running
-        if ! curl -s -m 2 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
-            info "Starting Ollama..."
-            if command -v brew >/dev/null 2>&1 && brew services list 2>/dev/null | grep -q ollama; then
-                brew services start ollama >/dev/null 2>&1 || true
-            elif [[ -d "/Applications/Ollama.app" ]]; then
-                open -a Ollama >/dev/null 2>&1 || true
-            fi
-            sleep 3
-        fi
-
-        if curl -s -m 2 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
-            success "Ollama service is reachable"
-            local models
-            models=$(ollama list 2>/dev/null || true)
-            if [[ "$models" != *"qwen3-embedding"* ]]; then
-                info "Pulling qwen3-embedding:0.6b (fast, ~600MB)..."
-                ollama pull qwen3-embedding:0.6b
-                success "Downloaded qwen3-embedding:0.6b"
-            else
-                success "Model qwen3-embedding:0.6b is ready"
-            fi
-        else
-            warn "Could not connect to Ollama at http://127.0.0.1:11434."
-            warn "Keyword BM25 search will still work; start Ollama whenever you want semantic search."
-        fi
+        info "Step 3/6: Checking Ollama & embedding model (qwen3-embedding:0.6b)..."
     fi
+    [[ "$model" == "qwen" ]] && setup_ollama
 
     # 5. Zotero & Vault Configuration
     info "Step 4/6: Configuring paths..."
@@ -618,7 +705,11 @@ except Exception:
     fi
 
     # 7. Initial Search Index & Background Watcher
+    [[ "$model" == "pplx" ]] && choose_profile
     info "Step 6/6: Building initial search index..."
+    if [[ "$(planner_value 'c.search.get("backend", "ollama")')" == "pplx" ]]; then
+        info "(pplx embeds every page once: allow roughly an hour per 9,000 paper texts; later updates take seconds)"
+    fi
     mkdir -p "$SCRIPT_DIR/logs"
     if [[ -f "$zotero_dir/zotero.sqlite" ]]; then
         "$SCRIPT_DIR/.venv/bin/python" -m planner search index || warn "Initial indexing encountered an error; you can retry with ./setup-search.sh index"

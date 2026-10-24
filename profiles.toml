@@ -8,13 +8,13 @@
 # query models of 4.4-5 GB, too slow to keep up with new papers and notes as they arrive (docs/DECISIONS_AND_GAPS.md).
 
 ["qwen3-0.6b"]
-label = "Qwen3-Embedding 0.6B (current)"
+label = "Qwen3-Embedding 0.6B (Ollama; setup --model qwen)"
 backend = "ollama"
 model = "qwen3-embedding:0.6b"           # Q8_0, 639 MB
 dims = 1024                              # native width
 
 ["pplx-v2-late"]
-label = "pplx-embed-v2-late 0.6B (late interaction)"
+label = "pplx-embed-v2-late 0.6B (late interaction; default for new installs)"
 backend = "pplx"
 model = "pplx-embed-v2-late-0.6b@7bba8e7"   # frozen GGUF (Q8_0) on a pinned llama.cpp; see pplx/README.md
 dims = 128                                   # per token; MaxSim scoring

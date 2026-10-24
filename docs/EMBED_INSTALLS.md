@@ -7,8 +7,8 @@ original lineup, why pplx runs frozen), [../pplx/README.md](../pplx/README.md) (
 
 | Profile | Model | Runs on | Quantisation | Stored per row | Query model in RAM |
 |---|---|---|---|---|---|
-| `qwen3-0.6b` (current) | Qwen3-Embedding 0.6B | Ollama | Q8_0 | 1 × 1024 | ~0.6 GB |
-| `pplx-v2-late` | pplx-embed-v2-late 0.6B | pinned llama.cpp + `pplxd` | Q8_0 (parity-checked) | ~400 × 128 (one per token) + 1 × 128 | ~0.56 GB |
+| `qwen3-0.6b` (`--model qwen`) | Qwen3-Embedding 0.6B | Ollama | Q8_0 | 1 × 1024 | ~0.6 GB |
+| `pplx-v2-late` (default for new installs) | pplx-embed-v2-late 0.6B | pinned llama.cpp + `pplxd` | Q8_0 (parity-checked) | ~400 × 128 (one per token) + 1 × 128 | ~0.56 GB |
 
 Qwen3-Embedding 4B and 8B were in the first lineup and were dropped: a marginal gain over the 0.6B for 4–8 h builds and
 query models of 4.4–5 GB, too slow to embed new papers and notes as they arrive without scheduling.
@@ -28,7 +28,11 @@ After `use`:
 - The Zotero watcher, the 5-minute notes tick and the morning run keep the **live** profile up to date with its own
   model. The others wait as they were; `use` catches a profile up (only new or changed texts are embedded).
 
-Switch back to the current setup with `planner profile use qwen3-0.6b`.
+Switch to the other one with `planner profile use qwen3-0.6b` or `planner profile use pplx-v2-late`.
+
+**New installs** start on `pplx-v2-late`: `setup-search.sh` converts the model, starts `com.planner.pplxd` and writes
+`<vault>/.planner/profile.json` before the first build. `--model qwen` skips all that and uses `config.toml`'s
+`[search]` (Qwen3 through Ollama), as before. Neither touches a vault that already has an index.
 
 ## What to look at when judging
 
