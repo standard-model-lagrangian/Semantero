@@ -1,4 +1,4 @@
-# Daito Search: hands-on checks
+# Semantero: hands-on checks
 
 These are the things only a person at the screen can confirm. The keyboard plumbing (typing, arrows, ↵ / ⌘↵ / ⌘⇧↵,
 ⌘K, Esc, ⌘L, ⌘1/⌘2) is already checked automatically by `make app-selftest`. Note anything that fails, with what you
@@ -8,9 +8,9 @@ saw, in `docs/DECISIONS_AND_GAPS.md` (or just tell Claude).
 
 1. Optional but recommended: Xcode → Settings → Accounts → add your Apple ID. That creates a free "Personal Team"
    signing certificate, so macOS remembers the permissions below across rebuilds. Without it, every rebuild asks again.
-2. `make install-app`, then open **Daito Search** from /Applications once. A magnifying glass appears in the menu bar.
-3. macOS asks: *"Daito Search would like to access files in your Documents folder"* → **Allow**. (If you missed it:
-   System Settings → Privacy & Security → Files and Folders → Daito Search → Documents.)
+2. `make install-app`, then open **Semantero** from /Applications once. A magnifying glass appears in the menu bar.
+3. macOS asks: *"Semantero would like to access files in your Documents folder"* → **Allow**. (If you missed it:
+   System Settings → Privacy & Security → Files and Folders → Semantero → Documents.)
 4. Menu bar icon → the status line should read about "171 papers, 145 notes".
 
 ## 1. The panel (2 minutes)
@@ -40,13 +40,13 @@ saw, in `docs/DECISIONS_AND_GAPS.md` (or just tell Claude).
 
 | # | Do | Expect |
 |---|---|---|
-| 3.1 | In Mail, start a new message, click in the body, ⌥Space, find a paper, **⌘↵** | The first time: a toast says "Copied, press ⌘V…" with **Open Settings**. Click it, allow Daito Search under Accessibility |
+| 3.1 | In Mail, start a new message, click in the body, ⌥Space, find a paper, **⌘↵** | The first time: a toast says "Copied, press ⌘V…" with **Open Settings**. Click it, allow Semantero under Accessibility |
 | 3.2 | Repeat 3.1 | The PDF is attached to the message (no extra keypress) |
 | 3.3 | Same in a Teams chat, in the Claude desktop app, and in claude.ai / ChatGPT in a browser | The PDF is attached / uploaded |
 | 3.3b | Outlook on the web: if the attachment shows "Something went wrong while the document preview was being created", (a) wait a minute and click it again, (b) Download it and open it, (c) attach the **same** PDF with Outlook's own Attach button | (b) opens the full PDF. If (c) gives the same preview error, it's Outlook's preview of that PDF, not the app (the app's paste was verified to hand Firefox the exact file) |
 | 3.4 | Same in Terminal | The path is pasted (that's what Terminal does with a file) |
 | 3.5 | In a text field anywhere, ⌥Space, **⌘⇧↵** on a result | The passage is pasted with its citation, e.g. `"…" (Roth et al., 2023, p. 6)` |
-| 3.6 | ⌘⌥C, then ⌘V somewhere; ⌘L, then ⌘V | The passage with citation; `[[citekey]]` (or `[[Note name]]`) |
+| 3.6 | ⌘⌥C, then ⌘V somewhere; ⌘L in a text field | The passage with citation; `[[citekey]]` (or `[[Note name]]`) pasted straight in |
 | 3.7 | ⌘⇧C on a result, then ⌘V in a Finder window or a Mail message | The file is copied |
 | 3.8 | Drag a row into a Mail message, onto the Desktop, into a browser upload box | The file goes there |
 | 3.9 | ⌘⇧F on a result | Finder opens with the file selected |
@@ -69,10 +69,10 @@ saw, in `docs/DECISIONS_AND_GAPS.md` (or just tell Claude).
 
 | # | Do | Expect |
 |---|---|---|
-| 5.1 | ⌘Space, type a citekey (e.g. `roth2023tunable`) or a note's title | The item appears (from Daito Search); Return opens it in Zotero / Obsidian |
+| 5.1 | ⌘Space, type a citekey (e.g. `roth2023tunable`) or a note's title | The item appears (from Semantero); Return opens it in Zotero / Obsidian |
 | 5.2 | ⌘Space, type `Search Everything`, press **Tab**, type a query | Results from your library update as you type; choosing one opens it. **Note exactly what happens**: live results, only suggestions, or nothing |
-| 5.3 | Quit Daito Search (menu bar → Quit), then try 5.2 | Probably needs the app running; note what you see |
-| 5.4 | Settings… → untick "Add note titles" → Save; ⌘Space a note title | Notes no longer appear from Daito Search (macOS's own file results still do) |
+| 5.3 | Quit Semantero (menu bar → Quit), then try 5.2 | Probably needs the app running; note what you see |
+| 5.4 | Settings… → untick "Add note titles" → Save; ⌘Space a note title | Notes no longer appear from Semantero (macOS's own file results still do) |
 
 ## 6. Settings and startup (3 minutes)
 
@@ -81,7 +81,7 @@ saw, in `docs/DECISIONS_AND_GAPS.md` (or just tell Claude).
 | 6.1 | Menu bar → Settings… | The window opens in front |
 | 6.2 | Change Results to 5, Save, search | 5 rows, immediately |
 | 6.3 | Log out and back in, then press ⌥Space at once | The app is running and results appear (launch at login) |
-| 6.4 | After an hour of normal use: Activity Monitor → Memory → Daito Search | Under ~400 MB (it compacts itself back to ~110–160 MB when it grows past 350 MB while hidden) |
+| 6.4 | After an hour of normal use: Activity Monitor → Memory → Semantero | Under ~400 MB (it compacts itself back to ~110–160 MB when it grows past 350 MB while hidden) |
 | 6.5 | VoiceOver on (⌘F5), open the panel, arrow through rows | Each row is read as "Paper/Note, title, …" |
 
 ## What to report back

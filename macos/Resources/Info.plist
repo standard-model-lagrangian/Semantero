@@ -2,10 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleIdentifier</key><string>dev.daito.search</string>
-    <key>CFBundleName</key><string>Daito Search</string>
-    <key>CFBundleDisplayName</key><string>Daito Search</string>
-    <key>CFBundleExecutable</key><string>DaitoSearch</string>
+    <key>CFBundleIdentifier</key><string>dev.semantero.app</string>
+    <key>CFBundleName</key><string>Semantero</string>
+    <key>CFBundleDisplayName</key><string>Semantero</string>
+    <key>CFBundleExecutable</key><string>Semantero</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>1.0.0</string>
     <key>CFBundleVersion</key><string>1</string>
@@ -14,6 +14,6 @@
     <key>NSHighResolutionCapable</key><true/>
     <key>NSUserActivityTypes</key>
     <array><string>com.apple.corespotlightitem</string></array>
-    <key>NSHumanReadableCopyright</key><string>Daito Search: local, open source</string>
+    <key>NSHumanReadableCopyright</key><string>Semantero: local, open source</string>
 </dict>
 </plist>

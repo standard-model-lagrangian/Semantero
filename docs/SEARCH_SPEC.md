@@ -39,7 +39,7 @@ Status: implemented; kept as the design record. Companion to [SPEC.md](SPEC.md) 
 ## Architecture
 
 ```
- Zotero (read-only)                daito (Python, offline)                     Obsidian (TypeScript, live)
+ Zotero (read-only)                Semantero (Python, offline)                     Obsidian (TypeScript, live)
  ──────────────────                ───────────────────────                     ───────────────────────────
  zotero.sqlite ──► zotlib.py ──┐
                                ├─► searchindex.py ──► .planner/search/ ──► loader.ts ─┐
@@ -50,7 +50,7 @@ Status: implemented; kept as the design record. Companion to [SPEC.md](SPEC.md) 
 ```
 
 Why it's split this way:
-- **Indexing is Python.** It belongs with daito, uses the existing config, runs from the morning job, and needs no new Python dependency: vectors are written with the standard library's `array('f')`.
+- **Indexing is Python.** It belongs with Semantero, uses the existing config, runs from the morning job, and needs no new Python dependency: vectors are written with the standard library's `array('f')`.
 - **Ranking is TypeScript, inside the plugin.** That means no extra background service to keep alive. A few thousand vectors fit in memory, and comparing against all of them takes a few milliseconds in JS.
 - **The ranking core (`rank.ts`, `bm25.ts`, `text.ts`) has no Obsidian imports.** Node 26 runs `.ts` files directly, so it's tested with `node --test` and reused by the evaluation command.
 
@@ -110,7 +110,7 @@ Written into `.planner/search.tmp/`, then renamed into place, so the plugin neve
 
 **`state.json`** (indexer only): per attachment `{mtime, size, chunks: [rows]}` and per paper `abstract_sha`, so re-indexing only touches what changed.
 
-## Python side (daito)
+## Python side (semantero)
 
 ### Files
 
@@ -185,7 +185,7 @@ keep_alive = "30m"
 
 ## TypeScript side (Obsidian plugin)
 
-Lives in `obsidian/paper-search/` inside this repository. The build symlinks it into `<vault>/.obsidian/plugins/daito-paper-search/`.
+Lives in `obsidian/paper-search/` inside this repository. The build symlinks it into `<vault>/.obsidian/plugins/semantero/`.
 
 ### Files
 
@@ -206,14 +206,14 @@ Lives in `obsidian/paper-search/` inside this repository. The build symlinks it 
    - keep tokens with digits (`il6`, `3d`);
    - drop a small English stopword list.
 
-   The last token counts as *incomplete* unless the query ends in a space.
+   The last token counts as *possibly incomplete*, whatever follows it: trailing spaces and punctuation are ignored, so a query ranks the same with or without them. (Changed 24 Oct: a trailing space used to mark the last word complete, so typing the space changed the results.) Only a trailing stopword (`"cells in"`) finishes the word before it.
 2. **Keyword ranking (every keystroke):** BM25 with `k1 = 1.2`, `b = 0.75`.
    - Paper-level fields, with weights: title ×3, authors ×3, citekey ×3, journal ×1, tags and collections ×2, abstract ×1.5.
    - Chunk level: weight 1.
-   - The incomplete last token matches any vocabulary word it's a prefix of, with that word's best score.
+   - The last token matches any vocabulary word it's a prefix of, with that word's best score, except that a longer word is scored as if it were no rarer than the typed word (a rare variant such as `cells121` or `transferrin` otherwise outranks the word being typed), and counts half when the typed word is itself a vocabulary term (so `cell` ranks papers saying "cell" above papers saying only "cellular").
    - A paper's keyword score is the larger of its metadata score and its best chunk score.
-3. **Semantic ranking (after a pause):** embed the query, take the dot product with every row, and score each paper by the larger of its abstract row and its best chunk row. Remember which row won, for the snippet.
-4. **When semantic runs:** only once the query has at least 2 complete tokens, or at least 12 characters, **and** no keystroke for `debounce_ms` (default 200 ms). Every request carries a sequence number; a response older than the latest request is thrown away.
+3. **Semantic ranking (after a pause):** embed the query (surrounding whitespace dropped and inner runs made one space, `semanticText` in `rank.ts`, so a trailing space gives the same vector), take the dot product with every row, and score each paper by the larger of its abstract row and its best chunk row. Remember which row won, for the snippet.
+4. **When semantic runs:** only once the query has 2 words, the last one at least 3 characters or containing a digit (the point where it counts for keyword search too), or at least 12 characters not counting surrounding whitespace, **and** no keystroke for `debounce_ms` (default 200 ms). Every request carries a sequence number; a response older than the latest request is thrown away.
 5. **Merge:** reciprocal rank fusion, `score = Σ 1 / (60 + rank)`, over whichever lists exist. Until semantic results arrive, the keyword order is shown alone.
 6. **Snippet (extractive):**
    - Take the winning row's text: the best chunk, or the abstract.
@@ -234,7 +234,7 @@ Lives in `obsidian/paper-search/` inside this repository. The build symlinks it 
 
 ## Tests
 
-Python tests use `unittest` with temporary directories, as `tests/test_r1.py` does. TypeScript tests use `node --test`. **No test calls a real model.** Embeddings come from a fake embedder: a deterministic vector derived from a hash of the token set, normalised. That makes texts that share words similar, which is enough to test the plumbing. Tests that touch Ollama or real PDFs run only when `DAITO_LIVE=1`.
+Python tests use `unittest` with temporary directories, as `tests/test_r1.py` does. TypeScript tests use `node --test`. **No test calls a real model.** Embeddings come from a fake embedder: a deterministic vector derived from a hash of the token set, normalised. That makes texts that share words similar, which is enough to test the plumbing. Tests that touch Ollama or real PDFs run only when `SEMANTERO_LIVE=1`.
 
 ### Fixtures (`tests/fixtures/search/`)
 
@@ -265,7 +265,7 @@ Python tests use `unittest` with temporary directories, as `tests/test_r1.py` do
 10. `test_max_chunks_per_paper_caps`: a 400-page fake document produces at most `max_chunks_per_paper` chunks, the first pages kept.
 11. `test_scanned_pdf_has_no_text`: `hasText = false`, no chunks.
 12. `test_pdftotext_timeout_is_a_skipped_pdf_not_a_crash`
-13. `live_test_sample_pdf` (`DAITO_LIVE=1`): the real `pdftotext` on `sample.pdf` matches tests 5–8.
+13. `live_test_sample_pdf` (`SEMANTERO_LIVE=1`): the real `pdftotext` on `sample.pdf` matches tests 5–8.
 
 **embed** (HTTP patched)
 14. `test_batches_inputs`: 70 inputs with batch size 32 → 3 requests, in order.
@@ -273,7 +273,7 @@ Python tests use `unittest` with temporary directories, as `tests/test_r1.py` do
 16. `test_documents_have_no_instruction`: the request text is exactly the document text.
 17. `test_missing_model_error_mentions_pull`
 18. `test_retries_connection_errors_then_raises`
-19. `live_test_ollama_roundtrip` (`DAITO_LIVE=1`): the real model returns `dims` floats; similar sentences score higher than unrelated ones.
+19. `live_test_ollama_roundtrip` (`SEMANTERO_LIVE=1`): the real model returns `dims` floats; similar sentences score higher than unrelated ones.
 
 **searchindex** (fake embedder)
 20. `test_full_build_writes_all_files_consistently`: every `row` and `abstractRow` is in range; the vector file has exactly `rows × dims × 4` bytes; all rows have unit length.
@@ -295,14 +295,14 @@ Python tests use `unittest` with temporary directories, as `tests/test_r1.py` do
 
 **text.ts**
 1. `tokenises numbers and drops stopwords`: `"IL-6 in the 3D gels"` → `["il", "6", "3d", "gels"]`.
-2. `marks last token incomplete unless trailing space`
+2. `marks the last token as possibly unfinished, whatever follows it`
 3. `splits sentences without breaking "et al." or "Fig. 2"`
 4. `snippet picks max-overlap sentence and trims around it`
 5. `snippet falls back to the first sentence when nothing overlaps`
 
 **bm25.ts**
 6. `title match outranks body match for same term`: field weights work.
-7. `prefix on incomplete last token`: `"viscoel"` finds `viscoelasticity`; a complete token does *not* match as a prefix.
+7. `prefix on the last token, with or without a trailing space`: `"viscoel"` finds `viscoelasticity`, and `"viscoel "` gives the same results.
 8. `paper keyword score is max of metadata and best chunk`
 9. `author surname query ranks that author's papers first`
 10. `citekey exact match ranks first`
@@ -316,7 +316,7 @@ Python tests use `unittest` with temporary directories, as `tests/test_r1.py` do
 14. `paper semantic score is max(abstract row, best chunk row) and records the winning row`
 15. `rrf merges lists and handles a paper present in only one list`
 16. `keyword-only ordering is shown before semantic arrives`
-17. `semantic gating: needs ≥2 complete tokens or ≥12 chars`: `"vis"` no, `"stiff gels "` yes, `"viscoelasticit"` yes.
+17. `semantic gating: needs 2 words (the last one 3+ chars or a digit) or ≥12 chars`: `"vis"` no, `"stiff gels "` yes, `"viscoelasticit"` yes, `"stiff g"` no; trailing whitespace never changes the answer.
 18. `stale semantic responses are dropped`: request #1 resolves after #2 → #1 is ignored.
 19. `selection stays on the same paper after re-rank when still in top limit`
 20. `ollama down → keyword results plus semantic-off flag, no throw`

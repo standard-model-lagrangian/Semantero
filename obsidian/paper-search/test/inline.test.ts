@@ -257,7 +257,7 @@ test("I5 outdated semantic responses are dropped", async () => {
 
   const embedder = {
     async embedQuery(text: string) {
-      if (text === "stiff gel ") {
+      if (text === "stiff gel") { // the query is embedded without its trailing space
         return new Promise<Float32Array>((res) => {
           resolveFirst = res;
         });
@@ -523,9 +523,9 @@ test("I11 rows render title cut at 80 chars, first author · year, and snippet w
   );
 
   const container1 = el1.children[0];
-  const titleChild1 = container1.children.find((c: any) => c.className === "daito-suggest-title");
-  const metaChild1 = container1.children.find((c: any) => c.className === "daito-suggest-meta");
-  const snippetChild1 = container1.children.find((c: any) => c.className === "daito-suggest-snippet");
+  const titleChild1 = container1.children.find((c: any) => c.className === "semantero-suggest-title");
+  const metaChild1 = container1.children.find((c: any) => c.className === "semantero-suggest-meta");
+  const snippetChild1 = container1.children.find((c: any) => c.className === "semantero-suggest-snippet");
 
   assert.ok(titleChild1);
   assert.strictEqual(titleChild1.text.length, 80); // 79 + "…"
@@ -555,7 +555,7 @@ test("I11 rows render title cut at 80 chars, first author · year, and snippet w
   );
 
   const container2 = el2.children[0];
-  const snippetChild2 = container2.children.find((c: any) => c.className === "daito-suggest-snippet");
+  const snippetChild2 = container2.children.find((c: any) => c.className === "semantero-suggest-snippet");
   assert.strictEqual(snippetChild2, undefined, "Snippet must not be rendered when inlineShowSnippet = false");
 });
 

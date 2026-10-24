@@ -37,7 +37,7 @@ test("R18 '..' escape rejected → filePath null and no file actions", () => {
   ix.papers[i].path = saved;
   assert.strictEqual(vm.filePath, null);
   for (const a of ["paste-file", "copy-file", "copy-path", "reveal", "quicklook"]) assert.ok(!vm.actions.includes(a), a);
-  assert.ok(vm.actions.includes("open") && vm.actions.includes("copy-wikilink"));
+  assert.ok(vm.actions.includes("open") && vm.actions.includes("paste-wikilink"));
 });
 
 test("R19 which file: winning chunk's attachment > first PDF > first snapshot > none", () => {

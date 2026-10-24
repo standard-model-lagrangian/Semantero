@@ -122,17 +122,17 @@ test("IM1 Tab is bound to insert the selected suggestion, like Enter", () => {
   assert.strictEqual(ret, false, "Tab default (indent) is prevented");
 });
 
-test("IM2 semantic gate uses shouldRunSemantic: 'stiff g' does not embed, 'stiff gels ' does", async () => {
+test("IM2 semantic gate uses shouldRunSemantic: 'stiff g' does not embed, 'stiff gels' does, without its trailing space", async () => {
   const { clock, calls, controller } = setup(async () => new Float32Array(4).fill(1), { minCharsSemantic: 12 });
   await controller.getSuggestions("stiff g", {});
   clock.advance(300);
   await flush();
-  assert.deepStrictEqual(calls, [], "only one complete token: no embed");
+  assert.deepStrictEqual(calls, [], "the last word is too short to count: no embed");
 
   await controller.getSuggestions("stiff gels ", {});
   clock.advance(300);
   await flush();
-  assert.deepStrictEqual(calls, ["stiff gels "]);
+  assert.deepStrictEqual(calls, ["stiff gels"]);
 });
 
 test("IM3 minCharsSemantic setting is honoured", async () => {
@@ -193,7 +193,7 @@ test("IM7 'Semantic search unavailable' is a single footer row, not one per pape
   for (const item of latest) {
     const el = fakeEl();
     controller.renderSuggestion(item, el);
-    footers += allClasses(el).filter((c) => c === "daito-suggest-footer").length;
+    footers += allClasses(el).filter((c) => c === "semantero-suggest-footer").length;
   }
   assert.strictEqual(footers, 1);
   assert.strictEqual(latest[latest.length - 1].type, "footer", "footer is the last row");
@@ -214,12 +214,12 @@ test("IM9 title is cut at 80 characters including the ellipsis", () => {
   const { controller } = setup(async () => null);
   const el = fakeEl();
   controller.renderSuggestion({ type: "paper", paper: paper("x", "A".repeat(95)) }, el);
-  const title = el.children[0].children.find((c: any) => c.className === "daito-suggest-title");
+  const title = el.children[0].children.find((c: any) => c.className === "semantero-suggest-title");
   assert.strictEqual(title.text.length, 80);
   assert.ok(title.text.endsWith("…"));
   const el2 = fakeEl();
   controller.renderSuggestion({ type: "paper", paper: paper("y", "B".repeat(80)) }, el2);
-  const title2 = el2.children[0].children.find((c: any) => c.className === "daito-suggest-title");
+  const title2 = el2.children[0].children.find((c: any) => c.className === "semantero-suggest-title");
   assert.strictEqual(title2.text, "B".repeat(80), "exactly 80 is not cut");
 });
 
@@ -250,4 +250,42 @@ test("IM12 onTrigger calls findTrigger before isExcludedContext (sections untouc
   });
   assert.strictEqual(controller.onTrigger({ line: 0, ch: 10 }, "plain text here", sections), null);
   assert.strictEqual(touched, 0);
+});
+
+test("a whitespace edit keeps the merged list instead of flashing keyword-only results", async () => {
+  const { clock, calls, controller } = setup(async () => new Float32Array(4).fill(1));
+  const shown: SuggestionItem[][] = [];
+  const suggest: FakeSuggestLike = { suggestions: { values: [], setSuggestions(items) { shown.push(items); this.values = items; } } };
+  await controller.getSuggestions("stiff gels", suggest);
+  clock.advance(300);
+  await flush();
+  assert.strictEqual(shown.length, 1, "the semantic merge was applied");
+  const merged = shown[0];
+
+  for (const q of ["stiff gels ", "stiff gels", "stiff  gels  "]) {
+    assert.strictEqual(await controller.getSuggestions(q, suggest), merged, JSON.stringify(q));
+  }
+  clock.advance(300);
+  await flush();
+  assert.deepStrictEqual(calls, ["stiff gels"], "no new embedding");
+  assert.strictEqual(shown.length, 1, "no re-render");
+});
+
+test("a whitespace edit while semantic is pending lets the merge land", async () => {
+  const { clock, calls, controller } = setup(async () => new Float32Array(4).fill(1));
+  const shown: SuggestionItem[][] = [];
+  const suggest: FakeSuggestLike = { suggestions: { values: [], setSuggestions(items) { shown.push(items); this.values = items; } } };
+  const first = await controller.getSuggestions("stiff gels", suggest);
+  clock.advance(100);
+  assert.strictEqual(await controller.getSuggestions("stiff gels ", suggest), first);
+  clock.advance(200);
+  await flush();
+  assert.deepStrictEqual(calls, ["stiff gels"]);
+  assert.strictEqual(shown.length, 1, "the pending merge was not cancelled");
+
+  // a real edit still re-ranks
+  await controller.getSuggestions("stiff gel", suggest);
+  clock.advance(300);
+  await flush();
+  assert.deepStrictEqual(calls, ["stiff gels", "stiff gel"]);
 });

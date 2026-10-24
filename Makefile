@@ -4,9 +4,12 @@ RUFF   ?= $(shell command -v ruff 2>/dev/null || echo uvx ruff)
 PLUGIN := obsidian/paper-search
 LAUNCHER := launcher-core
 
-.PHONY: check test test-py test-ts test-launcher test-swift lint typecheck build bundle-fresh fixtures record-conformance app install-app bench-app app-selftest dev-setup install-global
+.PHONY: check ci test test-py test-ts test-launcher test-swift lint typecheck build bundle-fresh fixtures record-conformance app install-app bench-app app-selftest dev-setup install-global pplx-convert pplx-setup test-pplx
 
 check: lint typecheck test bundle-fresh
+
+# What GitHub Actions runs (.github/workflows/ci.yml): `check` without the Swift suite, which stays local.
+ci: lint typecheck test-py test-ts test-launcher bundle-fresh
 
 # Everything a fresh clone needs for `make check` (test-swift additionally needs full Xcode).
 dev-setup:
@@ -15,7 +18,7 @@ dev-setup:
 	cd $(PLUGIN) && npm install
 	cd $(LAUNCHER) && npm install
 
-test: test-py test-ts test-launcher test-swift
+test: test-py test-ts test-launcher test-swift test-pplx
 
 test-py:
 	$(PY) -m unittest discover -s tests
@@ -30,26 +33,26 @@ test-swift:
 test-swift-tsan:
 	cd macos && swift test --sanitize=thread
 
-# Builds macos/build/Daito Search.app (see macos/scripts/bundle.sh for signing).
+# Builds macos/build/Semantero.app (see macos/scripts/bundle.sh for signing).
 app:
 	bash macos/scripts/bundle.sh
 
 install-app: app
-	rm -rf "/Applications/Daito Search.app"
-	cp -R "macos/build/Daito Search.app" /Applications/
+	rm -rf "/Applications/Semantero.app"
+	cp -R "macos/build/Semantero.app" /Applications/
 	@echo "installed to /Applications; open it once so macOS registers the Spotlight action"
 
-# The global setup in one go: notes index (must be enabled in config.local.toml first) + the Daito Search app.
+# The global setup in one go: notes index (must be enabled in config.local.toml first) + the Semantero app.
 install-global:
 	@$(PY) -c "import sys; sys.path.insert(0, '.'); from planner import config, notesindex; sys.exit(0 if notesindex.notes_enabled(config.load()) else 'The notes index is off. Add to config.local.toml:\n  [notes]\n  enabled = true\n  exclude = [\"Templates/**\", \"Threads.md\", \"Zotero Template.md\", \"Zotero Citation Template.md\"]  # + your private notes\nSee docs/INSTALL.md (Global setup).')"
 	$(PY) -m planner notes index
 	$(MAKE) install-app
-	@echo "Global setup done. Open Daito Search once (allow Documents access), then press ⌥Space."
+	@echo "Global setup done. Open Semantero once (allow Documents access), then press ⌥Space."
 
 # Drives the built app's real panel with synthetic key events (no permissions needed) and prints a pass/fail report.
 app-selftest: app
 	rm -f macos/build/selftest.json
-	DAITO_SELFTEST="$(CURDIR)/macos/build/selftest.json" "macos/build/Daito Search.app/Contents/MacOS/DaitoSearch"
+	SEMANTERO_SELFTEST="$(CURDIR)/macos/build/selftest.json" "macos/build/Semantero.app/Contents/MacOS/Semantero"
 	@python3 -c "import json; d=json.load(open('macos/build/selftest.json')); [print(('ok  ' if s['ok'] else 'FAIL'), s['name'], '|', s['detail'][:70]) for s in d['steps']]; raise SystemExit(0 if d['summary']['passed']=='yes' else 1)"
 
 # Spike S1: JavaScriptCore vs Accelerate on your vault (VAULT=... to override).
@@ -83,3 +86,23 @@ fixtures:
 
 record-conformance:
 	cd $(LAUNCHER) && npm run record
+
+# Embedding profiles (profiles.toml, docs/EMBED_INSTALLS.md). The pplx-embed-v2-late profile needs a frozen model and
+# its service: `make pplx-convert` once (downloads, converts, checks parity), then `make pplx-setup`.
+PPLX_VENV := $(HOME)/Library/Application Support/Semantero/pplxd-venv
+
+pplx-convert:
+	bash pplx/convert/convert.sh
+
+pplx-setup:
+	test -x "$(PPLX_VENV)/bin/python" || uv venv --python 3.12 "$(PPLX_VENV)"
+	uv pip install --python "$(PPLX_VENV)/bin/python" -r pplx/requirements-pplxd.txt
+	mkdir -p logs
+	cp launchd/com.planner.pplxd.plist ~/Library/LaunchAgents/
+	launchctl bootout gui/$$(id -u)/com.planner.pplxd 2>/dev/null || true
+	launchctl bootstrap gui/$$(id -u) ~/Library/LaunchAgents/com.planner.pplxd.plist
+
+# The service tests need numpy, which only the pplxd venv has; skipped (with a note) when it doesn't exist.
+test-pplx:
+	@if [ -x "$(PPLX_VENV)/bin/python" ]; then "$(PPLX_VENV)/bin/python" -m unittest tests.test_pplx; \
+	else echo "test-pplx: skipped (no pplxd venv; make pplx-setup)"; fi

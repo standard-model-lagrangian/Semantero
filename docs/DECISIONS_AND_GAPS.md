@@ -160,11 +160,11 @@ All execution speed budgets specified in `INTEGRATION_SPEC.md` were benchmarked 
 
 ## Launcher (docs/LAUNCHER_SPEC.md): implementation log
 
-Implemented 22 Oct 2026. **Not committed.** Automated: Python 130 tests, plugin 161, `launcher-core` 41 (+3 gated perf), Swift 60 (also clean under Thread Sanitizer), 84 conformance cases passing in Node, in the JavaScriptCore bundle and in Swift. **Not verified (needs a person at the screen):** the manual checks in `macos/CHECK.md`, notably S2 (paste into other apps), S3 (Spotlight calling the intent live) and S4 (Core Spotlight items showing in ⌘Space). The built panel was captured with `cacheDisplay` (`DAITO_SHOW_PANEL=… DAITO_SNAPSHOT=…`): layout, text, bold matches, detail pane and footer render; glass, SF Symbols and the status dot do not show up in that capture, so the look is unchecked.
+Implemented 22 Oct 2026. **Not committed.** Automated: Python 130 tests, plugin 161, `launcher-core` 41 (+3 gated perf), Swift 60 (also clean under Thread Sanitizer), 84 conformance cases passing in Node, in the JavaScriptCore bundle and in Swift. **Not verified (needs a person at the screen):** the manual checks in `macos/CHECK.md`, notably S2 (paste into other apps), S3 (Spotlight calling the intent live) and S4 (Core Spotlight items showing in ⌘Space). The built panel was captured with `cacheDisplay` (`SEMANTERO_SHOW_PANEL=… SEMANTERO_SNAPSHOT=…`): layout, text, bold matches, detail pane and footer render; glass, SF Symbols and the status dot do not show up in that capture, so the look is unchecked.
 
 ### Spike S1: the ranker decision (measured here, M-series Mac, macOS 26.6, Xcode 27.1)
 
-Real library (170 papers, 145 notes, 9,100 chunks, 1× = today) and the spec's 3× synthetic (500 papers × 50 chunks + 2,000 notes × 3 chunks, 1,024 dims). `make bench-app`; `daito-bench --memprobe`.
+Real library (170 papers, 145 notes, 9,100 chunks, 1× = today) and the spec's 3× synthetic (500 papers × 50 chunks + 2,000 notes × 3 chunks, 1,024 dims). `make bench-app`; `semantero-bench --memprobe`.
 
 | | Budget (1× / 3×) | Real 1×, **no** JIT entitlement | Real 1×, allow-jit | 3×, **no** JIT | 3×, allow-jit |
 |---|---|---|---|---|---|
@@ -176,12 +176,12 @@ Real library (170 papers, 145 notes, 9,100 chunks, 1× = today) and the spec's 3
 | M7 Accelerate vector pass alone, p95 | | 0.8 ms | 0.6 ms | 2.7 ms | 2.0 ms |
 
 **Decision (rule 1, then rule 2): option A, all JavaScriptCore**, with two conditions the app now enforces:
-1. **The JIT entitlement is mandatory.** Without `com.apple.security.cs.allow-jit` JavaScriptCore runs interpreted (even ad hoc signed, even without the hardened runtime): the vector loop is 30× slower and load 3× slower. `macos/Resources/DaitoSearch.entitlements` carries it and `bundle.sh` always signs with it. An unsigned or plain `swift run` build is slow; that is expected.
+1. **The JIT entitlement is mandatory.** Without `com.apple.security.cs.allow-jit` JavaScriptCore runs interpreted (even ad hoc signed, even without the hardened runtime): the vector loop is 30× slower and load 3× slower. `macos/Resources/Semantero.entitlements` carries it and `bundle.sh` always signs with it. An unsigned or plain `swift run` build is slow; that is expected.
 2. **`JSC_useFTLJIT=0` and `JSC_useDFGJIT=0`** (`JSCRanker.configureProcess()`, called before the first JavaScriptCore use). With the default tiers the process held 500–800 MB; without the top two tiers the steady state is 112–200 MB with load, keyword and hybrid times unchanged (hybrid A 7.6 ms at 1×, 28 ms at 3×).
 
 Option B (`AcceleratedRanker`) is built and passes the same 84 conformance cases; it is the ready fallback if M3 ever regresses (`rankerOption` in `AppModel.swift`). Option C (a Swift port) is not needed.
 
-M4 (memory, budget ≤ 250 MB at 1×): **met in the running app, by a workaround I do not fully understand.** Parsing 15 MB of chunk text and building the index churns ~1 GB; JavaScriptCore keeps that as dirty pages until a virtual machine is torn down. In a probe, the *third* load in a process drops the footprint from ~900 MB to ~150 MB; the second does not. `JSGarbageCollect` (an asynchronous hint), `malloc_zone_pressure_relief`, and a throwaway VM do nothing. So `AppModel.start` performs the first load and then **two compaction reloads** (`IndexReloader.forceReload()`, 4 s apart, old engine serving queries throughout); the running app then shows `footprint` = 112 MB. This is empirical and may change with a macOS update; `make bench-app` plus `daito-bench --memprobe` re-checks it. `ps` RSS reads high (1.1 GB) because it counts reclaimable pages; `footprint` / Activity Monitor "Memory" is the real figure.
+M4 (memory, budget ≤ 250 MB at 1×): **met in the running app, by a workaround I do not fully understand.** Parsing 15 MB of chunk text and building the index churns ~1 GB; JavaScriptCore keeps that as dirty pages until a virtual machine is torn down. In a probe, the *third* load in a process drops the footprint from ~900 MB to ~150 MB; the second does not. `JSGarbageCollect` (an asynchronous hint), `malloc_zone_pressure_relief`, and a throwaway VM do nothing. So `AppModel.start` performs the first load and then **two compaction reloads** (`IndexReloader.forceReload()`, 4 s apart, old engine serving queries throughout); the running app then shows `footprint` = 112 MB. This is empirical and may change with a macOS update; `make bench-app` plus `semantero-bench --memprobe` re-checks it. `ps` RSS reads high (1.1 GB) because it counts reclaimable pages; `footprint` / Activity Monitor "Memory" is the real figure.
 
 Things tried and ruled out for memory: typed-array postings in `bm25.ts` (kept: it is correct and faster to build, JSC footprint unchanged), removing the redundant hash operations in `BM25Index.build` (kept: −22 % build time in V8), `JSC_forceRAMSize` / `JSC_smallHeapRAMFraction` / `JSC_useGenerationalGC` (small or no effect), `$vm.gc()` (not available in the system JavaScriptCore).
 
@@ -190,7 +190,7 @@ Other S1 fixes: JSON is decoded natively in Swift and passed as strings (the JS 
 ### Spikes S2–S4 (cannot be settled without a screen)
 
 - **S2 (non-activating panel + ⌘V):** built as specified (`NSPanel` `.nonactivatingPanel`, `CGEvent` ⌘V after a 60 ms settle, copy-only fallbacks). Untested in Mail/Teams/Chrome/Claude/Terminal. `osascript` could not drive keystrokes (no Accessibility permission for this shell).
-- **S3 (Spotlight action):** `OpenResultIntent`, `SearchResultEntity`, `SearchResultQuery: EntityStringQuery`, `AppShortcutsProvider` ("Search Everything in Daito Search"). `bundle.sh` now produces `Metadata.appintents` (xcodebuild for the `.swiftconstvalues`, then `appintentsmetadataprocessor`; the metadata lists the three intents, the entity, the query and the phrases). Whether Spotlight calls the query live per keystroke is unknown until you try (N-M13).
+- **S3 (Spotlight action):** `OpenResultIntent`, `SearchResultEntity`, `SearchResultQuery: EntityStringQuery`, `AppShortcutsProvider` ("Search Everything in Semantero"). `bundle.sh` now produces `Metadata.appintents` (xcodebuild for the `.swiftconstvalues`, then `appintentsmetadataprocessor`; the metadata lists the three intents, the entity, the query and the phrases). Whether Spotlight calls the query live per keystroke is unknown until you try (N-M13).
 - **S4 (Core Spotlight entries):** `SpotlightDonor` + `CoreSpotlightIndex` + `NSUserActivity` handling are in; the app ran here and donated its items to your Spotlight index (domains `papers`, `notes`; turn them off in Settings, which deletes them). Not checked in ⌘Space.
 
 ### Budgets (acceptance table)
@@ -227,7 +227,7 @@ Other S1 fixes: JSON is decoded natively in Swift and passed as strings (the JS 
 - A paper row whose literature note won shows the note's heading/snippet and `↵` opens the note, but `⌘↵` / file actions still use the **paper's PDF**; the citation actions use the winner's text.
 - `ResultVM` gained `openLabel` (footer text). Note citations drop a leading `Title › ` when the note's first H1 equals its title.
 - A corpus with a different `query_instruction` is treated like a model/dims mismatch (keyword-only).
-- `Engine.lookup(ids)` and `daito.shouldRunSemantic()` were added to the API (Spotlight id resolution; the gating rule stays single-sourced in `rank.ts`). `interleaveSemantic` engine option implements the spec's per-corpus-instruction fallback for `eval.ts --per-corpus-instruction`.
+- `Engine.lookup(ids)` and `semantero.shouldRunSemantic()` were added to the API (Spotlight id resolution; the gating rule stays single-sourced in `rank.ts`). `interleaveSemantic` engine option implements the spec's per-corpus-instruction fallback for `eval.ts --per-corpus-instruction`.
 - Dates in view models use the machine's time zone; tests and conformance run with `TZ=UTC` (`make test-launcher` sets it).
 - The engine refactor (`rowScores` + `semanticFromRowScores`) and the BM25 changes live in the plugin's shared files, so the plugin's `main.js` must be rebuilt (done by `make check`'s `build`).
 
@@ -237,8 +237,8 @@ Other S1 fixes: JSON is decoded natively in Swift and passed as strings (the JS 
 - Hotkey registration uses Carbon `RegisterEventHotKey` (needs no permission); `⌥Space` may collide with other apps (a failure shows a toast).
 - Login item registers only when the app runs from `/Applications` or `~/Applications`.
 - Panel closes on losing key status, on Esc, and on clicks outside. `panelWillShow` clears the query after 60 s.
-- Signing: **0 Apple Development identities are in your keychain**, so `make app` ad-hoc signs. That works, but the Accessibility permission will have to be re-granted after every rebuild until you create a free "Personal Team" certificate (Xcode → Settings → Accounts). `bundle.sh` picks one up automatically (or `DAITO_SIGN_IDENTITY`).
-- Debug aids (documented in AGENTS.md): `DAITO_DEBUG=1`, `DAITO_SHOW_PANEL="<query>"`, `DAITO_SNAPSHOT=<png>`.
+- Signing: **0 Apple Development identities are in your keychain**, so `make app` ad-hoc signs. That works, but the Accessibility permission will have to be re-granted after every rebuild until you create a free "Personal Team" certificate (Xcode → Settings → Accounts). `bundle.sh` picks one up automatically (or `SEMANTERO_SIGN_IDENTITY`).
+- Debug aids (documented in AGENTS.md): `SEMANTERO_DEBUG=1`, `SEMANTERO_SHOW_PANEL="<query>"`, `SEMANTERO_SNAPSHOT=<png>`.
 
 ### Spec deviations (all small)
 - Per-note `state.json` replaced as above. `docs/LAUNCHER_SPEC.md` still describes the original.
@@ -274,15 +274,15 @@ Not fixed (by choice, see CHECK.md): JavaScriptCore can't be told to stop the id
   renders nearly transparent. Now: an opaque card (window background colour, border, shadow) drawn outside the glass
   container, over a dimmed panel, anchored bottom-right above the footer, with the result it acts on as a header, an icon
   per action, aligned shortcut glyphs, a scrolling list (max 300 pt) that follows the selection, and the panel grows
-  when it is too short for the menu. Checked by capture (`DAITO_SNAPSHOT_ACTIONS=1`).
-- Test modes (`DAITO_SELFTEST`, `DAITO_SNAPSHOT`) no longer register the hotkey or the login item, so they can run next
+  when it is too short for the menu. Checked by capture (`SEMANTERO_SNAPSHOT_ACTIONS=1`).
+- Test modes (`SEMANTERO_SELFTEST`, `SEMANTERO_SNAPSHOT`) no longer register the hotkey or the login item, so they can run next
   to the installed app. The self-test waits for the semantic merge instead of a fixed 1.5 s (one flaky run in ten).
 
 ### Memory pass (22 Oct 2026)
 
 Reported: the installed app at 700–820 MB. `vmmap` showed 660 MB of *live* allocations in JavaScriptCore's allocator
 (1.39 M allocations). New tooling: `JSCPrivate` (exported but unheadered JavaScriptCore functions: live heap
-statistics, object counts by type, a synchronous full GC) and `daito-bench --heapprobe / --parseprobe / --dropprobe /
+statistics, object counts by type, a synchronous full GC) and `semantero-bench --heapprobe / --parseprobe / --dropprobe /
 --notesprobe`.
 
 **Findings and fixes, in order of effect**
@@ -293,7 +293,7 @@ statistics, object counts by type, a synchronous full GC) and `daito-bench --hea
 | BM25 kept 4 Maps × 65k terms and 2–4 small typed arrays per term (529k live objects) | postings in compressed-sparse-row form (`offsets`/`ids`/`scores` per list), term ids = positions in the sorted vocabulary, document frequency in an `Int32Array`; build uses term ids and per-chunk typed arrays. Same scores and order (plugin goldens, 84 conformance cases) | objects 529k → 111k; heap (incl. external) 122 → 98 MB |
 | Vocabulary words were slices of lowercased chunk copies, pinning them | one JSON round trip makes flat copies | 98 → 89 MB |
 | Chunk texts as JS strings: 30 MB (81 % of chunks contain a non-Latin-1 character, so whole strings are 2 bytes a character) | `TextStore`: all chunk texts as WTF-8 in one byte array, decoded on demand by a getter on each chunk (shared core, so the plugin gets it too); repeated attachment keys and headings interned | 89 → 74 MB; settled footprint **102 MB** |
-| A notes-only change rebuilt both corpora (0.5 s, a ~450 MB transient) | `daito.loadNotes` / `NotesReloading.reloadNotes`: swap only the notes corpus in the current engine (21 ms incl. a 1.2 ms synchronous GC), for notes indexes up to 4 MB of chunks; bigger ones take the full off-actor rebuild | repeated note edits: flat at **110 MB** (without the GC: +15 MB per edit) |
+| A notes-only change rebuilt both corpora (0.5 s, a ~450 MB transient) | `semantero.loadNotes` / `NotesReloading.reloadNotes`: swap only the notes corpus in the current engine (21 ms incl. a 1.2 ms synchronous GC), for notes indexes up to 4 MB of chunks; bigger ones take the full off-actor rebuild | repeated note edits: flat at **110 MB** (without the GC: +15 MB per edit) |
 | The all-JavaScriptCore vector pass measured 20–54 ms per query with the reduced JIT tiers (budget 40) | the app runs option B (Accelerate vector pass): 2.3–3.0 ms p95. Option A remains, conformance-tested | hybrid p95 ~3 ms |
 
 What the remaining ~100 MB is (drop probe): paper vectors 37 MB (memory-mapped `vectors.f32`: clean file pages,
@@ -312,7 +312,7 @@ records + packed text 16 MB, notes 3 MB, other JS ~2 MB; the rest is the Swift/S
 | `search stats` | 0.12 s, 213 MB | 0.05 s, 33 MB | chunk count from the manifest instead of loading every chunk |
 | 5-minute tick, notes index no-op, watcher no-op | < 0.4 s, ~28 MB | unchanged | already cheap |
 
-**Ollama** (not daito's process, but loaded on its behalf): the embedding model's process holds ~400 MB footprint
+**Ollama** (not Semantero's process, but loaded on its behalf): the embedding model's process holds ~400 MB footprint
 (~950 MB resident) while loaded. `keep_alive` was 30 min everywhere; now 5 min by default (app setting "Keep the model
 loaded for", `config.toml` `[search] keep_alive`, the plugin's `DEFAULT_KEEP_ALIVE`). The app and the plugin warm the
 model when their search opens, so the cold start (measured 0.85 s; keyword results are instant anyway) is mostly hidden.
@@ -326,7 +326,118 @@ chunk text out of JavaScript entirely (Python would have to write a second forma
 ### Two setups in one repo (22 Oct 2026)
 
 `launcher-app` merged into `main`. The repository serves two setups: **Obsidian only** (plugin + Zotero watcher;
-`./setup-search.sh`) and **Global** (+ notes index + Daito Search.app; `make install-global`). `config.toml` now ships
+`./setup-search.sh`) and **Global** (+ notes index + Semantero.app; `make install-global`). `config.toml` now ships
 with `[notes] enabled = false`, so the Obsidian-only setup never reads notes and `planner doctor` doesn't expect a
 notes index; the global setup opts in in `config.local.toml` (test `TestShippedConfig` pins the shipped default).
 `make install-global` refuses to run until the notes index is enabled, so private-note excludes are set first.
+
+### Embedding installs (23 Oct 2026)
+
+Plan: [EMBED_BENCH_PLAN.md](EMBED_BENCH_PLAN.md); guide: [EMBED_INSTALLS.md](EMBED_INSTALLS.md). The plan's separate
+side-by-side bench app was replaced, at the owner's request, by **profiles**: one index per model, switched in the real
+plugin and app (`planner profile list|build|use`, `profiles.toml`, `<data_dir>/profile.json` → `[search]` overrides in
+`config.load`). A switch is two folder renames per corpus under both index locks; only the live profile is kept fresh.
+
+- **Lineup:** Qwen3-Embedding 0.6B (Q8_0, 1024), 4B (Q8_0, 2560), 8B (Q4_K_M, 4096; Q8_0 is 8.1 GB), and
+  pplx-embed-v2-late-0.6b. The 9B pplx models don't fit next to anything else on 16 GB and were not tried.
+- **pplx runs frozen** on llama.cpp `b11829` (`pplx/`): the converter needed a text-only staging copy and two metadata
+  keys (bidirectional attention, pooling none); the Dense projection, skiplist and normalisation run in `pplxd`. Parity
+  against sentence-transformers 6.2.0: ids 70/70, per-token cosine ≥ 0.99993 at Q8_0, top-1 20/20.
+- **Late interaction in a one-vector-per-row index:** `vectors.f32` holds each row's mean token vector, whose SHA-256 is
+  the key into an append-only token cache outside the vault. No change to the index format, the incremental reuse or
+  the swaps; manifests of pplx indexes add `backend` and `backend_url`. Readers get per-row MaxSim scores from `pplxd`
+  (`/rowscores`, checked against the loaded `content_hash`) and rank them with the existing row-score paths:
+  `hybridSearchFromScores` / `semanticFromRowScores` in the plugin, `hybridFromRowScores` in the app (now on `Ranker`).
+- **Scores:** pplx returns MaxSim / query tokens. `relatedMinScore` stays at its 0.6B calibration for every profile.
+- **numpy** is a dependency of `pplxd` only, in its own venv; the main venv still has only `anthropic`, and the
+  service's tests run under `make test-pplx` (skipped when that venv is missing).
+- **Build cost** dominates: on the M4, Ollama embeds the 4B at ~45–65 s per batch of 32 chunks (~4 h for the library),
+  the 8B slower. Builds run one at a time.
+- Open: which model wins (the owner judges by use); if a bigger Qwen wins, whether its 1024-dim Matryoshka cut (derivable
+  from stored vectors) is as good; if pplx wins, a Swift MaxSim (Accelerate) instead of the service is possible but
+  not needed for speed.
+- **4B and 8B dropped (same day, before any was built):** on the M4 the 4B embeds ~200 tok/s (a 4–6 h library build,
+  the 8B 8 h+) and holds 4.4–5 GB while loaded. Whatever they gain over the 0.6B is marginal next to that: new papers
+  and notes would need scheduled embedding instead of being indexed as they arrive. The lineup is now the current 0.6B
+  vs pplx-embed-v2-late-0.6b, two models of the same size with different designs (one vector per row vs per token).
+
+### Trailing space changed the results (24 Oct 2026)
+
+Reported: the same query gave different results with and without a space after the last word. Reproduced on the real
+index (173 papers, 152 notes): `viscoelastic hydrogel` shared 7 of its 15 keyword results with `viscoelastic hydrogel `;
+`neural stem` ran semantic search only with the space. RRF only passed differences through; three things caused them.
+
+- **Keyword side (by design until now):** a trailing space marked the last word complete, so it matched exactly instead
+  of by prefix (`hydrogel ` lost `hydrogels`). Now the last word always prefix-matches, whatever follows it (spaces,
+  tabs, newlines, punctuation); only a trailing stopword finishes it. To keep prefix matching from rewarding rare
+  variants, a longer word is scored as if it were no rarer than the typed word (or, while that isn't a term, the most
+  frequent expansion), and counts half when the typed word is a term. Before, `transfer` let `transferrin` (df 3) beat
+  `transfer` (df 231) and put an imaging paper first for `mitochondria transfer`; `cells` expanded to 58 terms such as
+  `cells121` (citation numbers glued on by PDF extraction). Without the half weight `cell` tied with `cellular` and
+  the tie went by index order.
+- **Semantic gate:** "2 complete words" counted a trailing space. Now: 2 words, the last one 3+ characters or a digit
+  (where it starts to count for keyword search), or 12+ characters after trimming.
+- **Embedding (a bug):** the app (`QueryController`, `IntentSearchService`) and the plugin (modal, `@@`) embedded the
+  raw text, so `Query: neural stem ` got its own vector (cosine 0.991–0.998 to the trimmed one, enough to reorder the
+  top 5). Both now embed `semanticText(q)` (trimmed, inner whitespace runs made one space; `rank.ts` and Swift).
+
+Checked after the fix: 1,744 whitespace variants of 872 queries (every 1–3-word title prefix of the papers and notes,
+plus the eval set) and 119 hand-picked ones (double, leading, tab, newline, NBSP) give identical results and snippets,
+keyword and hybrid with the real Ollama embeddings. New conformance cases (trailing and doubled spaces) pin it for the
+app's ranker; the app self-test types a space after `stress relaxation` and gets the same merged list.
+
+Quality: eval set unchanged (keyword MRR 0.91, hybrid 0.94). On 556 title-derived 2–3-word queries, keyword MRR
+0.7759 (old: 0.7731 without the space, 0.7759 with), hybrid 0.8250 (old: 0.8221 / 0.8319). Most of the remaining gap
+to "old with space" is the embedding: oddly, embedding *with* a trailing space scored 0.8301 here, but it was better
+for papers (+0.012) and worse for notes (−0.007) and identical on the eval set, so it reads as noise; the trimmed text
+stays. Uncapped expansion (0.8270 hybrid, 0.7731 keyword) was not kept: it keeps the `transferrin` failure.
+
+Still differs, on purpose:
+- **Case and punctuation change the hybrid results** (`Neural Stem`, `neural stem?`): keyword ranking and the gate
+  ignore them, but the embedding model reads them as content. Not normalised.
+- **A short last word can no longer be forced with a space:** `il ` no longer matches `il`, and `vitamin d` /
+  `hepatitis b` (under 12 characters, last word one letter) don't run semantic search. Before, typing the space did
+  both. Not in last place, short words match (`il 6`).
+- **Only the last word is a prefix:** `hydrogel cells` matches `hydrogel` exactly, `cells hydrogel` also matches
+  `hydrogels`. Typing a short next word turns the previous one exact (`stiff` → `stiff g`).
+
+Open:
+- **Junk terms stay in the vocabulary** (`cells121`, `hydrogelhydrogel`): the idf cap makes them harmless for ranking;
+  splitting glued citation numbers at index time would also split real terms (`covid19`, `caco2`), so it is not done.
+- **Self-test run without notes, not reproduced (1 of 8 runs):** the first self-test after a fresh build showed 0
+  recent notes and, for `stress relaxation`, exactly the papers-only hybrid order, as if the notes corpus were missing
+  for a few seconds; status still said 152 notes. Seven later runs (a fresh build, a cold Ollama, one during a notes
+  rebuild) passed. Worth watching for if recent notes ever come up empty.
+
+Follow-up, same day: typing or deleting the space still made the list change for a moment. Every keystroke re-ran
+the query, which shows keyword-only results at once and the merge 200 ms later; the final list was the same, but the
+keyword-only one flashed in between. Now an edit that changes only whitespace re-sends the list on screen (and lets a
+pending merge land under the new text) in the app (`QueryController`), the plugin's modal and `@@`; the selection
+stays put. A second source of the same flash: when the 5-minute job re-indexes an edited note, the app reloads and
+re-ranks the open query. A forced re-rank of the same query now keeps a merged list on screen until the new merge
+replaces it. The app self-test samples the list every 20 ms for 0.8 s after typing and after deleting the space.
+Note that the self-test opens a real panel that takes keyboard focus: typing elsewhere while it runs lands in it
+(one run got `ath do` before `stress relaxation`), which may also explain the run without notes above.
+
+### Renamed to Semantero (24 Oct 2026)
+
+The repository was already called Semantero; the app, plugin and code still said Daito. Now everything does:
+`Semantero.app` (bundle id `dev.semantero.app`, executable `Semantero`), SwiftPM targets `Semantero`, `SemanteroKit`,
+`SemanteroBench` (`semantero-bench`), the plugin `semantero` ("Semantero", CSS classes `semantero-*`, view type
+`semantero-related-papers`), the bundle's global `semantero`, `SEMANTERO_*` environment variables, and one support
+folder, `~/Library/Application Support/Semantero/`, for the app's `spotlight.json` and the pplx service's files. (Two
+folders, `Semantero` for the app and `semantero` for pplx, would be the same folder: macOS names are case-insensitive.)
+
+Migration, done once on the owner's Mac:
+- **App settings** are imported on the first launch under the new id (`SettingsStore.importLegacySettings`, only the
+  app's own keys, never over a value already set, once). Spotlight entries are not reused: the old app was run once
+  with its Spotlight options and launch-at-login off, which deleted its 325 entries and its login item, then removed
+  with its preferences, cache and state folder. A disabled "Daito Search" row can linger in Login Items until macOS
+  tidies its background-items database.
+- **pplx** files moved from `Application Support/daito/` into `Application Support/Semantero/`; `runtime.json` now
+  points at the moved llama-server (it is not in `SHA256SUMS`; the binary is, by content), and the launchd job was
+  reinstalled. The uv venvs hold no absolute paths, so they moved as they were.
+- **Obsidian:** the plugin folder link is now `.obsidian/plugins/semantero`; `community-plugins.json`, the hotkey and the
+  saved Related panel in `workspace.json` were switched to the new id. The plugin has no `data.json`, so no settings.
+- The Swift tests made a new preferences domain per run and never removed it (107 `daito-test-*.plist` files). They
+  now reuse one fixed, emptied domain per test.

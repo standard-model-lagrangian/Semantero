@@ -20,7 +20,7 @@ from .vault import future_notes, logical_today
 
 REBUILD = 'cd "{root}" && rm -rf .venv && python3 -m venv .venv && .venv/bin/pip install anthropic'
 JOBS = ["com.planner.morning", "com.planner.weekly"]
-APP_PATHS = [Path("/Applications/Daito Search.app"), Path.home() / "Applications" / "Daito Search.app"]
+APP_PATHS = [Path("/Applications/Semantero.app"), Path.home() / "Applications" / "Semantero.app"]
 
 
 @dataclass
@@ -275,7 +275,7 @@ def check_launcher_app(cfg) -> Result | None:
         return None
     if any(p.exists() for p in APP_PATHS):
         return Result("launcher app", True)
-    return Result("launcher app", True, "Daito Search.app is not installed (optional). Build it with: make install-app")
+    return Result("launcher app", True, "Semantero.app is not installed (optional). Build it with: make install-app")
 
 
 def check_search_tools(cfg) -> Result | None:
@@ -286,6 +286,15 @@ def check_search_tools(cfg) -> Result | None:
         return Result("search tools", False, "pdftotext is not on PATH. Fix: brew install poppler")
 
     model = cfg.search.get("model", "qwen3-embedding:0.6b")
+    if cfg.search.get("backend") == "pplx":
+        from . import pplx
+        h = pplx.health(cfg.search.get("pplx_url", "http://127.0.0.1:11435"))
+        if h is None:
+            return Result("search tools", False, "The pplx service (com.planner.pplxd) is not running. Fix: make pplx-setup")
+        if h.get("model") != model:
+            return Result("search tools", False, f"The pplx service runs {h.get('model')}, but the index needs {model}. "
+                          "Fix: launchctl kickstart -k gui/$(id -u)/com.planner.pplxd")
+        return None
     try:
         res = subprocess.run(["ollama", "list"], capture_output=True, text=True, timeout=5)
         if res.returncode == 0:

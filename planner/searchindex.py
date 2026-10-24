@@ -262,6 +262,8 @@ def build_index(
     batch_size = int(cfg.search.get("batch_size", 32))
     keep_alive = cfg.search.get("keep_alive", "5m")
     ollama_url = cfg.search.get("ollama_url", "http://localhost:11434")
+    backend = cfg.search.get("backend", "ollama")   # "pplx": the pplx-embed-v2-late profile (planner/pplx.py)
+    pplx_url = cfg.search.get("pplx_url", "http://127.0.0.1:11435")
     zotero_dir = Path(cfg.search.get("zotero_dir", "~/Zotero")).expanduser()
 
     with search_lock(cfg, timeout=lock_timeout, blocking=True):
@@ -432,6 +434,8 @@ def build_index(
                                 batch_size=batch_size,
                                 keep_alive=keep_alive,
                                 ollama_url=ollama_url,
+                                backend=backend,
+                                pplx_url=pplx_url,
                             )
                     except Exception as e:
                         print(f"search index: Ollama embedding unavailable ({e}); falling back to keyword-only index", flush=True)
@@ -448,6 +452,8 @@ def build_index(
                             batch_size=batch_size,
                             keep_alive=keep_alive,
                             ollama_url=ollama_url,
+                            backend=backend,
+                            pplx_url=pplx_url,
                         )
 
                 if embed_succeeded and new_vecs is not None:
@@ -570,6 +576,9 @@ def build_index(
                 "content_hash": content_hash,
                 "missing_vectors": missing_vectors,
             }
+            if backend != "ollama":
+                manifest_data["backend"] = backend   # readers score rows through that backend's service, at backend_url
+                manifest_data["backend_url"] = pplx_url
 
             # Build compact state.json (row indices only, vectors live in vectors.f32)
             state_data = {

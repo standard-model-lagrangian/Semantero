@@ -22,7 +22,7 @@ if (prod) {
   await context.rebuild();
   const pluginsDir = path.join(os.homedir(), "Documents", "Obsidian Vault", ".obsidian", "plugins");
   if (fs.existsSync(pluginsDir)) {
-    const linkPath = path.join(pluginsDir, "daito-paper-search");
+    const linkPath = path.join(pluginsDir, "semantero");
     try {
       const st = fs.lstatSync(linkPath);
       if (st.isSymbolicLink() || st.isFile()) {

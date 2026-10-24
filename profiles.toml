@@ -1,0 +1,21 @@
+# Embedding profiles: one paper + notes index per embedding model, to try them in the real plugin and app.
+#   planner profile list             which exist, which is live, sizes and ages
+#   planner profile build NAME       build (or update) NAME's index without touching the live one
+#   planner profile use NAME         make NAME the live index (folder swap, no re-embedding), then catch it up
+# Each entry overrides [search] while it is live. Details and the reasoning behind each choice: docs/EMBED_INSTALLS.md.
+#
+# Both run at Q8_0. Qwen3-Embedding 4B/8B were tried and dropped (23 Oct 2026): a marginal gain for 4-8 h builds and
+# query models of 4.4-5 GB, too slow to keep up with new papers and notes as they arrive (docs/DECISIONS_AND_GAPS.md).
+
+["qwen3-0.6b"]
+label = "Qwen3-Embedding 0.6B (current)"
+backend = "ollama"
+model = "qwen3-embedding:0.6b"           # Q8_0, 639 MB
+dims = 1024                              # native width
+
+["pplx-v2-late"]
+label = "pplx-embed-v2-late 0.6B (late interaction)"
+backend = "pplx"
+model = "pplx-embed-v2-late-0.6b@7bba8e7"   # frozen GGUF (Q8_0) on a pinned llama.cpp; see pplx/README.md
+dims = 128                                   # per token; MaxSim scoring
+pplx_url = "http://127.0.0.1:11435"          # planner pplxd (launchd: com.planner.pplxd)

@@ -30,12 +30,11 @@ export function tokenize(text: string): TokenizeResult {
       tokens.push(part);
     }
   }
-  const hasTrailingSpace = /\s$/.test(text);
-  const lastRaw = rawParts.length > 0 ? rawParts[rawParts.length - 1] : "";
-  const lastIncomplete =
-    !hasTrailingSpace &&
-    tokens.length > 0 &&
-    tokens[tokens.length - 1] === lastRaw;
+  // The last word typed may still be in progress. Trailing spaces and punctuation are ignored here, so a query
+  // ranks the same with or without them; a trailing stopword ("cells in") means the token before it is finished.
+  let lastRaw = "";
+  for (let i = rawParts.length - 1; i >= 0 && !lastRaw; i--) lastRaw = rawParts[i];
+  const lastIncomplete = tokens.length > 0 && tokens[tokens.length - 1] === lastRaw;
   return { tokens, lastIncomplete };
 }
 

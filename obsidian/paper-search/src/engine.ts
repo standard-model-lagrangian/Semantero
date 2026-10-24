@@ -307,8 +307,13 @@ export function hybrid(
  * drops papers that rank well in both but outside one list's top `limit`.
  */
 export function hybridSearch(ix: LoadedIndex, query: string, qVec: Float32Array, limit: number): Hit[] {
+  return hybridSearchFromScores(ix, query, rowScores(ix, qVec), limit);
+}
+
+/** hybridSearch from precomputed row scores (any backend; see semantic.ts). null scores: keyword ranking only. */
+export function hybridSearchFromScores(ix: LoadedIndex, query: string, scores: ArrayLike<number> | null, limit: number): Hit[] {
   const n = ix.papers.length;
   const kw = keyword(ix, query, n, { snippets: false });
-  const sem = semantic(ix, qVec, query, { limit: n, snippets: false });
+  const sem = scores ? semanticFromRowScores(ix, scores, query, { limit: n, snippets: false }) : [];
   return fillSnippets(ix, hybrid(kw, sem, limit), query);
 }

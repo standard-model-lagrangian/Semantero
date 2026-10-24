@@ -29,6 +29,13 @@ for (const q of HYBRID_QUERIES) {
   for (const scope of SCOPES)
     cases.push({ name: `hybrid ${scope}: ${q}`, mode: "hybrid", query: q, scope, limit: 6, qVec: Array.from(v), expect: e.hybrid(q, v, scope, 6) });
 }
+// A trailing space (or doubled spaces) must not change anything: these expect the results of the plain query.
+for (const q of ["viscoel", "stiffer gels", "IL-6 3D", "roth"])
+  cases.push({ name: `keyword all: ${q} + trailing space`, mode: "keyword", query: q.replace(/ /g, "  ") + " ", scope: "all", limit: 8, expect: e.keyword(q, "all", 8) });
+{
+  const q = "stress relaxation neurons", v = fakeVec(q);
+  cases.push({ name: `hybrid all: ${q} + trailing space`, mode: "hybrid", query: q + " ", scope: "all", limit: 6, qVec: Array.from(v), expect: e.hybrid(q, v, "all", 6) });
+}
 cases.push({ name: "recent 5", mode: "recent", query: "", scope: "all", limit: 5, expect: e.recent(5) });
 cases.push({ name: "empty query = recent", mode: "keyword", query: "", scope: "all", limit: 15, expect: e.keyword("", "all", 15) });
 cases.push({ name: "limit 1", mode: "keyword", query: "organoid", scope: "all", limit: 1, expect: e.keyword("organoid", "all", 1) });

@@ -1,7 +1,7 @@
 {
-  "name": "daito-launcher-core",
+  "name": "semantero-launcher-core",
   "version": "1.0.0",
-  "description": "Ranking and view-model core for the Daito Search launcher (runs in Node for tests, in JavaScriptCore in the app)",
+  "description": "Ranking and view-model core for the Semantero launcher (runs in Node for tests, in JavaScriptCore in the app)",
   "private": true,
   "type": "module",
   "scripts": {

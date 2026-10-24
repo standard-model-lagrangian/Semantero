@@ -14,10 +14,16 @@ def embed(
     ollama_url: str = "http://localhost:11434",
     max_retries: int = 3,
     timeout: float = 120.0,
+    backend: str = "ollama",
+    pplx_url: str = "http://127.0.0.1:11435",
 ) -> list[list[float]]:
-    """Embed texts using Ollama /api/embed endpoint with batching, truncation, and L2 normalization."""
+    """Embed texts using Ollama /api/embed endpoint with batching, truncation, and L2 normalization.
+    backend "pplx" (the pplx-embed-v2-late profile) sends them to planner/pplxd.py instead; see planner/pplx.py."""
     if not texts:
         return []
+    if backend == "pplx":
+        from . import pplx
+        return pplx.embed_documents(texts, pplx_url, dims=dims, batch_size=batch_size)
 
     url = f"{ollama_url.rstrip('/')}/api/embed"
     results: list[list[float]] = []

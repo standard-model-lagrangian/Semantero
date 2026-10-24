@@ -1,5 +1,5 @@
 {
-  "name": "daito-paper-search",
+  "name": "semantero",
   "version": "1.0.0",
   "description": "Find papers in your Zotero library from inside Obsidian",
   "type": "module",

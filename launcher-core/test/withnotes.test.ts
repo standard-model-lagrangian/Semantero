@@ -36,15 +36,15 @@ test("R36 notes-only reload picks up changed notes and literature-note links, an
   assert.deepStrictEqual(gone.keyword("matrigel", "notes", 3), []);
 });
 
-test("R37 bundle: daito.loadNotes swaps the notes corpus and keeps answering", () => {
+test("R37 bundle: semantero.loadNotes swaps the notes corpus and keeps answering", () => {
   const ctx = vm.createContext({});
   vm.runInContext(fs.readFileSync(path.resolve(import.meta.dirname, "../dist/ranker.js"), "utf8"), ctx);
   const { papers, notes } = fixtureParts();
-  (ctx as any).daito.load(papers, null);
-  assert.deepStrictEqual(JSON.parse((ctx as any).daito.keyword("matrigel", "notes", 3)), []);
-  const st = JSON.parse((ctx as any).daito.loadNotes(notes));
+  (ctx as any).semantero.load(papers, null);
+  assert.deepStrictEqual(JSON.parse((ctx as any).semantero.keyword("matrigel", "notes", 3)), []);
+  const st = JSON.parse((ctx as any).semantero.loadNotes(notes));
   assert.strictEqual(st.notes.count, 7);
-  assert.strictEqual(JSON.parse((ctx as any).daito.keyword("matrigel", "notes", 3))[0].title, "Organoid bottlenecks");
-  assert.throws(() => (ctx as any).daito.loadNotes({ ...notes!, manifest: "{bad" }));
-  assert.strictEqual(JSON.parse((ctx as any).daito.keyword("matrigel", "notes", 3))[0].title, "Organoid bottlenecks", "failed reload keeps the engine");
+  assert.strictEqual(JSON.parse((ctx as any).semantero.keyword("matrigel", "notes", 3))[0].title, "Organoid bottlenecks");
+  assert.throws(() => (ctx as any).semantero.loadNotes({ ...notes!, manifest: "{bad" }));
+  assert.strictEqual(JSON.parse((ctx as any).semantero.keyword("matrigel", "notes", 3))[0].title, "Organoid bottlenecks", "failed reload keeps the engine");
 });

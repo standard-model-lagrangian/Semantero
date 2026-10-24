@@ -70,17 +70,16 @@ test("title match outranks body match for same term", () => {
   assert.strictEqual(results[0].paperIndex, 0); // paper 0 title match outranks paper 2 chunk match
 });
 
-test("prefix on incomplete last token", () => {
+test("prefix on the last token, with or without a trailing space", () => {
   const index = new BM25Index(samplePapers, sampleChunks);
 
-  // Incomplete token "viscoel" matches "viscoelasticity"
-  const incompleteRes = index.search("viscoel");
-  assert.ok(incompleteRes.length > 0);
-  assert.strictEqual(incompleteRes[0].paperIndex, 0);
+  // "viscoel" matches "viscoelasticity"
+  const res = index.search("viscoel");
+  assert.ok(res.length > 0);
+  assert.strictEqual(res[0].paperIndex, 0);
 
-  // Complete token "viscoel " (with space) should NOT match as prefix
-  const completeRes = index.search("viscoel ");
-  assert.strictEqual(completeRes.length, 0);
+  // Typing the space (or more whitespace, or punctuation) after the last word changes nothing
+  for (const q of ["viscoel ", "viscoel  ", " viscoel\t", "viscoel."]) assert.deepStrictEqual(index.search(q), res, q);
 });
 
 test("paper keyword score is max of metadata and best chunk", () => {
@@ -151,9 +150,9 @@ test("K1 short unfinished word ignored", () => {
   assert.deepStrictEqual(resS, resEmpty);
   assert.strictEqual(resS.length, 0);
 
-  // "stiff g" gives the same ranking as "stiff "
+  // "stiff g" gives the same ranking as "stiff" finished by another word ("stiff in": a stopword adds nothing)
   const resStiffG = index.search("stiff g");
-  const resStiffSpace = index.search("stiff ");
+  const resStiffSpace = index.search("stiff in");
   assert.strictEqual(resStiffG.length, resStiffSpace.length);
   for (let i = 0; i < resStiffG.length; i++) {
     assert.strictEqual(resStiffG[i].paperIndex, resStiffSpace[i].paperIndex);
@@ -190,10 +189,12 @@ test("K2 a short word that's a real term still matches exactly", () => {
   ];
   const index = new BM25Index(papers, []);
 
-  // Unfinished short words match only when they contain a digit ("3d", "6"); letters-only
-  // short words ("il") wait for a third letter or a space.
+  // A short last word matches only when it contains a digit ("3d", "6"); letters-only
+  // short words ("il") wait for a third letter, and a trailing space does not change that.
   assert.strictEqual(index.search("il").length, 0);
-  const resIlDone = index.search("il ");
+  assert.strictEqual(index.search("il ").length, 0);
+  // Not in last place, a short word is a finished word and matches exactly
+  const resIlDone = index.search("il pathways");
   assert.ok(resIlDone.length > 0);
   assert.strictEqual(resIlDone[0].paperIndex, 0);
 
@@ -311,7 +312,7 @@ test("K4 at most 64 expansions, highest document frequency kept", () => {
   }
 });
 
-test("K5 a completed word never prefix-matches", () => {
+test("K5 a typed word that is a term ranks its exact matches above longer words", () => {
   const papers: PaperMetadata[] = [
     {
       key: "K1",
@@ -340,10 +341,29 @@ test("K5 a completed word never prefix-matches", () => {
   ];
   const index = new BM25Index(papers, []);
 
-  // "cell " completed: matches paper 1, does NOT match paper 0 ("cellular")
-  const results = index.search("cell ");
-  assert.strictEqual(results.length, 1);
-  assert.strictEqual(results[0].paperIndex, 1);
+  // "cell" matches "cellular" too, but paper 1 ("cell") ranks first, with or without a trailing space
+  for (const q of ["cell", "cell "]) {
+    const results = index.search(q);
+    assert.deepStrictEqual(results.map((r) => r.paperIndex), [1, 0], q);
+    assert.ok(results[0].score > results[1].score, q);
+  }
+
+  // A non-last word stays exact
+  assert.deepStrictEqual(index.search("cell morphology").map((r) => r.paperIndex), [0, 1]);
+});
+
+test("K5b a rare longer word scores no higher than the word typed", () => {
+  const paper = (key: string, title: string): PaperMetadata => ({
+    key, citekey: key, title, authors: ["A"], year: 2023, journal: null, doi: null, tags: [], collections: [], abstract: null,
+  });
+  // "cells121" (a glued citation number) is in one paper; "cells" is in many, so its idf is far lower
+  const papers = [paper("J", "Organoid cells121 culture")];
+  for (let i = 0; i < 20; i++) papers.push(paper(`C${i}`, `Stem cells study ${i}`));
+  const index = new BM25Index(papers, []);
+  const results = index.search("cells");
+  const junk = results.find((r) => r.paperIndex === 0)!;
+  const real = results.find((r) => r.paperIndex === 1)!;
+  assert.ok(junk.score <= real.score, `${junk.score} > ${real.score}`);
 });
 
 test("K6 ranking unchanged for completed-word queries", async () => {

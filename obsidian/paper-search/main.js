@@ -211,9 +211,9 @@ function tokenize(text) {
       tokens.push(part);
     }
   }
-  const hasTrailingSpace = /\s$/.test(text);
-  const lastRaw = rawParts.length > 0 ? rawParts[rawParts.length - 1] : "";
-  const lastIncomplete = !hasTrailingSpace && tokens.length > 0 && tokens[tokens.length - 1] === lastRaw;
+  let lastRaw = "";
+  for (let i = rawParts.length - 1; i >= 0 && !lastRaw; i--) lastRaw = rawParts[i];
+  const lastIncomplete = tokens.length > 0 && tokens[tokens.length - 1] === lastRaw;
   return { tokens, lastIncomplete };
 }
 function splitSentences(text) {
@@ -519,6 +519,32 @@ var BM25Index = class {
     const end = l;
     return [start, end];
   }
+  /**
+   * The vocabulary words a last word of 3+ characters expands to (at most 64, the most frequent first; the word itself
+   * is always kept), each with a weight on its postings. A longer word is scored as if it were no rarer than the typed
+   * word (or, while the typed word is not a vocabulary term yet, the most frequent expansion): otherwise a rare variant
+   * ("cells121" from a glued citation number, "transferrin" for "transfer") has a far higher idf than the word being
+   * typed and its few papers jump to the top. When the typed word is a term itself, longer words count half, so "cell"
+   * ranks papers saying "cell" above papers saying only "cellular".
+   */
+  prefixMatcher(t) {
+    const [start, end] = this.findPrefixRange(t);
+    const candidates = [];
+    for (let id = start; id < end; id++) candidates.push(id);
+    const exact = this.termId(t);
+    if (candidates.length > 64) {
+      candidates.sort((a, b) => this.dfById[b] - this.dfById[a] || a - b);
+      candidates.length = 64;
+      if (exact >= 0 && !candidates.includes(exact)) candidates[63] = exact;
+    }
+    if (candidates.length === 0) return { matchingTerms: [], weights: [] };
+    let refDf = exact >= 0 ? this.dfById[exact] : 0;
+    if (exact < 0) for (const id of candidates) refDf = Math.max(refDf, this.dfById[id]);
+    const refIdf = this.idfFromDf(refDf);
+    const variant = exact >= 0 ? 0.5 : 1;
+    const weights = candidates.map((id) => id === exact ? 1 : variant * Math.min(1, refIdf / this.idfFromDf(this.dfById[id])));
+    return { matchingTerms: candidates, weights };
+  }
   search(query, limit) {
     const { tokens, lastIncomplete } = tokenize(query);
     if (tokens.length === 0) {
@@ -532,32 +558,14 @@ var BM25Index = class {
         if (t.length < 3) {
           const id = /\d/.test(t) ? this.termId(t) : -1;
           if (id >= 0) {
-            termMatchers.push({ isPrefix: false, matchingTerms: [id] });
+            termMatchers.push({ matchingTerms: [id], weights: [1] });
           }
         } else {
-          const [start, end] = this.findPrefixRange(t);
-          const matchCount = end - start;
-          if (matchCount > 0) {
-            if (matchCount <= 64) {
-              const range = [];
-              for (let id = start; id < end; id++) range.push(id);
-              termMatchers.push({ isPrefix: true, matchingTerms: range });
-            } else {
-              const candidates = [];
-              for (let id = start; id < end; id++) candidates.push(id);
-              candidates.sort((a, b) => this.dfById[b] - this.dfById[a] || a - b);
-              termMatchers.push({
-                isPrefix: true,
-                matchingTerms: candidates.slice(0, 64)
-              });
-            }
-          } else {
-            termMatchers.push({ isPrefix: true, matchingTerms: [] });
-          }
+          termMatchers.push(this.prefixMatcher(t));
         }
       } else {
         const id = this.termId(t);
-        termMatchers.push({ isPrefix: false, matchingTerms: id >= 0 ? [id] : [] });
+        termMatchers.push({ matchingTerms: id >= 0 ? [id] : [], weights: [1] });
       }
     }
     if (termMatchers.length === 0) {
@@ -572,16 +580,18 @@ var BM25Index = class {
     for (const matcher of termMatchers) {
       matcherPaperScores.clear();
       matcherChunkScores.clear();
-      for (const term of matcher.matchingTerms) {
+      for (let k = 0; k < matcher.matchingTerms.length; k++) {
+        const term = matcher.matchingTerms[k];
+        const w = matcher.weights[k];
         const pp = this.paperPostings;
         for (let i = pp.offsets[term], end = pp.offsets[term + 1]; i < end; i++) {
           const prev = matcherPaperScores.get(pp.ids[i]) || 0;
-          if (pp.scores[i] > prev) matcherPaperScores.set(pp.ids[i], pp.scores[i]);
+          if (pp.scores[i] * w > prev) matcherPaperScores.set(pp.ids[i], pp.scores[i] * w);
         }
         const cp = this.chunkPostings;
         for (let i = cp.offsets[term], end = cp.offsets[term + 1]; i < end; i++) {
           const prev = matcherChunkScores.get(cp.ids[i]) || 0;
-          if (cp.scores[i] > prev) matcherChunkScores.set(cp.ids[i], cp.scores[i]);
+          if (cp.scores[i] * w > prev) matcherChunkScores.set(cp.ids[i], cp.scores[i] * w);
         }
       }
       for (const [pIdx, score] of matcherPaperScores.entries()) {
@@ -1100,11 +1110,6 @@ function semanticFromRowScores(ix, scores, query, opts) {
   }
   return hits;
 }
-function semantic(ix, qVec, query, opts) {
-  const scores = rowScores(ix, qVec, opts?.exclude);
-  if (!scores) return [];
-  return semanticFromRowScores(ix, scores, query, opts);
-}
 function hybrid(keywordHits, semanticHits, limit = 10, k = 60) {
   if (keywordHits.length === 0 && semanticHits.length === 0) {
     return [];
@@ -1160,10 +1165,10 @@ function hybrid(keywordHits, semanticHits, limit = 10, k = 60) {
   }
   return hits;
 }
-function hybridSearch(ix, query, qVec, limit) {
+function hybridSearchFromScores(ix, query, scores, limit) {
   const n = ix.papers.length;
   const kw = keyword(ix, query, n, { snippets: false });
-  const sem = semantic(ix, qVec, query, { limit: n, snippets: false });
+  const sem = scores ? semanticFromRowScores(ix, scores, query, { limit: n, snippets: false }) : [];
   return fillSnippets(ix, hybrid(kw, sem, limit), query);
 }
 
@@ -1233,15 +1238,74 @@ async function warmUp(requestUrl3, options) {
   }
 }
 
+// src/semantic.ts
+function isPplx(ix) {
+  return ix.manifest?.backend === "pplx";
+}
+async function semanticScores(requestUrl3, ix, text, opts) {
+  if (!ix.vectors || ix.totalRows === 0) return { scores: null };
+  if (isPplx(ix)) {
+    const scores = await pplxRowScores(requestUrl3, ix.manifest.backend_url, text, "search", ix.manifest.content_hash);
+    if (scores.length !== ix.totalRows) throw new Error("pplx scores do not match the loaded index");
+    if (opts.exclude && opts.exclude.size > 0) {
+      for (let r = 0; r < scores.length; r++) if (opts.exclude.has(ix.rowToPaper[r])) scores[r] = 0;
+    }
+    return { scores };
+  }
+  const qVec = await embedQuery(requestUrl3, {
+    url: opts.ollamaUrl,
+    model: ix.manifest.model,
+    instruction: opts.instruction,
+    query: text,
+    dims: ix.dims,
+    keepAlive: opts.keepAlive
+  });
+  return { scores: rowScores(ix, qVec, opts.exclude) };
+}
+async function pplxRowScores(requestUrl3, url, text, corpus, expectHash) {
+  const resp = await requestUrl3({
+    url: `${(url || "http://127.0.0.1:11435").replace(/\/+$/, "")}/rowscores`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, corpora: [corpus] })
+  });
+  const c = resp.json?.corpora?.[corpus];
+  if (!c || c.error) throw new Error(`pplx service: ${c?.error ?? "no scores"}`);
+  if (expectHash && c.content_hash !== expectHash) throw new Error("pplx service has another build of the index loaded");
+  const bin = atob(c.scores);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const f32 = new Float32Array(bytes.buffer, 0, bytes.length >> 2);
+  return Float64Array.from(f32);
+}
+async function warmSemantic(requestUrl3, ix, ollamaUrl, keepAlive) {
+  if (isPplx(ix)) {
+    try {
+      await requestUrl3({
+        url: `${(ix.manifest.backend_url || "http://127.0.0.1:11435").replace(/\/+$/, "")}/warm`,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}"
+      });
+    } catch {
+    }
+    return;
+  }
+  await warmUp(requestUrl3, { url: ollamaUrl, model: ix.manifest.model, keepAlive });
+}
+
 // src/rank.ts
 function shouldRunSemantic(query, minChars = 12) {
-  const trimmed = query.trim();
-  if (trimmed.length >= minChars) {
+  if (semanticText(query).length >= minChars) {
     return true;
   }
   const { tokens, lastIncomplete } = tokenize(query);
-  const completeTokens = lastIncomplete ? tokens.length - 1 : tokens.length;
-  return completeTokens >= 2;
+  const last = tokens[tokens.length - 1] ?? "";
+  const lastCounts = !lastIncomplete || last.length >= 3 || /\d/.test(last);
+  return (lastCounts ? tokens.length : tokens.length - 1) >= 2;
+}
+function semanticText(query) {
+  return query.trim().replace(/\s+/g, " ");
 }
 var SemanticCoordinator = class {
   currentSeq = 0;
@@ -1415,10 +1479,48 @@ ${renderedBody}`;
   }
   return renderedBody;
 }
+async function renderLiteratureNote(vault, paper, settings, options) {
+  let templateText = BUILTIN_TEMPLATE;
+  const templatePath = settings.literatureNoteTemplate || "Zotero Template.md";
+  const templateFile = vault.getAbstractFileByPath ? vault.getAbstractFileByPath(templatePath) : null;
+  if (templateFile) {
+    try {
+      templateText = await vault.read(templateFile);
+    } catch {
+      templateText = BUILTIN_TEMPLATE;
+    }
+  }
+  const sessionNotices = options?.sessionNotices || /* @__PURE__ */ new Set();
+  return renderTemplate(templateText, paper, {
+    onUnsupportedTemplate: () => {
+      if (!sessionNotices.has("nunjucks")) {
+        sessionNotices.add("nunjucks");
+        options?.showNotice?.(
+          "Paper search: template uses unsupported Nunjucks features. Using built-in template."
+        );
+      }
+    }
+  });
+}
 async function ensureLiteratureNote(vault, metadataCache, paper, settings, options) {
   const existing = findLiteratureNote(vault, metadataCache, paper.citekey);
   if (existing) {
-    return { file: existing, created: false };
+    if (settings.createLiteratureNotes === false || !vault.modify) return { file: existing, created: false };
+    let current;
+    try {
+      current = await vault.read(existing);
+    } catch {
+      return { file: existing, created: false };
+    }
+    if (current.trim() !== "") return { file: existing, created: false };
+    const content2 = await renderLiteratureNote(vault, paper, settings, options);
+    try {
+      await vault.modify(existing, content2);
+      return { file: existing, created: true };
+    } catch (err) {
+      options?.showNotice?.(`Paper search: failed to fill literature note: ${err.message}`);
+      return { file: existing, created: false };
+    }
   }
   if (settings.createLiteratureNotes === false) {
     return { file: null, created: false };
@@ -1442,27 +1544,7 @@ async function ensureLiteratureNote(vault, metadataCache, paper, settings, optio
     } catch {
     }
   }
-  let templateText = BUILTIN_TEMPLATE;
-  const templatePath = settings.literatureNoteTemplate || "Zotero Template.md";
-  const templateFile = vault.getAbstractFileByPath ? vault.getAbstractFileByPath(templatePath) : null;
-  if (templateFile) {
-    try {
-      templateText = await vault.read(templateFile);
-    } catch {
-      templateText = BUILTIN_TEMPLATE;
-    }
-  }
-  const sessionNotices = options?.sessionNotices || /* @__PURE__ */ new Set();
-  const content = renderTemplate(templateText, paper, {
-    onUnsupportedTemplate: () => {
-      if (!sessionNotices.has("nunjucks")) {
-        sessionNotices.add("nunjucks");
-        options?.showNotice?.(
-          "Paper search: template uses unsupported Nunjucks features. Using built-in template."
-        );
-      }
-    }
-  });
+  const content = await renderLiteratureNote(vault, paper, settings, options);
   const filePath = folder ? `${folder}/${paper.citekey}.md` : `${paper.citekey}.md`;
   try {
     const file = await vault.create(filePath, content);
@@ -1486,6 +1568,9 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
   debounceTimer = null;
   footerEl = null;
   lastKeywordHits = [];
+  /** The query on screen (as `semanticText`) and the index it was ranked on. */
+  shownKey = null;
+  shownIndex = null;
   constructor(app, plugin) {
     super(app);
     this.plugin = plugin;
@@ -1503,11 +1588,7 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
     });
     const ix = this.plugin.indexStore.getIndex();
     if (ix?.manifest?.model) {
-      warmUp(import_obsidian.requestUrl, {
-        url: this.plugin.settings.ollamaUrl,
-        model: ix.manifest.model,
-        keepAlive: DEFAULT_KEEP_ALIVE
-      });
+      warmSemantic(import_obsidian.requestUrl, ix, this.plugin.settings.ollamaUrl, DEFAULT_KEEP_ALIVE);
     }
     const modalEl = this.modalEl;
     this.footerEl = modalEl.createDiv({ cls: "paper-search-footer" });
@@ -1555,6 +1636,10 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
     if (!ix || !this.plugin.indexStore.isReady()) {
       return [{ isLoadingRow: true }];
     }
+    const key = semanticText(query);
+    if (key === this.shownKey && ix === this.shownIndex) return this.currentItems;
+    this.shownKey = key;
+    this.shownIndex = ix;
     const kHits = keyword(ix, query, this.plugin.settings.limit);
     this.lastKeywordHits = kHits;
     const items = kHits.map((h) => ({
@@ -1581,18 +1666,12 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
   async runSemantic(query, ix, seq) {
     if (!ix.vectors) return;
     try {
-      const qVec = await embedQuery(import_obsidian.requestUrl, {
-        url: this.plugin.settings.ollamaUrl,
-        model: ix.manifest.model,
-        instruction: ix.manifest.query_instruction,
-        query,
-        dims: ix.dims
-      });
+      const scores = await this.plugin.semanticScoresFor(ix, semanticText(query), ix.manifest.query_instruction);
       if (!this.coordinator.isCurrent(seq)) {
         return;
       }
       this.updateFooter("");
-      const mergedHits = hybridSearch(ix, query, qVec, this.plugin.settings.limit);
+      const mergedHits = hybridSearchFromScores(ix, query, scores, this.plugin.settings.limit);
       const newItems = mergedHits.map((h) => ({
         hit: h,
         paperIndex: h.paper
@@ -1608,7 +1687,7 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
       this.chooser?.setSuggestions(newItems);
       this.chooser?.setSelectedItem(newSelectedIdx);
     } catch {
-      this.updateFooter("semantic off: Ollama not reachable");
+      this.updateFooter(`semantic off: ${isPplx(ix) ? "pplx service" : "Ollama"} not reachable`);
     }
   }
   renderSuggestion(item, el) {
@@ -1709,7 +1788,7 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
 };
 
 // src/hotkey.ts
-function checkHotkeyConflict(customHotkeys, targetModifiers = ["Mod", "Shift"], targetKey = "0", ourCommandId = "daito-paper-search:open-paper-search") {
+function checkHotkeyConflict(customHotkeys, targetModifiers = ["Mod", "Shift"], targetKey = "0", ourCommandId = "semantero:open-paper-search") {
   for (const [cmdId, bindings] of Object.entries(customHotkeys)) {
     if (cmdId === ourCommandId) continue;
     if (!Array.isArray(bindings)) continue;
@@ -1906,6 +1985,9 @@ function selectionAfterRefresh(oldHits, oldSelected, newHits) {
   const idx = newHits.findIndex((h) => h.paper && h.paper.citekey === oldPaper.citekey);
   return idx === -1 ? 0 : idx;
 }
+function indexVersion(index) {
+  return index?.manifest?.content_hash ?? index?.manifest?.built_at ?? index?.id;
+}
 function refreshSuggestions(suggest, hits, query, cache) {
   if (!suggest) return;
   const s = suggest.suggestions;
@@ -1931,6 +2013,8 @@ var InlineSuggestController = class {
   ollamaDownNotified = false;
   /** content_hash (or load id) of the index the query cache was filled from. */
   cacheVersion = void 0;
+  /** The list on screen, its query (as `semanticText`) and the version of the index it came from. */
+  shown = null;
   sessionNotices;
   showNotice;
   setTimeoutFn;
@@ -1961,6 +2045,7 @@ var InlineSuggestController = class {
   }
   /** Drop any pending or in-flight semantic request (list closed, or the query changed). */
   cancel() {
+    this.shown = null;
     this.currentSeq++;
     if (this.debounceTimer) {
       this.clearTimeoutFn(this.debounceTimer);
@@ -1968,6 +2053,8 @@ var InlineSuggestController = class {
     }
   }
   async getSuggestions(query, suggestInstance) {
+    const shown = this.shown;
+    if (shown && shown.key === semanticText(query) && shown.version === indexVersion(this.indexStore.getIndex())) return shown.items;
     this.cancel();
     this.indexStore.ensureFresh?.().catch(() => {
     });
@@ -1978,13 +2065,15 @@ var InlineSuggestController = class {
       return [{ type: "hint", message: "Type to search your papers" }];
     }
     const index = this.indexStore.getIndex();
-    const version = index?.manifest?.content_hash ?? index?.manifest?.built_at ?? index?.id;
+    const version = indexVersion(index);
     if (version !== this.cacheVersion) {
       this.queryCache.clear();
       this.cacheVersion = version;
     }
     if (this.queryCache.has(query)) {
-      return this.queryCache.get(query);
+      const cached = this.queryCache.get(query);
+      this.shown = { key: semanticText(query), version, items: cached };
+      return cached;
     }
     const limit = this.settings.inlineLimit || 8;
     const kwHits = keyword(index, query, limit);
@@ -2000,15 +2089,22 @@ var InlineSuggestController = class {
       this.debounceTimer = this.setTimeoutFn(async () => {
         this.debounceTimer = null;
         try {
-          const qVec = await this.embedder.embedQuery(query);
-          if (seq !== this.currentSeq) {
-            return;
+          let scores;
+          if (this.embedder.rowScores) {
+            scores = await this.embedder.rowScores(semanticText(query), index);
+            if (seq !== this.currentSeq) return;
+          } else {
+            const qVec = await this.embedder.embedQuery(semanticText(query));
+            if (seq !== this.currentSeq) {
+              return;
+            }
+            if (!qVec) {
+              this.handleOllamaDown(initialItems, suggestInstance);
+              return;
+            }
+            scores = rowScores(index, qVec);
           }
-          if (!qVec) {
-            this.handleOllamaDown(initialItems, suggestInstance);
-            return;
-          }
-          const merged = hybridSearch(index, query, qVec, limit);
+          const merged = hybridSearchFromScores(index, query, scores, limit);
           const mergedItems = merged.map((h) => ({
             type: "paper",
             paper: index.papers[h.paper],
@@ -2016,6 +2112,7 @@ var InlineSuggestController = class {
             source: h.source,
             score: h.score
           }));
+          if (this.shown) this.shown.items = mergedItems;
           refreshSuggestions(suggestInstance, mergedItems, query, this.queryCache);
         } catch {
           if (seq !== this.currentSeq) return;
@@ -2023,6 +2120,7 @@ var InlineSuggestController = class {
         }
       }, 250);
     }
+    this.shown = { key: semanticText(query), version, items: initialItems };
     return initialItems;
   }
   /** Keyword-only results with one footer row. Never cached, so the next query retries semantic. */
@@ -2033,6 +2131,7 @@ var InlineSuggestController = class {
     }
     const withSemanticOff = items.map((it) => ({ ...it, semanticOff: true }));
     withSemanticOff.push({ type: "footer", message: "Semantic search unavailable" });
+    this.shown = null;
     refreshSuggestions(suggestInstance, withSemanticOff);
   }
   async selectSuggestion(item, editor, context) {
@@ -2073,34 +2172,34 @@ var InlineSuggestController = class {
   renderSuggestion(item, el) {
     el.empty?.();
     if (item.type === "loading") {
-      const row = el.createDiv?.({ cls: "daito-suggest-loading" }) || el;
+      const row = el.createDiv?.({ cls: "semantero-suggest-loading" }) || el;
       row.setText?.(item.message || "Loading paper index\u2026");
       return;
     }
     if (item.type === "footer") {
-      const row = el.createDiv?.({ cls: "daito-suggest-footer" }) || el;
+      const row = el.createDiv?.({ cls: "semantero-suggest-footer" }) || el;
       row.setText?.(item.message || "Semantic search unavailable");
       return;
     }
     if (item.type === "hint") {
-      const row = el.createDiv?.({ cls: "daito-suggest-hint" }) || el;
+      const row = el.createDiv?.({ cls: "semantero-suggest-hint" }) || el;
       row.setText?.(item.message || "Type to search your papers");
       return;
     }
     if (item.type === "paper" && item.paper) {
-      const container = el.createDiv?.({ cls: "daito-suggest-paper" }) || el;
+      const container = el.createDiv?.({ cls: "semantero-suggest-paper" }) || el;
       let title = item.paper.title || "Untitled";
       if (title.length > 80) {
         title = title.slice(0, 79) + "\u2026";
       }
-      const titleEl = container.createDiv?.({ cls: "daito-suggest-title" });
+      const titleEl = container.createDiv?.({ cls: "semantero-suggest-title" });
       titleEl?.setText?.(title);
       const firstAuthor = item.paper.authors && item.paper.authors.length > 0 ? item.paper.authors[0] : "Unknown author";
       const year = item.paper.year ? String(item.paper.year) : "n.d.";
-      const metaEl = container.createDiv?.({ cls: "daito-suggest-meta" });
+      const metaEl = container.createDiv?.({ cls: "semantero-suggest-meta" });
       metaEl?.setText?.(`${firstAuthor} \xB7 ${year}`);
       if (this.settings.inlineShowSnippet !== false && item.snippet) {
-        const snippetEl = container.createDiv?.({ cls: "daito-suggest-snippet" });
+        const snippetEl = container.createDiv?.({ cls: "semantero-suggest-snippet" });
         snippetEl?.setText?.(item.snippet);
       }
     }
@@ -2399,7 +2498,8 @@ var RelatedPapersController = class {
     }
     try {
       const instruction = this.settings.relatedInstruction;
-      const qVec = await this.embedder.embedQuery(passage, instruction);
+      const byScores = !!this.embedder.rowScores;
+      const qVec = byScores ? null : await this.embedder.embedQuery(passage, instruction);
       if (seq !== this.currentSeq) return;
       if (this.activeFilePath !== pathAtStart) {
         this.resetToEmpty();
@@ -2410,15 +2510,23 @@ var RelatedPapersController = class {
         this.setState("index-loading");
         return;
       }
-      if (!qVec) {
-        this.handleOllamaDown();
-        return;
+      let scores;
+      if (byScores) {
+        scores = await this.embedder.rowScores(passage, ix, instruction);
+        if (seq !== this.currentSeq) return;
+        if (this.activeFilePath !== pathAtStart) {
+          this.resetToEmpty();
+          return;
+        }
+      } else {
+        if (!qVec) {
+          this.handleOllamaDown();
+          return;
+        }
+        scores = rowScores(ix, qVec);
       }
       const minScore = this.settings.relatedMinScore ?? 0.25;
-      const candidates = semantic(ix, qVec, passage, {
-        limit: 50,
-        minScore
-      });
+      const candidates = scores ? semanticFromRowScores(ix, scores, passage, { limit: 50, minScore }) : [];
       this.citedKeysSet = new Set([...citedKeys(noteText)].map((k) => k.toLowerCase()));
       this.allHits = candidates;
       this.showHiddenCited = false;
@@ -2535,7 +2643,7 @@ function createRelatedPapersViewClass(ItemViewBase) {
       this.controller.onStateChange = () => this.render();
     }
     getViewType() {
-      return "daito-related-papers";
+      return "semantero-related-papers";
     }
     getDisplayText() {
       return "Related papers";
@@ -2549,7 +2657,7 @@ function createRelatedPapersViewClass(ItemViewBase) {
     render() {
       const container = this.containerEl.children[1] || this.containerEl;
       container.empty?.();
-      const header = container.createDiv?.({ cls: "daito-related-header" }) || container;
+      const header = container.createDiv?.({ cls: "semantero-related-header" }) || container;
       const titleEl = header.createEl?.("h4", { text: "Related papers" });
       const refreshBtn = header.createEl?.("button", { text: "Refresh" });
       refreshBtn?.addEventListener?.("click", () => {
@@ -2558,45 +2666,45 @@ function createRelatedPapersViewClass(ItemViewBase) {
           this.controller.refresh(snap.text, snap.cursorOffset, snap.selection, snap.filePath);
         }
       });
-      const body = container.createDiv?.({ cls: "daito-related-body" }) || container;
+      const body = container.createDiv?.({ cls: "semantero-related-body" }) || container;
       if (this.controller.state === "empty") {
         body.createEl?.("div", {
-          cls: "daito-related-empty",
+          cls: "semantero-related-empty",
           text: "Open a note and press Refresh to find related papers."
         });
         return;
       }
       if (this.controller.state === "index-loading") {
         body.createEl?.("div", {
-          cls: "daito-related-loading",
+          cls: "semantero-related-loading",
           text: "Loading paper index\u2026"
         });
         return;
       }
       if (this.controller.state === "loading") {
         body.createEl?.("div", {
-          cls: "daito-related-loading",
+          cls: "semantero-related-loading",
           text: "Searching for related papers\u2026"
         });
         return;
       }
       if (this.controller.state === "too-short") {
         body.createEl?.("div", {
-          cls: "daito-related-empty",
+          cls: "semantero-related-empty",
           text: "Write a bit more first"
         });
         return;
       }
       if (this.controller.state === "needs-ollama") {
         body.createEl?.("div", {
-          cls: "daito-related-warning",
+          cls: "semantero-related-warning",
           text: "Related papers needs Ollama running"
         });
         return;
       }
       if (this.controller.state === "nothing-close") {
         body.createEl?.("div", {
-          cls: "daito-related-empty",
+          cls: "semantero-related-empty",
           text: "Nothing close in your library"
         });
         if (this.controller.getDisplayItems().hiddenCount === 0) return;
@@ -2604,25 +2712,25 @@ function createRelatedPapersViewClass(ItemViewBase) {
       if (this.controller.state === "results" || this.controller.state === "nothing-close") {
         const { items, hiddenCount, showHidden } = this.controller.getDisplayItems();
         for (const item of items) {
-          const row = body.createDiv?.({ cls: "daito-related-row" });
+          const row = body.createDiv?.({ cls: "semantero-related-row" });
           const rowTitle = row?.createDiv?.({
-            cls: "daito-related-title",
+            cls: "semantero-related-title",
             text: item.paper.title || "Untitled"
           });
           rowTitle?.addEventListener?.("click", () => {
             const url = this.controller.getPdfUrl(item.paper, item.hit);
             window.open(url);
           });
-          const meta = row?.createDiv?.({ cls: "daito-related-meta" });
+          const meta = row?.createDiv?.({ cls: "semantero-related-meta" });
           const author = item.paper.authors?.[0] || "Unknown";
           const year = item.paper.year ? String(item.paper.year) : "n.d.";
           const badge = item.hit.page ? `p. ${item.hit.page}` : item.hit.fromAbstract === false ? "web page" : "abstract";
           meta?.setText?.(`${author} \xB7 ${year} \xB7 [${badge}]`);
           if (item.hit.snippet) {
-            const snippet = row?.createDiv?.({ cls: "daito-related-snippet" });
+            const snippet = row?.createDiv?.({ cls: "semantero-related-snippet" });
             snippet?.setText?.(item.hit.snippet);
           }
-          const actions = row?.createDiv?.({ cls: "daito-related-actions" });
+          const actions = row?.createDiv?.({ cls: "semantero-related-actions" });
           const citeBtn = actions?.createEl?.("button", { text: "Cite" });
           citeBtn?.addEventListener?.("click", () => {
             this.controller.handleCiteAction(
@@ -2637,7 +2745,7 @@ function createRelatedPapersViewClass(ItemViewBase) {
           });
         }
         if (hiddenCount > 0) {
-          const footer = body.createDiv?.({ cls: "daito-related-footer" });
+          const footer = body.createDiv?.({ cls: "semantero-related-footer" });
           const toggleText = showHidden ? "hide" : "show";
           const link = footer?.createEl?.("a", {
             text: `${hiddenCount} already cited \xB7 ${toggleText}`
@@ -2709,7 +2817,8 @@ var PaperSearchPlugin = class extends import_obsidian2.Plugin {
           query: queryText,
           dims: ix.dims
         });
-      }
+      },
+      rowScores: (queryText, ix) => this.semanticScoresFor(ix, queryText, ix.manifest?.query_instruction || "Given a query, retrieve relevant research papers")
     };
     const suggestController = new InlineSuggestController({
       indexStore: this.indexStore,
@@ -2733,7 +2842,8 @@ var PaperSearchPlugin = class extends import_obsidian2.Plugin {
           query: text,
           dims: ix.dims
         });
-      }
+      },
+      rowScores: (text, ix, instruction) => this.semanticScoresFor(ix, text, instruction ?? this.settings.relatedInstruction)
     };
     const relatedController = new RelatedPapersController({
       indexStore: this.indexStore,
@@ -2748,7 +2858,7 @@ var PaperSearchPlugin = class extends import_obsidian2.Plugin {
     this.app.workspace.onLayoutReady(() => this.editorTracker.seed(this.app.workspace.getActiveViewOfType(import_obsidian2.MarkdownView)));
     const RelatedPapersView = createRelatedPapersViewClass(import_obsidian2.ItemView);
     this.registerView(
-      "daito-related-papers",
+      "semantero-related-papers",
       (leaf) => new RelatedPapersView(leaf, relatedController, this.editorTracker)
     );
     this.registerEvent(
@@ -2782,14 +2892,14 @@ var PaperSearchPlugin = class extends import_obsidian2.Plugin {
   async activateRelatedView() {
     const { workspace } = this.app;
     let leaf = null;
-    const leaves = workspace.getLeavesOfType("daito-related-papers");
+    const leaves = workspace.getLeavesOfType("semantero-related-papers");
     if (leaves.length > 0) {
       leaf = leaves[0];
     } else {
       leaf = workspace.getRightLeaf(false);
       if (leaf) {
         await leaf.setViewState({
-          type: "daito-related-papers",
+          type: "semantero-related-papers",
           active: true
         });
       }
@@ -2809,6 +2919,10 @@ var PaperSearchPlugin = class extends import_obsidian2.Plugin {
       }
     } catch {
     }
+  }
+  /** Per-row semantic scores of `text` over `ix`, from the backend that built it (semantic.ts). Throws when it is down. */
+  async semanticScoresFor(ix, text, instruction) {
+    return (await semanticScores(import_obsidian2.requestUrl, ix, text, { ollamaUrl: this.settings.ollamaUrl, instruction })).scores;
   }
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());

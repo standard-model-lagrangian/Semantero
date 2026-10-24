@@ -1,0 +1,2 @@
+# pplxd venv (make pplx-setup): numpy only. Pinned; bump deliberately and rerun make test-pplx.
+numpy==2.5.4

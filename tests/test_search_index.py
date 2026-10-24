@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -9,6 +10,12 @@ from unittest.mock import MagicMock, patch
 from planner import pdftext, zotlib
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures" / "search"
+
+# Tests that extract real text from the sample PDFs. Without poppler they skip, except on CI, which installs it and
+# must fail loudly if that broke.
+needs_pdftotext = unittest.skipUnless(
+    shutil.which("pdftotext") or os.environ.get("CI"), "needs pdftotext (brew install poppler)"
+)
 
 
 class TestZotlib(unittest.TestCase):
@@ -221,8 +228,8 @@ class TestPdfText(unittest.TestCase):
             self.assertFalse(has_text)
             self.assertEqual(chunks, [])
 
-    # 13. Live test sample PDF (runs only when DAITO_LIVE=1)
-    @unittest.skipUnless(os.environ.get("DAITO_LIVE") == "1", "Requires DAITO_LIVE=1")
+    # 13. Live test sample PDF (runs only when SEMANTERO_LIVE=1)
+    @unittest.skipUnless(os.environ.get("SEMANTERO_LIVE") == "1", "Requires SEMANTERO_LIVE=1")
     def test_live_sample_pdf(self):
         sample_path = FIXTURES_DIR / "sample.pdf"
         has_text, num_pages, chunks = pdftext.extract_chunks(sample_path)
@@ -366,8 +373,8 @@ class TestEmbed(unittest.TestCase):
         # Initial call + 3 retries = 4 calls total
         self.assertEqual(mock_urlopen.call_count, 4)
 
-    # 19. Live test ollama roundtrip (DAITO_LIVE=1)
-    @unittest.skipUnless(os.environ.get("DAITO_LIVE") == "1", "Requires DAITO_LIVE=1")
+    # 19. Live test ollama roundtrip (SEMANTERO_LIVE=1)
+    @unittest.skipUnless(os.environ.get("SEMANTERO_LIVE") == "1", "Requires SEMANTERO_LIVE=1")
     def test_live_ollama_roundtrip(self):
         from planner import embed
 
@@ -519,6 +526,7 @@ class TestSearchIndex(unittest.TestCase):
         self.assertEqual(mock_embed.call_count, 0)
 
     # 22. Changed PDF reembeds only that PDF
+    @needs_pdftotext
     def test_changed_pdf_reembeds_only_that_pdf(self):
         from planner import searchindex
 
@@ -627,6 +635,7 @@ class TestSearchIndex(unittest.TestCase):
             searchindex.build_index(self.cfg, full=False, embed_fn=self.fake_embed)
         self.assertEqual(json.loads(state_file.read_text()).get("fingerprint"), real)
 
+    @needs_pdftotext
     def test_unchanged_fingerprint_skips_the_build_without_reading_the_library(self):
         from unittest.mock import patch
         from planner import searchindex, zotlib
@@ -656,6 +665,7 @@ class TestSearchIndex(unittest.TestCase):
         papers = json.loads((self.data_dir / "search" / "papers.json").read_text())
         self.assertIn("Silently edited title", [p["title"] for p in papers])
 
+    @needs_pdftotext
     def test_fingerprint_shortcut_is_skipped_when_anything_relevant_changed(self):
         import os
         from planner import searchindex
@@ -704,6 +714,7 @@ class TestSearchIndex(unittest.TestCase):
         # Temp dir was cleaned up
         self.assertFalse((self.data_dir / "search.tmp").exists())
 
+    @needs_pdftotext
     def test_ollama_unavailable_falls_back_to_keyword_only(self):
         """When Ollama cannot be reached, indexing builds a keyword-only index without crashing."""
         from planner import searchindex
@@ -767,6 +778,7 @@ class TestSearchIndex(unittest.TestCase):
         self.assertIsNone(health.check_search_index(self.cfg))
 
     # 27. Paper without abstract embeds title as abstract row and keeps chunks
+    @needs_pdftotext
     def test_paper_without_abstract_embeds_title_and_chunks(self):
         import array, json
         from planner import searchindex
@@ -923,6 +935,7 @@ class TestSearchIndex(unittest.TestCase):
         h_vec = compute_content_hash(papers, chunks, b"\x01" * 64)
         self.assertNotEqual(h_vec, h1)
 
+    @needs_pdftotext
     def test_n4_missing_pdf_is_retried(self):
         import sqlite3
         from planner import searchindex

@@ -313,14 +313,43 @@ export class BM25Index {
     return [start, end];
   }
 
+  /**
+   * The vocabulary words a last word of 3+ characters expands to (at most 64, the most frequent first; the word itself
+   * is always kept), each with a weight on its postings. A longer word is scored as if it were no rarer than the typed
+   * word (or, while the typed word is not a vocabulary term yet, the most frequent expansion): otherwise a rare variant
+   * ("cells121" from a glued citation number, "transferrin" for "transfer") has a far higher idf than the word being
+   * typed and its few papers jump to the top. When the typed word is a term itself, longer words count half, so "cell"
+   * ranks papers saying "cell" above papers saying only "cellular".
+   */
+  private prefixMatcher(t: string): { matchingTerms: number[]; weights: number[] } {
+    const [start, end] = this.findPrefixRange(t);
+    const candidates: number[] = [];
+    for (let id = start; id < end; id++) candidates.push(id);
+    const exact = this.termId(t);
+    if (candidates.length > 64) {
+      // ids are alphabetical, so ties on df stay alphabetical
+      candidates.sort((a, b) => this.dfById[b] - this.dfById[a] || a - b);
+      candidates.length = 64;
+      if (exact >= 0 && !candidates.includes(exact)) candidates[63] = exact;
+    }
+    if (candidates.length === 0) return { matchingTerms: [], weights: [] };
+    let refDf = exact >= 0 ? this.dfById[exact] : 0;
+    if (exact < 0) for (const id of candidates) refDf = Math.max(refDf, this.dfById[id]);
+    const refIdf = this.idfFromDf(refDf);
+    const variant = exact >= 0 ? 0.5 : 1;
+    const weights = candidates.map((id) => (id === exact ? 1 : variant * Math.min(1, refIdf / this.idfFromDf(this.dfById[id]))));
+    return { matchingTerms: candidates, weights };
+  }
+
   public search(query: string, limit?: number): BM25SearchResult[] {
     const { tokens, lastIncomplete } = tokenize(query);
     if (tokens.length === 0) {
       return [];
     }
 
-    // Resolve query tokens (handling incomplete prefix matching for last token)
-    const termMatchers: { isPrefix: boolean; matchingTerms: number[] }[] = [];
+    // Resolve query tokens. The last word may still be in progress, so it matches every vocabulary word it is a
+    // prefix of, whether or not a space follows it (results must not change when the space is typed).
+    const termMatchers: { matchingTerms: number[]; weights: number[] }[] = [];
 
     for (let i = 0; i < tokens.length; i++) {
       const t = tokens[i];
@@ -328,42 +357,20 @@ export class BM25Index {
 
       if (isLast && lastIncomplete) {
         if (t.length < 3) {
-          // An unfinished word shorter than 3 characters is ignored, unless it contains a digit
+          // A last word shorter than 3 characters is ignored, unless it contains a digit
           // and is a vocabulary term ("3d", "6"). Letters-only terms like "s", "c", "il" exist in the
           // vocabulary (from "cell's" etc.) and would match most of the library on the first keystroke.
           const id = /\d/.test(t) ? this.termId(t) : -1;
           if (id >= 0) {
-            termMatchers.push({ isPrefix: false, matchingTerms: [id] });
+            termMatchers.push({ matchingTerms: [id], weights: [1] });
           }
           // otherwise ignored
         } else {
-          // 3 or more chars: binary search prefix range in sorted vocabulary
-          const [start, end] = this.findPrefixRange(t);
-          const matchCount = end - start;
-          if (matchCount > 0) {
-            if (matchCount <= 64) {
-              const range: number[] = [];
-              for (let id = start; id < end; id++) range.push(id);
-              termMatchers.push({ isPrefix: true, matchingTerms: range });
-            } else {
-              // At most 64 expansions, keep highest document frequency
-              // ids are alphabetical, so ties on df stay alphabetical
-              const candidates: number[] = [];
-              for (let id = start; id < end; id++) candidates.push(id);
-              candidates.sort((a, b) => this.dfById[b] - this.dfById[a] || a - b);
-              termMatchers.push({
-                isPrefix: true,
-                matchingTerms: candidates.slice(0, 64),
-              });
-            }
-          } else {
-            // No prefix matches in vocabulary
-            termMatchers.push({ isPrefix: true, matchingTerms: [] });
-          }
+          termMatchers.push(this.prefixMatcher(t));
         }
       } else {
         const id = this.termId(t);
-        termMatchers.push({ isPrefix: false, matchingTerms: id >= 0 ? [id] : [] });
+        termMatchers.push({ matchingTerms: id >= 0 ? [id] : [], weights: [1] });
       }
     }
 
@@ -385,16 +392,18 @@ export class BM25Index {
       matcherPaperScores.clear();
       matcherChunkScores.clear();
 
-      for (const term of matcher.matchingTerms) {
+      for (let k = 0; k < matcher.matchingTerms.length; k++) {
+        const term = matcher.matchingTerms[k];
+        const w = matcher.weights[k];
         const pp = this.paperPostings;
         for (let i = pp.offsets[term], end = pp.offsets[term + 1]; i < end; i++) {
           const prev = matcherPaperScores.get(pp.ids[i]) || 0;
-          if (pp.scores[i] > prev) matcherPaperScores.set(pp.ids[i], pp.scores[i]);
+          if (pp.scores[i] * w > prev) matcherPaperScores.set(pp.ids[i], pp.scores[i] * w);
         }
         const cp = this.chunkPostings;
         for (let i = cp.offsets[term], end = cp.offsets[term + 1]; i < end; i++) {
           const prev = matcherChunkScores.get(cp.ids[i]) || 0;
-          if (cp.scores[i] > prev) matcherChunkScores.set(cp.ids[i], cp.scores[i]);
+          if (cp.scores[i] * w > prev) matcherChunkScores.set(cp.ids[i], cp.scores[i] * w);
         }
       }
 

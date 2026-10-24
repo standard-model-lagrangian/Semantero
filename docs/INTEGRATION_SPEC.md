@@ -40,7 +40,7 @@ Cause of the keyword spikes, in `src/bm25.ts` around line 171: an unfinished las
 ### 0.1 Bound prefix expansion (`src/bm25.ts`)
 
 - The vocabulary is kept as a **sorted array** built once at load. A prefix lookup is a binary search for the range: O(log V + matches).
-- **An unfinished word shorter than 3 characters is ignored,** unless it contains a digit and is a vocabulary term (`"3d"`, `"6"`), in which case it matches exactly. So `"s"`, `"st"` and `"il"` contribute nothing until the third letter or a space. (Changed 20 Oct: the real vocabulary contains single letters such as `s` and `c`, from "cell's" and similar, so the earlier "any complete term" exception made `"s"` match 150 papers.)
+- **An unfinished word shorter than 3 characters is ignored,** unless it contains a digit and is a vocabulary term (`"3d"`, `"6"`), in which case it matches exactly. So `"s"`, `"st"` and `"il"` contribute nothing until the third letter. (Changed 24 Oct: a space no longer finishes a word, so `"il "` is ignored too; not in last place, as in `"il 6"`, it matches exactly.) (Changed 20 Oct: the real vocabulary contains single letters such as `s` and `c`, from "cell's" and similar, so the earlier "any complete term" exception made `"s"` match 150 papers.)
 - **At most 64 expansions per prefix.** If more terms match, keep the 64 with the highest document frequency. Frequent terms are what a person is most likely typing, and this bounds the work.
 - Postings are merged into a reused `Float64Array` of per-paper scores, not a `Map`, to avoid garbage-collection pauses.
 - Results are ranked with a partial top-k (`limit` × 4 candidates), not a full sort.
@@ -84,7 +84,7 @@ hybrid(keywordHits, semanticHits, limit, k = 60): Hit[]                 // RRF, 
 ### 1a. Hotkey
 
 - **Remove the hard-coded default hotkey from the plugin.** `Mod+Shift+F` clashes with Obsidian's "Search in all files", and Obsidian's plugin guidelines advise against default hotkeys anyway.
-- During install (a manual step you approve), add an entry to `.obsidian/hotkeys.json`: `"daito-paper-search:open-paper-search": [{"modifiers": ["Mod", "Shift"], "key": "0"}]`. That sits next to Omnisearch on `Mod+0`.
+- During install (a manual step you approve), add an entry to `.obsidian/hotkeys.json`: `"semantero:open-paper-search": [{"modifiers": ["Mod", "Shift"], "key": "0"}]`. That sits next to Omnisearch on `Mod+0`.
 - The plugin checks for conflicts at load: if another command has the same binding, it shows one notice naming that command.
 
 ### 1b. Index new Zotero papers within about a minute
@@ -183,7 +183,7 @@ When a citation is inserted (from the pop-up's `Cmd+Enter`, from `@@`, or from t
 
 - **Typing `@@` opens the suggestion list.** With nothing typed after it, the list shows one hint row: `Type to search your papers`.
 - **Keyword results** update on every keystroke.
-- **Semantic results** merge in after a 250 ms pause, under the same rules as the pop-up: at least 2 complete words or 12 characters.
+- **Semantic results** merge in after a 250 ms pause, under the same rules as the pop-up: 2 words, the last one 3+ characters or a digit, or 12 characters.
 - **`Enter` or `Tab`** replaces everything from `@@` to the cursor with the citation, then runs 1c.
 - **`Escape`** closes the list and leaves the text as typed.
 
@@ -222,7 +222,7 @@ The Pandoc Reference List plugin can suggest citekeys after `@`. Our trigger nee
 
 ### 3a. Behaviour
 
-- A right-sidebar view, `daito-related-papers`.
+- A right-sidebar view, `semantero-related-papers`.
 - Commands:
   - **"Show related papers"** opens or reveals the panel;
   - **"Find papers related to this note"** refreshes it from the current editor.
@@ -299,7 +299,7 @@ expect = ["glockerXXXX", "…"]                                # papers you'd wa
 
 ## Performance budgets
 
-Measured on this Mac. Benchmarks run on a **synthetic index 3× today's size** (500 papers, about 25k chunks, 1,024 dimensions, Zipf-distributed vocabulary of 30k terms, fixed seed), so there's headroom as the library grows. They run under `DAITO_PERF=1`, report p50/p95/p99/max, and fail on any budget breach.
+Measured on this Mac. Benchmarks run on a **synthetic index 3× today's size** (500 papers, about 25k chunks, 1,024 dimensions, Zipf-distributed vocabulary of 30k terms, fixed seed), so there's headroom as the library grows. They run under `SEMANTERO_PERF=1`, report p50/p95/p99/max, and fail on any budget breach.
 
 | # | What | Budget | Today |
 |---|---|---|---|
@@ -320,19 +320,19 @@ Measured on this Mac. Benchmarks run on a **synthetic index 3× today's size** (
 
 ## Tests
 
-Python tests use `unittest` and temporary directories, as now. TypeScript tests use `node --test`, as now. Glue code that imports `obsidian` isn't unit-tested; everything it calls is pure and tested through `test/fakes.ts`, and the glue itself is covered by the manual checklist. **No test touches the real vault or the real Zotero folder.** Performance tests use the synthetic index. `DAITO_LIVE=1` enables the tests that call Ollama.
+Python tests use `unittest` and temporary directories, as now. TypeScript tests use `node --test`, as now. Glue code that imports `obsidian` isn't unit-tested; everything it calls is pure and tested through `test/fakes.ts`, and the glue itself is covered by the manual checklist. **No test touches the real vault or the real Zotero folder.** Performance tests use the synthetic index. `SEMANTERO_LIVE=1` enables the tests that call Ollama.
 
 ### Phase 0
 
 **Keyword prefix: `test/bm25.test.ts` (additions)**
 - **K1 short unfinished word ignored:**
   - `"s"` gives the same ranking as `""` (empty);
-  - `"stiff g"` gives the same ranking as `"stiff "`.
-- **K2 a short word that's a real term still matches exactly:** `"il"`, `"3d"` with a vocabulary containing them.
+  - `"stiff g"` gives the same ranking as `"stiff in"` (`"stiff"` finished by a stopword).
+- **K2 a short word that's a real term still matches exactly:** `"3d"` as the last word, `"il"` before another word, with a vocabulary containing them.
 - **K3 three-letter prefix expands:** `"vis"` finds `viscoelastic` and `viscosity`.
 - **K4 at most 64 expansions, highest document frequency kept:** a vocabulary with 500 `stiff*` terms gives exactly 64, and the 64 kept are the most frequent.
-- **K5 a completed word never prefix-matches:** `"cell "` doesn't match `cellular`.
-- **K6 ranking unchanged for completed-word queries:** golden results on `index_small` for 20 queries, recorded before the change, must be identical after it.
+- **K5 a typed word that is a term ranks its exact matches above longer words:** `"cell"` and `"cell "` match `cellular` too, but rank `cell` first. (Changed 24 Oct: a completed word used to never prefix-match, which made a trailing space change the results.) **K5b** a rare longer word (`cells121`) scores no higher than the word typed.
+- **K6 ranking unchanged for completed-word queries:** golden results on `index_small` for 20 queries, recorded before the change, must be identical after it. (Re-recorded 24 Oct: the half weight on longer words changed the scores, not the order, of `roth`, `lesavage`, `wang` and `drug response organoid`.)
 - **K7 sorted vocabulary binary search agrees with a linear scan** for 1,000 random prefixes.
 - **K8 unicode and odd input don't crash:**
   - `"Φ29"`, `"β-catenin"`, `"naïve"`, emoji, 10 kB of `"a "`, only stopwords, only punctuation;
@@ -478,7 +478,7 @@ Python tests use `unittest` and temporary directories, as now. TypeScript tests 
   - clicking the row opens `zotero://open-pdf/...?page=N`.
 - **P8 Ollama down** → the "needs Ollama" state; one notice per session at most.
 
-### Performance: `test/perf.test.ts` (`DAITO_PERF=1`, synthetic index)
+### Performance: `test/perf.test.ts` (`SEMANTERO_PERF=1`, synthetic index)
 
 - **PF1** B1 over every prefix of 40 queries (the query list is a fixture: your 22 evaluation queries, 10 author names, 8 one-word queries).
 - **PF2** B2 with lines of 10, 1,000 and 10,000 characters, with and without `@@`.
@@ -487,7 +487,7 @@ Python tests use `unittest` and temporary directories, as now. TypeScript tests 
 - **PF5** B7: 1,000 `ensureFresh` calls with a fake clock advancing 1 s each → at most 100 manifest reads, and p99 ≤ 2 ms.
 - **PF6** B10 on a 200 kB generated note.
 - **PF7** B14: 1,000 random type/pause/response-order sequences through the inline glue with fakes → zero selection jumps.
-- **PF8** (`DAITO_LIVE=1` as well) B9 end to end with real Ollama and the 0.6b model; warm-up excluded; 20 runs.
+- **PF8** (`SEMANTERO_LIVE=1` as well) B9 end to end with real Ollama and the 0.6b model; warm-up excluded; 20 runs.
 - **Python PF9** B12: `watch-run` on the fixture library with an unchanged fingerprint, run 10 times → p95 ≤ 1.5 s, and a recursive byte and mtime snapshot of `search/` is unchanged.
 
 ### Edge-case matrix (where each one is covered)

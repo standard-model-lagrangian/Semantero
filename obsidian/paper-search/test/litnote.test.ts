@@ -362,6 +362,37 @@ test("L9 never overwrites existing note even if created concurrently", async () 
   assert.strictEqual(notices.length, 0);
 });
 
+test("L9b a blank existing note (made by clicking an unresolved link) is filled from the template", async () => {
+  const vault = new FakeVault();
+  const paper: PaperMetadata = {
+    key: "K1",
+    citekey: "p1",
+    title: "Title",
+    authors: ["A"],
+    year: 2023,
+    journal: null,
+    doi: null,
+    tags: [],
+    collections: [],
+    abstract: "The abstract.",
+  };
+  vault.addFile("Literature/p1.md", " \n");
+
+  const res = await ensureLiteratureNote(vault, null, paper, { createLiteratureNotes: true });
+
+  assert.strictEqual(res.created, true);
+  assert.strictEqual(res.file.path, "Literature/p1.md");
+  assert.ok(res.file.content.includes("## Abstract\nThe abstract."));
+  assert.strictEqual(vault.getFiles().length, 1);
+
+  // Disabled creation leaves a blank note alone.
+  const other = new FakeVault();
+  other.addFile("p1.md", "");
+  const off = await ensureLiteratureNote(other, null, paper, { createLiteratureNotes: false });
+  assert.strictEqual(off.created, false);
+  assert.strictEqual(off.file.content, "");
+});
+
 test("L10 unsafe citekeys do not create note and produce explanatory notice", async () => {
   const vault = new FakeVault();
   const settings = { createLiteratureNotes: true };

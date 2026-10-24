@@ -9,7 +9,7 @@
     { "id": "copy-path", "title": "Copy Path", "key": "cmd+shift+.", "kinds": ["paper", "note", "daily", "litnote"], "needs": ["filePath"] },
     { "id": "reveal", "title": "Show in Finder", "key": "cmd+shift+f", "kinds": ["paper", "note", "daily", "litnote"], "needs": ["filePath"] },
     { "id": "quicklook", "title": "Quick Look", "key": "cmd+y", "kinds": ["paper", "note", "daily", "litnote"], "needs": ["filePath"] },
-    { "id": "copy-wikilink", "title": "Copy Wikilink", "key": "cmd+l", "kinds": ["paper", "note", "daily", "litnote"], "needs": [] },
+    { "id": "paste-wikilink", "title": "Paste Wikilink", "key": "cmd+l", "kinds": ["paper", "note", "daily", "litnote"], "needs": [] },
     { "id": "open-note", "title": "Open Literature Note", "key": "cmd+o", "kinds": ["paper"], "needs": ["noteUrl"] },
     { "id": "select-zotero", "title": "Select in Zotero", "key": "cmd+shift+z", "kinds": ["paper", "litnote"], "needs": ["selectUrl"] }
   ]

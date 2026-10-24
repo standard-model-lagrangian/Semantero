@@ -5,6 +5,7 @@ export interface VaultLike {
   getFiles(): any[];
   read(file: any): Promise<string>;
   create(path: string, content: string): Promise<any>;
+  modify?(file: any, content: string): Promise<unknown>;
   createFolder?(path: string): Promise<unknown>;
   getAbstractFileByPath?(path: string): any;
 }
@@ -220,6 +221,38 @@ export function renderTemplate(
   return renderedBody;
 }
 
+/** Renders a literature note for `paper` from the configured template (else the built-in one). */
+async function renderLiteratureNote(
+  vault: VaultLike,
+  paper: PaperMetadata,
+  settings: LitNoteSettings,
+  options?: { showNotice?: (msg: string) => void; sessionNotices?: Set<string> }
+): Promise<string> {
+  let templateText = BUILTIN_TEMPLATE;
+  const templatePath = settings.literatureNoteTemplate || "Zotero Template.md";
+  const templateFile = vault.getAbstractFileByPath ? vault.getAbstractFileByPath(templatePath) : null;
+
+  if (templateFile) {
+    try {
+      templateText = await vault.read(templateFile);
+    } catch {
+      templateText = BUILTIN_TEMPLATE;
+    }
+  }
+
+  const sessionNotices = options?.sessionNotices || new Set<string>();
+  return renderTemplate(templateText, paper, {
+    onUnsupportedTemplate: () => {
+      if (!sessionNotices.has("nunjucks")) {
+        sessionNotices.add("nunjucks");
+        options?.showNotice?.(
+          "Paper search: template uses unsupported Nunjucks features. Using built-in template."
+        );
+      }
+    },
+  });
+}
+
 export async function ensureLiteratureNote(
   vault: VaultLike,
   metadataCache: MetadataCacheLike | null | undefined,
@@ -230,10 +263,26 @@ export async function ensureLiteratureNote(
     sessionNotices?: Set<string>;
   }
 ): Promise<{ file: any | null; created: boolean }> {
-  // 1. Find existing
+  // 1. Find existing. A blank one (e.g. Obsidian made it when an unresolved [[citekey]] link was
+  // clicked) is filled from the template; one with any content is never touched.
   const existing = findLiteratureNote(vault, metadataCache, paper.citekey);
   if (existing) {
-    return { file: existing, created: false };
+    if (settings.createLiteratureNotes === false || !vault.modify) return { file: existing, created: false };
+    let current: string;
+    try {
+      current = await vault.read(existing);
+    } catch {
+      return { file: existing, created: false };
+    }
+    if (current.trim() !== "") return { file: existing, created: false };
+    const content = await renderLiteratureNote(vault, paper, settings, options);
+    try {
+      await vault.modify(existing, content);
+      return { file: existing, created: true };
+    } catch (err: any) {
+      options?.showNotice?.(`Paper search: failed to fill literature note: ${err.message}`);
+      return { file: existing, created: false };
+    }
   }
 
   // 2. Setting disabled
@@ -267,31 +316,8 @@ export async function ensureLiteratureNote(
     }
   }
 
-  // 6. Template resolution
-  let templateText = BUILTIN_TEMPLATE;
-  const templatePath = settings.literatureNoteTemplate || "Zotero Template.md";
-  const templateFile = vault.getAbstractFileByPath ? vault.getAbstractFileByPath(templatePath) : null;
-
-  if (templateFile) {
-    try {
-      templateText = await vault.read(templateFile);
-    } catch {
-      templateText = BUILTIN_TEMPLATE;
-    }
-  }
-
-  // 7. Render template
-  const sessionNotices = options?.sessionNotices || new Set<string>();
-  const content = renderTemplate(templateText, paper, {
-    onUnsupportedTemplate: () => {
-      if (!sessionNotices.has("nunjucks")) {
-        sessionNotices.add("nunjucks");
-        options?.showNotice?.(
-          "Paper search: template uses unsupported Nunjucks features. Using built-in template."
-        );
-      }
-    },
-  });
+  // 6. Template resolution and rendering
+  const content = await renderLiteratureNote(vault, paper, settings, options);
 
   // 8. Create file
   const filePath = folder ? `${folder}/${paper.citekey}.md` : `${paper.citekey}.md`;

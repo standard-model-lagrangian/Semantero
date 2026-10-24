@@ -1,6 +1,6 @@
-import { keyword, hybridSearch } from "./engine.ts";
+import { keyword, hybridSearchFromScores, rowScores, type LoadedIndex } from "./engine.ts";
 import { findTrigger, isExcludedContext, formatCitation } from "./cite.ts";
-import { shouldRunSemantic } from "./rank.ts";
+import { semanticText, shouldRunSemantic } from "./rank.ts";
 import { ensureLiteratureNote, type LitNoteSettings, type VaultLike, type MetadataCacheLike } from "./litnote.ts";
 import type { PaperMetadata } from "./bm25.ts";
 
@@ -100,6 +100,11 @@ export function maintainSelection(
  * Uses internal suggest.suggestions.setSuggestions if available;
  * otherwise caches results in LRU cache so the next call gets them.
  */
+/** content_hash (or build time, or load id) of a loaded index: what the cached and shown lists were ranked on. */
+function indexVersion(index: any): unknown {
+  return index?.manifest?.content_hash ?? index?.manifest?.built_at ?? index?.id;
+}
+
 export function refreshSuggestions(
   suggest: FakeSuggestLike | null | undefined,
   hits: SuggestionItem[],
@@ -130,6 +135,8 @@ export interface InlineSuggestSettings extends LitNoteSettings {
 
 export interface EmbedderLike {
   embedQuery(text: string): Promise<Float32Array | null>;
+  /** Per-row scores for any backend (semantic.ts); when present it is used instead of embedQuery. Throws when down. */
+  rowScores?(text: string, ix: LoadedIndex): Promise<ArrayLike<number> | null>;
 }
 
 export interface IndexStoreLike {
@@ -155,6 +162,8 @@ export class InlineSuggestController {
   private ollamaDownNotified = false;
   /** content_hash (or load id) of the index the query cache was filled from. */
   private cacheVersion: unknown = undefined;
+  /** The list on screen, its query (as `semanticText`) and the version of the index it came from. */
+  private shown: { key: string; version: unknown; items: SuggestionItem[] } | null = null;
   private sessionNotices: Set<string>;
   showNotice?: (msg: string) => void;
   setTimeoutFn: (fn: () => void, ms: number) => any;
@@ -206,6 +215,7 @@ export class InlineSuggestController {
 
   /** Drop any pending or in-flight semantic request (list closed, or the query changed). */
   cancel(): void {
+    this.shown = null;
     this.currentSeq++;
     if (this.debounceTimer) {
       this.clearTimeoutFn(this.debounceTimer);
@@ -217,6 +227,11 @@ export class InlineSuggestController {
     query: string,
     suggestInstance?: FakeSuggestLike
   ): Promise<SuggestionItem[]> {
+    // Typing or deleting whitespace cannot change the results: keep the list on screen (and any semantic merge on its
+    // way) instead of flashing back to keyword-only results until the merge lands again.
+    const shown = this.shown;
+    if (shown && shown.key === semanticText(query) && shown.version === indexVersion(this.indexStore.getIndex())) return shown.items;
+
     // Every new query supersedes earlier requests, whether or not it runs semantic search itself.
     this.cancel();
 
@@ -236,13 +251,15 @@ export class InlineSuggestController {
 
     // 3. Cached results (adapter fallback or repeated query), dropped when the index changes
     const index = this.indexStore.getIndex();
-    const version = index?.manifest?.content_hash ?? index?.manifest?.built_at ?? index?.id;
+    const version = indexVersion(index);
     if (version !== this.cacheVersion) {
       this.queryCache.clear();
       this.cacheVersion = version;
     }
     if (this.queryCache.has(query)) {
-      return this.queryCache.get(query)!;
+      const cached = this.queryCache.get(query)!;
+      this.shown = { key: semanticText(query), version, items: cached };
+      return cached;
     }
 
     // 4. Keyword search
@@ -261,18 +278,25 @@ export class InlineSuggestController {
       this.debounceTimer = this.setTimeoutFn(async () => {
         this.debounceTimer = null;
         try {
-          const qVec = await this.embedder!.embedQuery(query);
-          if (seq !== this.currentSeq) {
-            // Outdated response (I5): drop it
-            return;
+          let scores: ArrayLike<number> | null;
+          if (this.embedder!.rowScores) {
+            scores = await this.embedder!.rowScores(semanticText(query), index);
+            if (seq !== this.currentSeq) return; // Outdated response (I5): drop it
+          } else {
+            const qVec = await this.embedder!.embedQuery(semanticText(query));
+            if (seq !== this.currentSeq) {
+              // Outdated response (I5): drop it
+              return;
+            }
+
+            if (!qVec) {
+              this.handleOllamaDown(initialItems, suggestInstance);
+              return;
+            }
+            scores = rowScores(index, qVec);
           }
 
-          if (!qVec) {
-            this.handleOllamaDown(initialItems, suggestInstance);
-            return;
-          }
-
-          const merged = hybridSearch(index, query, qVec, limit);
+          const merged = hybridSearchFromScores(index, query, scores, limit);
           const mergedItems: SuggestionItem[] = merged.map((h) => ({
             type: "paper",
             paper: index.papers[h.paper],
@@ -281,6 +305,7 @@ export class InlineSuggestController {
             score: h.score,
           }));
 
+          if (this.shown) this.shown.items = mergedItems;
           refreshSuggestions(suggestInstance, mergedItems, query, this.queryCache);
         } catch {
           if (seq !== this.currentSeq) return; // failure of an outdated request
@@ -289,6 +314,7 @@ export class InlineSuggestController {
       }, 250);
     }
 
+    this.shown = { key: semanticText(query), version, items: initialItems };
     return initialItems;
   }
 
@@ -300,6 +326,7 @@ export class InlineSuggestController {
     }
     const withSemanticOff: SuggestionItem[] = items.map((it) => ({ ...it, semanticOff: true }));
     withSemanticOff.push({ type: "footer", message: "Semantic search unavailable" });
+    this.shown = null; // the next call, even with only a space added, tries semantic search again
     refreshSuggestions(suggestInstance, withSemanticOff);
   }
 
@@ -362,32 +389,32 @@ export class InlineSuggestController {
     el.empty?.();
 
     if (item.type === "loading") {
-      const row = el.createDiv?.({ cls: "daito-suggest-loading" }) || el;
+      const row = el.createDiv?.({ cls: "semantero-suggest-loading" }) || el;
       row.setText?.(item.message || "Loading paper index…");
       return;
     }
 
     if (item.type === "footer") {
-      const row = el.createDiv?.({ cls: "daito-suggest-footer" }) || el;
+      const row = el.createDiv?.({ cls: "semantero-suggest-footer" }) || el;
       row.setText?.(item.message || "Semantic search unavailable");
       return;
     }
 
     if (item.type === "hint") {
-      const row = el.createDiv?.({ cls: "daito-suggest-hint" }) || el;
+      const row = el.createDiv?.({ cls: "semantero-suggest-hint" }) || el;
       row.setText?.(item.message || "Type to search your papers");
       return;
     }
 
     if (item.type === "paper" && item.paper) {
-      const container = el.createDiv?.({ cls: "daito-suggest-paper" }) || el;
+      const container = el.createDiv?.({ cls: "semantero-suggest-paper" }) || el;
 
       // Title cut at 80 characters (I11)
       let title = item.paper.title || "Untitled";
       if (title.length > 80) {
         title = title.slice(0, 79) + "…";
       }
-      const titleEl = container.createDiv?.({ cls: "daito-suggest-title" });
+      const titleEl = container.createDiv?.({ cls: "semantero-suggest-title" });
       titleEl?.setText?.(title);
 
       // Subtitle: first author · year
@@ -396,12 +423,12 @@ export class InlineSuggestController {
           ? item.paper.authors[0]
           : "Unknown author";
       const year = item.paper.year ? String(item.paper.year) : "n.d.";
-      const metaEl = container.createDiv?.({ cls: "daito-suggest-meta" });
+      const metaEl = container.createDiv?.({ cls: "semantero-suggest-meta" });
       metaEl?.setText?.(`${firstAuthor} · ${year}`);
 
       // Snippet only when inlineShowSnippet is enabled
       if (this.settings.inlineShowSnippet !== false && item.snippet) {
-        const snippetEl = container.createDiv?.({ cls: "daito-suggest-snippet" });
+        const snippetEl = container.createDiv?.({ cls: "semantero-suggest-snippet" });
         snippetEl?.setText?.(item.snippet);
       }
     }
