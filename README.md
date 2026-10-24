@@ -103,7 +103,7 @@ flowchart LR
 
 You need a Mac, **[Zotero](https://www.zotero.org/)** with the **[Better BibTeX](https://retorque.re/zotero-better-bibtex/)**
 plugin (for citekeys), **[Obsidian](https://obsidian.md/)** with a vault, and **[Homebrew](https://brew.sh/)**.
-The setup script installs the default embedding model, **pplx-embed-v2-late** (a one-off ~4 GB download and conversion,
+The setup script installs the default embedding model, **pplx-embed-v2-late** (a one-off ~550 MB download,
 then about an hour per 9,000 paper texts for the first index). For a lighter install, `--model qwen` uses
 Qwen3-Embedding 0.6B through [Ollama](https://ollama.com) instead (~600 MB). Compare them on your own library:
 [docs/EMBED_INSTALLS.md](docs/EMBED_INSTALLS.md).

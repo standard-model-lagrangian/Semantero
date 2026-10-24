@@ -4,7 +4,7 @@ RUFF   ?= $(shell command -v ruff 2>/dev/null || echo uvx ruff)
 PLUGIN := obsidian/paper-search
 LAUNCHER := launcher-core
 
-.PHONY: check ci test test-py test-ts test-launcher test-swift lint typecheck build bundle-fresh fixtures record-conformance app install-app bench-app app-selftest dev-setup install-global pplx-convert pplx-setup test-pplx
+.PHONY: check ci test test-py test-ts test-launcher test-swift lint typecheck build bundle-fresh fixtures record-conformance app install-app bench-app app-selftest dev-setup install-global pplx-fetch pplx-convert pplx-setup test-pplx
 
 check: lint typecheck test bundle-fresh
 
@@ -88,9 +88,13 @@ record-conformance:
 	cd $(LAUNCHER) && npm run record
 
 # Embedding profiles (profiles.toml, docs/EMBED_INSTALLS.md). The pplx-embed-v2-late profile needs a frozen model and
-# its service: `make pplx-convert` once (downloads, converts, checks parity), then `make pplx-setup`. setup-search.sh
-# runs both for new installs.
+# its service: `make pplx-fetch` once (downloads the converted model from the GitHub release and verifies it; or
+# `make pplx-convert` to make the same bytes yourself, ~4 GB of tools), then `make pplx-setup`. setup-search.sh runs
+# pplx-fetch and pplx-setup for new installs.
 PPLX_VENV := $(HOME)/Library/Application Support/Semantero/pplxd-venv
+
+pplx-fetch:
+	bash pplx/fetch.sh
 
 pplx-convert:
 	bash pplx/convert/convert.sh

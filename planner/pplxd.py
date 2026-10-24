@@ -59,7 +59,7 @@ def verify(mdir: Path) -> dict:
             for block in iter(lambda: f.read(1 << 22), b""):
                 h.update(block)
         if h.hexdigest() != want:
-            raise SystemExit(f"{path} does not match SHA256SUMS: re-run pplx/convert/convert.sh")
+            raise SystemExit(f"{path} does not match SHA256SUMS: re-run pplx/fetch.sh")
     return runtime
 
 

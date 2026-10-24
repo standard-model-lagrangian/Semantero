@@ -16,7 +16,16 @@ llama.cpp (build `b11829`) runs the text tower and returns every token's final h
 --embedding --pooling none`). The rest is applied in `planner/pplxd.py` from two small files written by
 `convert/export_head.py`: `proj.f32` (the Dense weight) and `head.json` (prefix token ids, skiplist token ids, lengths).
 
-## Converting (`make pplx-convert`, once; rerun only to change a version)
+## Getting the model
+
+Installs download it: `pplx/fetch.sh` (`make pplx-fetch`, run by `setup-search.sh`) fetches the Q8_0 GGUF, `proj.f32`
+and `head.json` from the GitHub release
+[`pplx-v2-late-q8_0-7bba8e7`](https://github.com/standard-model-lagrangian/Semantero/releases/tag/pplx-v2-late-q8_0-7bba8e7)
+and the pinned llama.cpp binary from ggml-org, and keeps each file only if it matches `model.sha256`. That file is the
+`SHA256SUMS` the conversion below wrote; since the conversion is deterministic, anyone can rerun it to check the
+release. The release carries the model's MIT licence and attribution (`NOTICE.md`).
+
+## Converting (`make pplx-convert`; to reproduce the release, or to change a version)
 
 `convert/convert.sh`:
 1. downloads llama.cpp `b11829` (macOS arm64 binary + source for the converter) and the model at revision
@@ -73,4 +82,6 @@ any change to the index format, the incremental logic or the atomic swaps; the s
 
 Change `LLAMA_TAG` or `HF_REV` in `convert/convert.sh` (and the model name in `profiles.toml` if the revision changes),
 run `make pplx-convert`, read `PARITY.md`, then `launchctl kickstart -k gui/$(id -u)/com.planner.pplxd`. A new model
-revision means a new model folder and token cache: rebuild the profile with `--full`.
+revision means a new model folder and token cache: rebuild the profile with `--full`. For installs to get it, copy the
+new `SHA256SUMS` to `pplx/model.sha256`, publish the files as a new release (as `pplx-v2-late-q8_0-7bba8e7` was) and
+point `pplx/fetch.sh` at it.

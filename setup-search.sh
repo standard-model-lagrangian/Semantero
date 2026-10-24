@@ -50,8 +50,8 @@ Commands:
 Options:
   --vault <path>     Path to your Obsidian Vault (default: read from config.toml or ~/Documents/Obsidian Vault)
   --zotero <path>    Path to your Zotero directory (default: ~/Zotero)
-  --model <name>     Embedding model for a new install: pplx (default; pplx-embed-v2-late, a ~4 GB one-off
-                     download and conversion) or qwen (qwen3-embedding:0.6b via Ollama, ~600 MB, quicker to set up).
+  --model <name>     Embedding model for a new install: pplx (default; pplx-embed-v2-late, a ~550 MB download)
+                     or qwen (qwen3-embedding:0.6b via Ollama, ~600 MB).
                      An existing index keeps its model; switch with: planner profile build/use (docs/EMBED_INSTALLS.md)
   -h, --help         Show this help message
 EOF
@@ -245,7 +245,7 @@ setup_ollama() {
     fi
 }
 
-# pplx-embed-v2-late (the default install): convert the frozen model once, then start its service. Fails softly.
+# pplx-embed-v2-late (the default install): download the frozen model once, then start its service. Fails softly.
 setup_pplx() {
     if [[ "$(uname -s)" != "Darwin" || "$(uname -m)" != "arm64" ]]; then
         warn "pplx-embed-v2-late runs on a pinned macOS arm64 llama.cpp build only."
@@ -264,9 +264,9 @@ setup_pplx() {
     if [[ -f "$model_dir/SHA256SUMS" ]]; then
         success "pplx-embed-v2-late is already converted"
     else
-        info "Converting pplx-embed-v2-late (once: ~4 GB of downloads, then a conversion and parity check)..."
-        bash "$SCRIPT_DIR/pplx/convert/convert.sh" || return 1
-        success "Converted pplx-embed-v2-late (details: $model_dir/PARITY.md)"
+        info "Downloading pplx-embed-v2-late (once, ~550 MB; every file is checked against pplx/model.sha256)..."
+        bash "$SCRIPT_DIR/pplx/fetch.sh" || return 1
+        success "Downloaded and verified pplx-embed-v2-late (accuracy check: $model_dir/PARITY.md)"
     fi
     info "Starting the pplx service (com.planner.pplxd)..."
     bash "$SCRIPT_DIR/pplx/install-service.sh" || return 1

@@ -30,7 +30,7 @@ After `use`:
 
 Switch to the other one with `planner profile use qwen3-0.6b` or `planner profile use pplx-v2-late`.
 
-**New installs** start on `pplx-v2-late`: `setup-search.sh` converts the model, starts `com.planner.pplxd` and writes
+**New installs** start on `pplx-v2-late`: `setup-search.sh` downloads the converted model (`pplx/fetch.sh`), starts `com.planner.pplxd` and writes
 `<vault>/.planner/profile.json` before the first build. `--model qwen` skips all that and uses `config.toml`'s
 `[search]` (Qwen3 through Ollama), as before. Neither touches a vault that already has an index.
 

@@ -96,7 +96,7 @@ only network calls are the planner's model calls (tier 4) and the embedding serv
 | [Obsidian](https://obsidian.md) | 1.x | 1+ | `brew install --cask obsidian` | An existing vault. Default `~/Documents/Obsidian Vault` |
 | Python | 3.11+ (3.15 here) | 1+ | `brew install python` | Standard library only, plus `anthropic` for tier 4. The setup script makes `.venv` |
 | poppler (`pdftotext`) | current | 1+ | `brew install poppler` | PDF text extraction |
-| [uv](https://docs.astral.sh/uv/) + pplx-embed-v2-late | uv current; model and llama.cpp pinned | 1+ (default model) | `brew install uv`; the setup script does the rest | Semantic search (the default). The script converts the model once into `~/Library/Application Support/Semantero/` (~4 GB of downloads, of which ~1.5 GB is kept at runtime) and runs it as `com.planner.pplxd`. Apple silicon only. Without it everything falls back to keyword search and fills in vectors once it's running |
+| [uv](https://docs.astral.sh/uv/) + pplx-embed-v2-late | uv current; model and llama.cpp pinned | 1+ (default model) | `brew install uv`; the setup script does the rest | Semantic search (the default). The script downloads the converted model once from [Semantero's GitHub release](https://github.com/standard-model-lagrangian/Semantero/releases/tag/pplx-v2-late-q8_0-7bba8e7) into `~/Library/Application Support/Semantero/` (~550 MB, checked against `pplx/model.sha256`) and runs it as `com.planner.pplxd`. Apple silicon only. Without it everything falls back to keyword search and fills in vectors once it's running |
 | [Ollama](https://ollama.com) + `qwen3-embedding:0.6b` | current | 1+ (`--model qwen`) | `brew install ollama && brew services start ollama && ollama pull qwen3-embedding:0.6b` | The lighter alternative (~600 MB), and the fallback if the pplx setup fails |
 | Command Line Tools (Swift compiler + macOS SDK) | for macOS 26 SDK | 3 | `xcode-select --install` | Enough to build and run the app. See [Do I need Xcode?](#do-i-need-xcode) |
 | Xcode (full app) | 26 or later (27.1 here) | 3 (optional), contributors | Mac App Store | Only for: the Spotlight "Search Everything" action (`appintentsmetadataprocessor`), the Swift test suite, and an easy stable signature. Then `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` |
@@ -127,9 +127,10 @@ only applies to a vault with no index yet: an existing index keeps its model.
 
 The script:
 1. makes `.venv` with Python 3.11+ (installing it with Homebrew if needed);
-2. checks for `pdftotext` and sets up the embedding model. For `pplx`: installs `uv`, runs `pplx/convert/convert.sh`
-   once (downloads a pinned llama.cpp and the model, converts it and checks it against the reference implementation),
-   then installs and starts the `com.planner.pplxd` service. If any of that fails it says so and falls back to
+2. checks for `pdftotext` and sets up the embedding model. For `pplx`: installs `uv`, runs `pplx/fetch.sh` once
+   (downloads a pinned llama.cpp and the converted model, ~550 MB, and checks every file's checksum), then installs and
+   starts the `com.planner.pplxd` service. To convert the model yourself instead (same bytes, ~4 GB of tools), run
+   `make pplx-convert` first. If any of that fails it says so and falls back to
    `qwen`. For `qwen`: checks for Ollama and pulls `qwen3-embedding:0.6b`;
 3. copies the plugin into `<vault>/.obsidian/plugins/semantero/`;
 4. checks your library has citekeys, then builds the first index into `<vault>/.planner/search/` (with pplx, allow
