@@ -17,8 +17,8 @@ The planner (daily brief, weekly review) is a separate, optional add-on for eith
 ### Obsidian only
 
 ```bash
-git clone https://github.com/standard-model-lagrangian/daito.git
-cd daito
+git clone https://github.com/standard-model-lagrangian/Semantero.git
+cd Semantero
 ./setup-search.sh            # add --vault "/path/to/Vault" --zotero "/path/to/Zotero" if not in the default places
 ```
 
@@ -110,8 +110,8 @@ Everything runs locally. The only network calls are the planner's model calls (t
 ## Tier 1: paper search in Obsidian
 
 ```bash
-git clone https://github.com/standard-model-lagrangian/daito.git
-cd daito
+git clone https://github.com/standard-model-lagrangian/Semantero.git
+cd Semantero
 ./setup-search.sh
 ```
 

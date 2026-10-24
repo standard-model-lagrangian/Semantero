@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="640" viewBox="0 0 1200 640" role="img" aria-label="The Semantero launcher panel: one search over papers and notes">
+<defs>
+  <linearGradient id="wall" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#2b1d5c"/><stop offset="0.5" stop-color="#5b3fa8"/><stop offset="1" stop-color="#f0a35e"/>
+  </linearGradient>
+  <radialGradient id="blobA" cx="0.15" cy="0.2" r="0.5"><stop offset="0" stop-color="#7cc4ff" stop-opacity="0.55"/><stop offset="1" stop-color="#7cc4ff" stop-opacity="0"/></radialGradient>
+  <radialGradient id="blobB" cx="0.9" cy="0.85" r="0.55"><stop offset="0" stop-color="#ffcf7a" stop-opacity="0.6"/><stop offset="1" stop-color="#ffcf7a" stop-opacity="0"/></radialGradient>
+  <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff" stop-opacity="0.90"/><stop offset="1" stop-color="#f4f2fb" stop-opacity="0.84"/></linearGradient>
+  <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#120a2e" flood-opacity="0.45"/></filter>
+  <clipPath id="frame"><rect width="1200" height="640" rx="22"/></clipPath>
+  <clipPath id="panel"><rect x="120" y="56" width="960" height="528" rx="22"/></clipPath>
+</defs>
+<g clip-path="url(#frame)">
+  <rect width="1200" height="640" fill="url(#wall)"/><rect width="1200" height="640" fill="url(#blobA)"/><rect width="1200" height="640" fill="url(#blobB)"/>
+</g>
+<g font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif">
+<rect x="120" y="56" width="960" height="528" rx="22" fill="url(#glass)" stroke="#ffffff" stroke-opacity="0.9" stroke-width="1.5" filter="url(#shadow)"/>
+<g clip-path="url(#panel)">
+<circle cx="156" cy="96" r="8" fill="none" stroke="#6b7180" stroke-width="2.2"/><path d="M162 102l6 6" stroke="#6b7180" stroke-width="2.4" stroke-linecap="round"/>
+<text x="184" y="104" font-size="23" fill="#1d2030">stiffer gels slowed neural maturation<tspan fill="#7c5cff" font-weight="300">|</tspan></text>
+<rect x="812" y="80" width="240" height="32" rx="10" fill="#000000" fill-opacity="0.06"/>
+<rect x="815" y="83" width="62" height="26" rx="8" fill="#ffffff" stroke="#000000" stroke-opacity="0.06"/>
+<text x="846" y="101" font-size="13.5" font-weight="600" fill="#1d2030" text-anchor="middle">All</text>
+<text x="924" y="101" font-size="13.5" font-weight="500" fill="#6b7180" text-anchor="middle">Papers</text>
+<text x="1004" y="101" font-size="13.5" font-weight="500" fill="#6b7180" text-anchor="middle">Notes</text>
+<path d="M120 136h960" stroke="#000000" stroke-opacity="0.08"/>
+<rect x="130" y="148" width="540" height="62" rx="12" fill="#7c5cff" fill-opacity="0.14"/>
+<rect x="146" y="165" width="22" height="28" rx="4" fill="#f5b85a" fill-opacity="0.22" stroke="#d9912c" stroke-width="1.4"/><path d="M151 174h12M151 179h12M151 184h8" stroke="#d9912c" stroke-width="1.6" stroke-linecap="round"/>
+<text x="184" y="175" font-size="15.5" font-weight="600" fill="#1d2030">Tunable hydrogel viscoelasticity modulates hu…</text>
+<text x="184" y="195" font-size="13" fill="#6b7180">Roth et al. · 2023 · Science Advances</text>
+<text x="656" y="175" font-size="12.5" fill="#6b7180" text-anchor="end">p. 6</text>
+<g transform="translate(640 183) scale(0.62)"><rect x="0" y="0" width="22" height="28" rx="4" fill="#a78bfa" fill-opacity="0.22" stroke="#7c5cff" stroke-width="1.4"/><path d="M5 20l9-9 3 3-9 9h-3z" fill="#7c5cff"/></g>
+<rect x="146" y="231" width="22" height="28" rx="4" fill="#a78bfa" fill-opacity="0.22" stroke="#7c5cff" stroke-width="1.4"/><path d="M151 251l9-9 3 3-9 9h-3z" fill="#7c5cff"/>
+<text x="184" y="241" font-size="15.5" font-weight="600" fill="#1d2030">Mechanobiology reading list</text>
+<text x="184" y="261" font-size="13" fill="#6b7180">Stiffness › Neurons</text>
+<text x="656" y="241" font-size="12.5" fill="#6b7180" text-anchor="end">20 Oct</text>
+<rect x="146" y="297" width="22" height="28" rx="4" fill="#f5b85a" fill-opacity="0.22" stroke="#d9912c" stroke-width="1.4"/><path d="M151 306h12M151 311h12M151 316h8" stroke="#d9912c" stroke-width="1.6" stroke-linecap="round"/>
+<text x="184" y="307" font-size="15.5" font-weight="600" fill="#1d2030">Hydrogels with tunable stress relaxation regula…</text>
+<text x="184" y="327" font-size="13" fill="#6b7180">Chaudhuri et al. · 2016 · Nature Materials</text>
+<text x="656" y="307" font-size="12.5" fill="#6b7180" text-anchor="end">p. 2</text>
+<rect x="146" y="363" width="22" height="28" rx="4" fill="#f5b85a" fill-opacity="0.22" stroke="#d9912c" stroke-width="1.4"/><path d="M151 372h12M151 377h12M151 382h8" stroke="#d9912c" stroke-width="1.6" stroke-linecap="round"/>
+<text x="184" y="373" font-size="15.5" font-weight="600" fill="#1d2030">Next-generation cancer organoids</text>
+<text x="184" y="393" font-size="13" fill="#6b7180">LeSavage et al. · 2022 · Nature Materials</text>
+<text x="656" y="373" font-size="12.5" fill="#6b7180" text-anchor="end">abstract</text>
+<g transform="translate(640 381) scale(0.62)"><rect x="0" y="0" width="22" height="28" rx="4" fill="#a78bfa" fill-opacity="0.22" stroke="#7c5cff" stroke-width="1.4"/><path d="M5 20l9-9 3 3-9 9h-3z" fill="#7c5cff"/></g>
+<rect x="146" y="431" width="24" height="25" rx="5" fill="#ffffff" stroke="#9aa0ad" stroke-width="1.4"/><rect x="146" y="431" width="24" height="8" rx="4" fill="#ff5f57"/><text x="158" y="452" font-size="11" font-weight="700" fill="#3a3f4b" text-anchor="middle">20</text>
+<text x="184" y="439" font-size="15.5" font-weight="600" fill="#1d2030">Tue 20 Oct 2026</text>
+<text x="184" y="459" font-size="13" fill="#6b7180">thoughts</text>
+<text x="656" y="439" font-size="12.5" fill="#6b7180" text-anchor="end">20 Oct</text>
+<path d="M680 136v392" stroke="#000000" stroke-opacity="0.08"/>
+<rect x="680" y="137" width="400" height="391" fill="#ffffff" fill-opacity="0.35"/>
+<text x="710" y="180" font-size="18" font-weight="700" fill="#1d2030">Tunable hydrogel viscoelasticity</text>
+<text x="710" y="204" font-size="18" font-weight="700" fill="#1d2030">modulates human neural maturation</text>
+<text x="710" y="232" font-size="13.5" fill="#6b7180">Roth et al. · 2023 · Science Advances</text>
+<rect x="710" y="254" width="340" height="118" rx="12" fill="#7c5cff" fill-opacity="0.07" stroke="#7c5cff" stroke-opacity="0.18"/>
+<rect x="710" y="254" width="4" height="118" rx="2" fill="#7c5cff" fill-opacity="0.6"/>
+<text x="730" y="288" font-size="15" fill="#4a4f5e">… tunable <tspan font-weight="700" fill="#1d2030">hydrogel</tspan> viscoelasticity …</text>
+<text x="730" y="318" font-size="15" fill="#4a4f5e">… faster stress relaxation …</text>
+<text x="730" y="348" font-size="15" fill="#4a4f5e">… modulates human <tspan font-weight="700" fill="#1d2030">neural maturation</tspan> …</text>
+<text x="710" y="406" font-size="13" fill="#6b7180">Page 6 · Roth 2023.pdf</text>
+<text x="710" y="430" font-size="13" fill="#6b7180">Literature note: [[roth2023tunable]]</text>
+<rect x="120" y="528" width="960" height="56" fill="#000000" fill-opacity="0.035"/><path d="M120 528h960" stroke="#000000" stroke-opacity="0.08"/>
+<rect x="144" y="545" width="30" height="22" rx="6" fill="#ffffff" fill-opacity="0.75" stroke="#000000" stroke-opacity="0.10"/><text x="159.0" y="560.5" font-size="12" font-weight="600" fill="#3a3f4b" text-anchor="middle">↵</text>
+<text x="181" y="560.5" font-size="13" fill="#4a4f5e">Open in Zotero</text>
+<rect x="299.4" y="545" width="29.0" height="22" rx="6" fill="#ffffff" fill-opacity="0.75" stroke="#000000" stroke-opacity="0.10"/><text x="313.9" y="560.5" font-size="12" font-weight="600" fill="#3a3f4b" text-anchor="middle">⌘↵</text>
+<text x="335.4" y="560.5" font-size="13" fill="#4a4f5e">Paste PDF</text>
+<rect x="420.79999999999995" y="545" width="37.5" height="22" rx="6" fill="#ffffff" fill-opacity="0.75" stroke="#000000" stroke-opacity="0.10"/><text x="439.54999999999995" y="560.5" font-size="12" font-weight="600" fill="#3a3f4b" text-anchor="middle">⌘⇧↵</text>
+<text x="465.29999999999995" y="560.5" font-size="13" fill="#4a4f5e">Paste passage</text>
+<rect x="577.0999999999999" y="545" width="29.0" height="22" rx="6" fill="#ffffff" fill-opacity="0.75" stroke="#000000" stroke-opacity="0.10"/><text x="591.5999999999999" y="560.5" font-size="12" font-weight="600" fill="#3a3f4b" text-anchor="middle">⌘L</text>
+<text x="613.0999999999999" y="560.5" font-size="13" fill="#4a4f5e">Paste [[link]]</text>
+<rect x="731.4999999999999" y="545" width="29.0" height="22" rx="6" fill="#ffffff" fill-opacity="0.75" stroke="#000000" stroke-opacity="0.10"/><text x="745.9999999999999" y="560.5" font-size="12" font-weight="600" fill="#3a3f4b" text-anchor="middle">⌘K</text>
+<text x="767.4999999999999" y="560.5" font-size="13" fill="#4a4f5e">Actions</text>
+<text x="1040" y="560.5" font-size="13" fill="#6b7180" text-anchor="end">semantic</text><circle cx="1052" cy="556" r="5" fill="#34c759"/>
+</g></g></svg>
