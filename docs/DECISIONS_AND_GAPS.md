@@ -360,3 +360,51 @@ plugin and app (`planner profile list|build|use`, `profiles.toml`, `<data_dir>/p
   the 8B 8 h+) and holds 4.4–5 GB while loaded. Whatever they gain over the 0.6B is marginal next to that: new papers
   and notes would need scheduled embedding instead of being indexed as they arrive. The lineup is now the current 0.6B
   vs pplx-embed-v2-late-0.6b, two models of the same size with different designs (one vector per row vs per token).
+
+### Trailing space changed the results (24 Oct 2026)
+
+Reported: the same query gave different results with and without a space after the last word. Reproduced on the real
+index (173 papers, 152 notes): `viscoelastic hydrogel` shared 7 of its 15 keyword results with `viscoelastic hydrogel `;
+`neural stem` ran semantic search only with the space. RRF only passed differences through; three things caused them.
+
+- **Keyword side (by design until now):** a trailing space marked the last word complete, so it matched exactly instead
+  of by prefix (`hydrogel ` lost `hydrogels`). Now the last word always prefix-matches, whatever follows it (spaces,
+  tabs, newlines, punctuation); only a trailing stopword finishes it. To keep prefix matching from rewarding rare
+  variants, a longer word is scored as if it were no rarer than the typed word (or, while that isn't a term, the most
+  frequent expansion), and counts half when the typed word is a term. Before, `transfer` let `transferrin` (df 3) beat
+  `transfer` (df 231) and put an imaging paper first for `mitochondria transfer`; `cells` expanded to 58 terms such as
+  `cells121` (citation numbers glued on by PDF extraction). Without the half weight `cell` tied with `cellular` and
+  the tie went by index order.
+- **Semantic gate:** "2 complete words" counted a trailing space. Now: 2 words, the last one 3+ characters or a digit
+  (where it starts to count for keyword search), or 12+ characters after trimming.
+- **Embedding (a bug):** the app (`QueryController`, `IntentSearchService`) and the plugin (modal, `@@`) embedded the
+  raw text, so `Query: neural stem ` got its own vector (cosine 0.991–0.998 to the trimmed one, enough to reorder the
+  top 5). Both now embed `semanticText(q)` (trimmed, inner whitespace runs made one space; `rank.ts` and Swift).
+
+Checked after the fix: 1,744 whitespace variants of 872 queries (every 1–3-word title prefix of the papers and notes,
+plus the eval set) and 119 hand-picked ones (double, leading, tab, newline, NBSP) give identical results and snippets,
+keyword and hybrid with the real Ollama embeddings. New conformance cases (trailing and doubled spaces) pin it for the
+app's ranker; the app self-test types a space after `stress relaxation` and gets the same merged list.
+
+Quality: eval set unchanged (keyword MRR 0.91, hybrid 0.94). On 556 title-derived 2–3-word queries, keyword MRR
+0.7759 (old: 0.7731 without the space, 0.7759 with), hybrid 0.8250 (old: 0.8221 / 0.8319). Most of the remaining gap
+to "old with space" is the embedding: oddly, embedding *with* a trailing space scored 0.8301 here, but it was better
+for papers (+0.012) and worse for notes (−0.007) and identical on the eval set, so it reads as noise; the trimmed text
+stays. Uncapped expansion (0.8270 hybrid, 0.7731 keyword) was not kept: it keeps the `transferrin` failure.
+
+Still differs, on purpose:
+- **Case and punctuation change the hybrid results** (`Neural Stem`, `neural stem?`): keyword ranking and the gate
+  ignore them, but the embedding model reads them as content. Not normalised.
+- **A short last word can no longer be forced with a space:** `il ` no longer matches `il`, and `vitamin d` /
+  `hepatitis b` (under 12 characters, last word one letter) don't run semantic search. Before, typing the space did
+  both. Not in last place, short words match (`il 6`).
+- **Only the last word is a prefix:** `hydrogel cells` matches `hydrogel` exactly, `cells hydrogel` also matches
+  `hydrogels`. Typing a short next word turns the previous one exact (`stiff` → `stiff g`).
+
+Open:
+- **Junk terms stay in the vocabulary** (`cells121`, `hydrogelhydrogel`): the idf cap makes them harmless for ranking;
+  splitting glued citation numbers at index time would also split real terms (`covid19`, `caco2`), so it is not done.
+- **Self-test run without notes, not reproduced (1 of 8 runs):** the first self-test after a fresh build showed 0
+  recent notes and, for `stress relaxation`, exactly the papers-only hybrid order, as if the notes corpus were missing
+  for a few seconds; status still said 152 notes. Seven later runs (a fresh build, a cold Ollama, one during a notes
+  rebuild) passed. Worth watching for if recent notes ever come up empty.

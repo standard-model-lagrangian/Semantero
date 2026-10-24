@@ -122,17 +122,17 @@ test("IM1 Tab is bound to insert the selected suggestion, like Enter", () => {
   assert.strictEqual(ret, false, "Tab default (indent) is prevented");
 });
 
-test("IM2 semantic gate uses shouldRunSemantic: 'stiff g' does not embed, 'stiff gels ' does", async () => {
+test("IM2 semantic gate uses shouldRunSemantic: 'stiff g' does not embed, 'stiff gels' does, without its trailing space", async () => {
   const { clock, calls, controller } = setup(async () => new Float32Array(4).fill(1), { minCharsSemantic: 12 });
   await controller.getSuggestions("stiff g", {});
   clock.advance(300);
   await flush();
-  assert.deepStrictEqual(calls, [], "only one complete token: no embed");
+  assert.deepStrictEqual(calls, [], "the last word is too short to count: no embed");
 
   await controller.getSuggestions("stiff gels ", {});
   clock.advance(300);
   await flush();
-  assert.deepStrictEqual(calls, ["stiff gels "]);
+  assert.deepStrictEqual(calls, ["stiff gels"]);
 });
 
 test("IM3 minCharsSemantic setting is honoured", async () => {

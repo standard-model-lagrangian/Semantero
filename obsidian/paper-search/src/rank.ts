@@ -12,14 +12,22 @@ export interface PaperRowRef {
   chunkRows: number[];
 }
 
+/** Embed a query of `minChars` or more, or of two words once the last one counts for keyword search too (3+
+ * characters or a digit, as in bm25.ts). Trailing spaces never change the answer. */
 export function shouldRunSemantic(query: string, minChars: number = 12): boolean {
-  const trimmed = query.trim();
-  if (trimmed.length >= minChars) {
+  if (semanticText(query).length >= minChars) {
     return true;
   }
   const { tokens, lastIncomplete } = tokenize(query);
-  const completeTokens = lastIncomplete ? tokens.length - 1 : tokens.length;
-  return completeTokens >= 2;
+  const last = tokens[tokens.length - 1] ?? "";
+  const lastCounts = !lastIncomplete || last.length >= 3 || /\d/.test(last);
+  return (lastCounts ? tokens.length : tokens.length - 1) >= 2;
+}
+
+/** The query as it is embedded: surrounding whitespace dropped and runs of whitespace made one space, so a trailing
+ * or doubled space gives the same vector. */
+export function semanticText(query: string): string {
+  return query.trim().replace(/\s+/g, " ");
 }
 
 export function scorePaperSemantic(

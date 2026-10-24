@@ -1,6 +1,6 @@
 import { keyword, hybridSearchFromScores, rowScores, type LoadedIndex } from "./engine.ts";
 import { findTrigger, isExcludedContext, formatCitation } from "./cite.ts";
-import { shouldRunSemantic } from "./rank.ts";
+import { semanticText, shouldRunSemantic } from "./rank.ts";
 import { ensureLiteratureNote, type LitNoteSettings, type VaultLike, type MetadataCacheLike } from "./litnote.ts";
 import type { PaperMetadata } from "./bm25.ts";
 
@@ -265,10 +265,10 @@ export class InlineSuggestController {
         try {
           let scores: ArrayLike<number> | null;
           if (this.embedder!.rowScores) {
-            scores = await this.embedder!.rowScores(query, index);
+            scores = await this.embedder!.rowScores(semanticText(query), index);
             if (seq !== this.currentSeq) return; // Outdated response (I5): drop it
           } else {
-            const qVec = await this.embedder!.embedQuery(query);
+            const qVec = await this.embedder!.embedQuery(semanticText(query));
             if (seq !== this.currentSeq) {
               // Outdated response (I5): drop it
               return;

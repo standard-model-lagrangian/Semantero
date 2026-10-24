@@ -15,10 +15,11 @@ struct IntentTests {
     }
 
     @Test func hybridResultsAreUsedWhenTheVectorArrivesInTime() async {
-        let ranker = FakeRanker()
-        let service = IntentSearchService(ranker: ranker, embedder: { _ in [1, 0] }, sleeper: FakeSleeper())
-        let out = await service.matching("stiff gels promoted")
-        #expect(out.map(\.id) == ["H:stiff gels promoted"])
+        let ranker = FakeRanker(), embedded = CallLog()
+        let service = IntentSearchService(ranker: ranker, embedder: { embedded.add($0); return [1, 0] }, sleeper: FakeSleeper())
+        let out = await service.matching("stiff  gels promoted ")
+        #expect(out.map(\.id) == ["H:stiff  gels promoted"])
+        #expect(embedded.all == ["stiff gels promoted"])
     }
 
     // S40

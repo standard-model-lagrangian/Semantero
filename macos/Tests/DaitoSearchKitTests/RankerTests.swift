@@ -118,6 +118,11 @@ struct RankerTests {
         #expect(await r.shouldRunSemantic("vis") == false)
         #expect(await r.shouldRunSemantic("stiff gels ") == true)
         #expect(await r.shouldRunSemantic("viscoelasticit") == true)
+        // a trailing space never changes the answer
+        #expect(await r.shouldRunSemantic("neural stem") == true)
+        #expect(await r.shouldRunSemantic("neural stem ") == true)
+        #expect(await r.shouldRunSemantic("stiff g") == false)
+        #expect(await r.shouldRunSemantic("stiff g ") == false)
     }
 
     @Test func lookupResolvesIds() async throws {

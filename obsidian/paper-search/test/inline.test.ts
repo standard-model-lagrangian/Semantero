@@ -257,7 +257,7 @@ test("I5 outdated semantic responses are dropped", async () => {
 
   const embedder = {
     async embedQuery(text: string) {
-      if (text === "stiff gel ") {
+      if (text === "stiff gel") { // the query is embedded without its trailing space
         return new Promise<Float32Array>((res) => {
           resolveFirst = res;
         });

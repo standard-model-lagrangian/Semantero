@@ -46,6 +46,22 @@ struct QueryControllerTests {
         #expect(sleeper.requested.last == 0.2)
     }
 
+    @Test func theQueryIsEmbeddedWithoutSurroundingOrRepeatedWhitespace() async {
+        let ranker = FakeRanker(), sleeper = FakeSleeper(immediate: true), log = UpdateLog(), embedded = CallLog()
+        let c = await controller(ranker, sleeper: sleeper, log: log, embedder: { embedded.add($0); return [1, 0] })
+        await c.setQuery(" stiff  gels\t")
+        await log.wait { $0.last?.semantic == .merged }
+        #expect(embedded.all == ["stiff gels"])
+        #expect(log.all.last?.query == " stiff  gels\t", "the ranker still gets the text as typed")
+    }
+
+    @Test func semanticTextMatchesTheTypeScriptRule() {
+        #expect(semanticText("stiff gels ") == "stiff gels")
+        #expect(semanticText("  stiff \t gels\n") == "stiff gels")
+        #expect(semanticText("stiff\u{00A0}gels") == "stiff gels")
+        #expect(semanticText("   ") == "")
+    }
+
     // S19
     @Test func staleSemanticResponseIsDropped() async {
         let ranker = FakeRanker(), sleeper = FakeSleeper(immediate: true), log = UpdateLog()

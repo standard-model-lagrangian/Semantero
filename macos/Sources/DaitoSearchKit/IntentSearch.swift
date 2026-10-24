@@ -33,11 +33,11 @@ public actor IntentSearchService {
         return await withTaskGroup(of: Race.self) { group in
             group.addTask {
                 if let rowScorer {
-                    guard let s = try? await rowScorer(q, .all) else { return .semantic(nil) }
+                    guard let s = try? await rowScorer(semanticText(q), .all) else { return .semantic(nil) }
                     return .semantic(try? await ranker.hybridFromRowScores(q, papersScores: s.papers, notesScores: s.notes,
                                                                            scope: .all, limit: Self.maxResults))
                 }
-                guard let embedder, let v = try? await embedder(q) else { return .semantic(nil) }
+                guard let embedder, let v = try? await embedder(semanticText(q)) else { return .semantic(nil) }
                 return .semantic(try? await ranker.hybrid(q, queryVector: v, scope: .all, limit: Self.maxResults))
             }
             group.addTask { try? await sleeper.sleep(seconds: wait); return .timeout }

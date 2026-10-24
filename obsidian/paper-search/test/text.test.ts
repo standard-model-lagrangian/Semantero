@@ -7,18 +7,21 @@ test("tokenises numbers and drops stopwords", () => {
   assert.deepStrictEqual(res.tokens, ["il", "6", "3d", "gels"]);
 });
 
-test("marks last token incomplete unless trailing space", () => {
-  const incomplete = tokenize("stiff gel");
-  assert.deepStrictEqual(incomplete.tokens, ["stiff", "gel"]);
-  assert.strictEqual(incomplete.lastIncomplete, true);
+test("marks the last token as possibly unfinished, whatever follows it", () => {
+  const typing = tokenize("stiff gel");
+  assert.deepStrictEqual(typing.tokens, ["stiff", "gel"]);
+  assert.strictEqual(typing.lastIncomplete, true);
 
-  const complete = tokenize("stiff gel ");
-  assert.deepStrictEqual(complete.tokens, ["stiff", "gel"]);
-  assert.strictEqual(complete.lastIncomplete, false);
+  // A trailing space, tab, newline or punctuation changes nothing
+  for (const q of ["stiff gel ", "stiff gel  ", "stiff gel\t", "stiff gel\n", "stiff gel.", " stiff  gel "]) {
+    assert.deepStrictEqual(tokenize(q), typing, q);
+  }
 
+  // A trailing stopword finishes the word before it
   const completeWithStopword = tokenize("stiff in");
   assert.deepStrictEqual(completeWithStopword.tokens, ["stiff"]);
   assert.strictEqual(completeWithStopword.lastIncomplete, false);
+  assert.deepStrictEqual(tokenize("stiff in "), completeWithStopword);
 });
 
 test('splits sentences without breaking "et al." or "Fig. 2"', () => {

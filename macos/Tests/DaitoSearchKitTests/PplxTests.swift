@@ -69,10 +69,13 @@ struct PplxTests {
         let ranker = FakeRanker(), sleeper = FakeSleeper(immediate: true), log = UpdateLog()
         let c = QueryController(ranker: ranker, sleeper: sleeper, debounce: 0.2, limit: 15) { log.add($0) }
         let papers = Data([1, 2, 3, 4])
-        await c.configure(rowScorer: { _, _ in RowScores(papers: papers, notes: nil) }, unreachable: "pplx service not reachable")
+        let scored = CallLog()
+        await c.configure(rowScorer: { q, _ in scored.add(q); return RowScores(papers: papers, notes: nil) },
+                          unreachable: "pplx service not reachable")
         await c.setQuery("stiff gels ")
         await log.wait { $0.last?.semantic == .merged }
         #expect(log.all.last?.results.map(\.id) == ["S:stiff gels "])
+        #expect(scored.all == ["stiff gels"], "the service scores the query without its trailing space")
         #expect(ranker.rowScoreCalls.first?.papers == papers)
         #expect(ranker.hybridCalls.isEmpty)
     }

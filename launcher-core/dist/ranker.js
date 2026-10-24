@@ -185,9 +185,9 @@
         tokens.push(part);
       }
     }
-    const hasTrailingSpace = /\s$/.test(text);
-    const lastRaw = rawParts.length > 0 ? rawParts[rawParts.length - 1] : "";
-    const lastIncomplete = !hasTrailingSpace && tokens.length > 0 && tokens[tokens.length - 1] === lastRaw;
+    let lastRaw = "";
+    for (let i = rawParts.length - 1; i >= 0 && !lastRaw; i--) lastRaw = rawParts[i];
+    const lastIncomplete = tokens.length > 0 && tokens[tokens.length - 1] === lastRaw;
     return { tokens, lastIncomplete };
   }
   function splitSentences(text) {
@@ -270,13 +270,16 @@
 
   // ../obsidian/paper-search/src/rank.ts
   function shouldRunSemantic(query, minChars = 12) {
-    const trimmed = query.trim();
-    if (trimmed.length >= minChars) {
+    if (semanticText(query).length >= minChars) {
       return true;
     }
     const { tokens, lastIncomplete } = tokenize(query);
-    const completeTokens = lastIncomplete ? tokens.length - 1 : tokens.length;
-    return completeTokens >= 2;
+    const last = tokens[tokens.length - 1] ?? "";
+    const lastCounts = !lastIncomplete || last.length >= 3 || /\d/.test(last);
+    return (lastCounts ? tokens.length : tokens.length - 1) >= 2;
+  }
+  function semanticText(query) {
+    return query.trim().replace(/\s+/g, " ");
   }
 
   // ../obsidian/paper-search/src/bm25.ts
@@ -504,6 +507,32 @@
       const end = l;
       return [start, end];
     }
+    /**
+     * The vocabulary words a last word of 3+ characters expands to (at most 64, the most frequent first; the word itself
+     * is always kept), each with a weight on its postings. A longer word is scored as if it were no rarer than the typed
+     * word (or, while the typed word is not a vocabulary term yet, the most frequent expansion): otherwise a rare variant
+     * ("cells121" from a glued citation number, "transferrin" for "transfer") has a far higher idf than the word being
+     * typed and its few papers jump to the top. When the typed word is a term itself, longer words count half, so "cell"
+     * ranks papers saying "cell" above papers saying only "cellular".
+     */
+    prefixMatcher(t) {
+      const [start, end] = this.findPrefixRange(t);
+      const candidates = [];
+      for (let id = start; id < end; id++) candidates.push(id);
+      const exact = this.termId(t);
+      if (candidates.length > 64) {
+        candidates.sort((a, b) => this.dfById[b] - this.dfById[a] || a - b);
+        candidates.length = 64;
+        if (exact >= 0 && !candidates.includes(exact)) candidates[63] = exact;
+      }
+      if (candidates.length === 0) return { matchingTerms: [], weights: [] };
+      let refDf = exact >= 0 ? this.dfById[exact] : 0;
+      if (exact < 0) for (const id of candidates) refDf = Math.max(refDf, this.dfById[id]);
+      const refIdf = this.idfFromDf(refDf);
+      const variant = exact >= 0 ? 0.5 : 1;
+      const weights = candidates.map((id) => id === exact ? 1 : variant * Math.min(1, refIdf / this.idfFromDf(this.dfById[id])));
+      return { matchingTerms: candidates, weights };
+    }
     search(query, limit) {
       const { tokens, lastIncomplete } = tokenize(query);
       if (tokens.length === 0) {
@@ -517,32 +546,14 @@
           if (t.length < 3) {
             const id = /\d/.test(t) ? this.termId(t) : -1;
             if (id >= 0) {
-              termMatchers.push({ isPrefix: false, matchingTerms: [id] });
+              termMatchers.push({ matchingTerms: [id], weights: [1] });
             }
           } else {
-            const [start, end] = this.findPrefixRange(t);
-            const matchCount = end - start;
-            if (matchCount > 0) {
-              if (matchCount <= 64) {
-                const range = [];
-                for (let id = start; id < end; id++) range.push(id);
-                termMatchers.push({ isPrefix: true, matchingTerms: range });
-              } else {
-                const candidates = [];
-                for (let id = start; id < end; id++) candidates.push(id);
-                candidates.sort((a, b) => this.dfById[b] - this.dfById[a] || a - b);
-                termMatchers.push({
-                  isPrefix: true,
-                  matchingTerms: candidates.slice(0, 64)
-                });
-              }
-            } else {
-              termMatchers.push({ isPrefix: true, matchingTerms: [] });
-            }
+            termMatchers.push(this.prefixMatcher(t));
           }
         } else {
           const id = this.termId(t);
-          termMatchers.push({ isPrefix: false, matchingTerms: id >= 0 ? [id] : [] });
+          termMatchers.push({ matchingTerms: id >= 0 ? [id] : [], weights: [1] });
         }
       }
       if (termMatchers.length === 0) {
@@ -557,16 +568,18 @@
       for (const matcher of termMatchers) {
         matcherPaperScores.clear();
         matcherChunkScores.clear();
-        for (const term of matcher.matchingTerms) {
+        for (let k = 0; k < matcher.matchingTerms.length; k++) {
+          const term = matcher.matchingTerms[k];
+          const w = matcher.weights[k];
           const pp = this.paperPostings;
           for (let i = pp.offsets[term], end = pp.offsets[term + 1]; i < end; i++) {
             const prev = matcherPaperScores.get(pp.ids[i]) || 0;
-            if (pp.scores[i] > prev) matcherPaperScores.set(pp.ids[i], pp.scores[i]);
+            if (pp.scores[i] * w > prev) matcherPaperScores.set(pp.ids[i], pp.scores[i] * w);
           }
           const cp = this.chunkPostings;
           for (let i = cp.offsets[term], end = cp.offsets[term + 1]; i < end; i++) {
             const prev = matcherChunkScores.get(cp.ids[i]) || 0;
-            if (cp.scores[i] > prev) matcherChunkScores.set(cp.ids[i], cp.scores[i]);
+            if (cp.scores[i] * w > prev) matcherChunkScores.set(cp.ids[i], cp.scores[i] * w);
           }
         }
         for (const [pIdx, score] of matcherPaperScores.entries()) {

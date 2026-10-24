@@ -9,7 +9,7 @@ import type PaperSearchPlugin from "./main.ts";
 import { keyword, hybridSearchFromScores, type Hit, type LoadedIndex } from "./engine.ts";
 import { DEFAULT_KEEP_ALIVE } from "./ollama.ts";
 import { isPplx, warmSemantic } from "./semantic.ts";
-import { shouldRunSemantic, SemanticCoordinator } from "./rank.ts";
+import { semanticText, shouldRunSemantic, SemanticCoordinator } from "./rank.ts";
 import { ensureLiteratureNote, formatCitation } from "./litnote.ts";
 import { hitUrl, selectItemUrl } from "./zotero.ts";
 
@@ -143,7 +143,7 @@ export class PaperSearchModal extends SuggestModal<SearchModalItem> {
     if (!ix.vectors) return;
 
     try {
-      const scores = await this.plugin.semanticScoresFor(ix, query, ix.manifest.query_instruction);
+      const scores = await this.plugin.semanticScoresFor(ix, semanticText(query), ix.manifest.query_instruction);
 
       if (!this.coordinator.isCurrent(seq)) {
         return; // Stale response dropped

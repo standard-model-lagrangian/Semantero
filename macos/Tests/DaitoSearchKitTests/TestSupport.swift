@@ -147,11 +147,12 @@ final class FakeRanker: Ranker, @unchecked Sendable {
     func load(papers: CorpusFiles?, notes: CorpusFiles?) async throws -> RankerStatus { RankerStatus() }
     func status() async throws -> RankerStatus { RankerStatus() }
     func shouldRunSemantic(_ query: String) async -> Bool {
-        let t = query.trimmingCharacters(in: .whitespaces)
-        if t.count >= 12 { return true }
-        let words = query.split(separator: " ", omittingEmptySubsequences: true).count
-        let complete = query.hasSuffix(" ") ? words : words - 1
-        return complete >= 2
+        // rank.ts, without stopwords: 12+ characters, or two words with the last one 3+ characters or a digit
+        if semanticText(query).count >= 12 { return true }
+        let words = query.split(whereSeparator: { $0.isWhitespace })
+        guard let last = words.last else { return false }
+        let lastCounts = last.count >= 3 || last.contains(where: \.isNumber)
+        return (lastCounts ? words.count : words.count - 1) >= 2
     }
     func keyword(_ query: String, scope: Scope, limit: Int) async throws -> [ResultVM] {
         if notLoaded { throw RankerError("no index loaded") }

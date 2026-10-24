@@ -15,6 +15,12 @@ public struct QueryUpdate: Sendable, Equatable {
     public let semantic: SemanticState
 }
 
+/// The query as it is embedded (`semanticText` in rank.ts): surrounding whitespace dropped and runs of whitespace made
+/// one space, so a trailing or doubled space gives the same vector.
+public func semanticText(_ query: String) -> String {
+    query.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+}
+
 /// Turns keystrokes into result updates: keyword results immediately, semantic results after a pause, and stale
 /// responses dropped by sequence number.
 public actor QueryController {
@@ -94,15 +100,16 @@ public actor QueryController {
     private func semanticPhase(seq mySeq: Int, query q: String, scope s: Scope, keyword kw: [ResultVM]) async {
         do { try await sleeper.sleep(seconds: debounce) } catch { return }
         guard mySeq == seq, embedder != nil || rowScorer != nil else { return }
+        let text = semanticText(q)
         do {
             let merged: [ResultVM]
             if let rowScorer {
-                let scores = try await rowScorer(q, s)
+                let scores = try await rowScorer(text, s)
                 guard mySeq == seq else { return }
                 merged = try await ranker.hybridFromRowScores(q, papersScores: scores.papers, notesScores: scores.notes,
                                                               scope: s, limit: limit)
             } else {
-                let vector = try await embedder!(q)
+                let vector = try await embedder!(text)
                 guard mySeq == seq else { return }
                 merged = try await ranker.hybrid(q, queryVector: vector, scope: s, limit: limit)
             }

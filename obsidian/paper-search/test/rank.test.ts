@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert";
 import {
+  semanticText,
   shouldRunSemantic,
   mergeRRF,
   scorePaperSemantic,
@@ -59,11 +60,27 @@ test("keyword-only ordering is shown before semantic arrives", () => {
   );
 });
 
-test("semantic gating: needs ≥2 complete tokens or ≥12 chars", () => {
+test("semantic gating: needs 2 words (the last one 3+ chars or a digit) or ≥12 chars", () => {
   assert.strictEqual(shouldRunSemantic("vis"), false);
-  assert.strictEqual(shouldRunSemantic("stiff gels "), true); // 2 complete tokens
+  assert.strictEqual(shouldRunSemantic("stiff gels "), true); // 2 words
   assert.strictEqual(shouldRunSemantic("viscoelasticit"), true); // 15 chars >= 12
   assert.strictEqual(shouldRunSemantic("gel"), false); // 1 token, 3 chars < 12
+  assert.strictEqual(shouldRunSemantic("neural stem"), true); // 2 tokens, the last one 3+ chars
+  assert.strictEqual(shouldRunSemantic("stiff g"), false); // the last word does not count yet
+  assert.strictEqual(shouldRunSemantic("il 6"), true); // a digit counts
+  assert.strictEqual(shouldRunSemantic("stiff in"), false); // a stopword is not a word
+});
+
+test("shouldRunSemantic and semanticText ignore surrounding and repeated whitespace", () => {
+  for (const q of ["neural stem", "stiff g", "vis", "viscoelasticit", "stiff gels", "il 6", "hepatitis b"]) {
+    for (const v of [q + " ", q + "  ", " " + q, q + "\t", q + "\n", q.replace(/ /g, "  ")]) {
+      assert.strictEqual(shouldRunSemantic(v), shouldRunSemantic(q), JSON.stringify(v));
+      assert.strictEqual(semanticText(v), q, JSON.stringify(v));
+    }
+  }
+  // 12 characters counted after trimming: padding does not push a query over the threshold
+  assert.strictEqual(shouldRunSemantic("hepatitis b"), false);
+  assert.strictEqual(shouldRunSemantic("hepatitis b   "), false);
 });
 
 test("stale semantic responses are dropped", async () => {

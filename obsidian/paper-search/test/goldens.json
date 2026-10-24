@@ -894,15 +894,15 @@
     "keywordRes": [
       {
         "paperIndex": 0,
-        "score": 5.375278407684165,
-        "metadataScore": 5.375278407684165,
+        "score": 5.078483894376451,
+        "metadataScore": 5.078483894376451,
         "bestChunkScore": 0
       }
     ],
     "keywordHits": [
       {
         "paperIndex": 0,
-        "score": 5.375278407684165,
+        "score": 5.078483894376451,
         "snippetText": "Faster stress relaxation accelerated neuronal maturation and neural network development.",
         "isAbstract": true,
         "winningAttachmentKey": "ATT001"
@@ -975,15 +975,15 @@
     "keywordRes": [
       {
         "paperIndex": 1,
-        "score": 5.375278407684165,
-        "metadataScore": 5.375278407684165,
+        "score": 5.078483894376451,
+        "metadataScore": 5.078483894376451,
         "bestChunkScore": 0
       }
     ],
     "keywordHits": [
       {
         "paperIndex": 1,
-        "score": 5.375278407684165,
+        "score": 5.078483894376451,
         "snippetText": "Matrix stiffness and viscoelasticity regulate organoid morphogenesis and drug response.",
         "isAbstract": true,
         "winningAttachmentKey": "ATT002"
@@ -1063,15 +1063,15 @@
     "keywordRes": [
       {
         "paperIndex": 2,
-        "score": 5.375278407684165,
-        "metadataScore": 5.375278407684165,
+        "score": 5.078483894376451,
+        "metadataScore": 5.078483894376451,
         "bestChunkScore": 0
       }
     ],
     "keywordHits": [
       {
         "paperIndex": 2,
-        "score": 5.375278407684165,
+        "score": 5.078483894376451,
         "snippetText": "Engineered matrices reveal stiffness-mediated chemoresistance in patient-derived pancreatic cancer organoids.",
         "isAbstract": true,
         "winningAttachmentKey": "ATT004A"
@@ -2388,29 +2388,29 @@
     "keywordRes": [
       {
         "paperIndex": 1,
-        "score": 12.386556556039299,
-        "metadataScore": 12.386556556039299,
+        "score": 8.978584047815616,
+        "metadataScore": 8.978584047815616,
         "bestChunkScore": 1.2809338454620645,
         "bestChunkIndex": 1
       },
       {
         "paperIndex": 2,
-        "score": 1.7385177338527433,
-        "metadataScore": 1.7385177338527433,
+        "score": 0.8692588669263717,
+        "metadataScore": 0.8692588669263717,
         "bestChunkScore": 0
       }
     ],
     "keywordHits": [
       {
         "paperIndex": 1,
-        "score": 12.386556556039299,
+        "score": 8.978584047815616,
         "snippetText": "Matrix stiffness and viscoelasticity regulate organoid morphogenesis and drug response.",
         "isAbstract": true,
         "winningAttachmentKey": "ATT002"
       },
       {
         "paperIndex": 2,
-        "score": 1.7385177338527433,
+        "score": 0.8692588669263717,
         "snippetText": "Engineered matrices reveal stiffness-mediated chemoresistance in patient-derived pancreatic cancer organoids.",
         "isAbstract": true,
         "winningAttachmentKey": "ATT004A"

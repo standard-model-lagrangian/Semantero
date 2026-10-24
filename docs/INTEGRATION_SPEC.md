@@ -40,7 +40,7 @@ Cause of the keyword spikes, in `src/bm25.ts` around line 171: an unfinished las
 ### 0.1 Bound prefix expansion (`src/bm25.ts`)
 
 - The vocabulary is kept as a **sorted array** built once at load. A prefix lookup is a binary search for the range: O(log V + matches).
-- **An unfinished word shorter than 3 characters is ignored,** unless it contains a digit and is a vocabulary term (`"3d"`, `"6"`), in which case it matches exactly. So `"s"`, `"st"` and `"il"` contribute nothing until the third letter or a space. (Changed 20 Oct: the real vocabulary contains single letters such as `s` and `c`, from "cell's" and similar, so the earlier "any complete term" exception made `"s"` match 150 papers.)
+- **An unfinished word shorter than 3 characters is ignored,** unless it contains a digit and is a vocabulary term (`"3d"`, `"6"`), in which case it matches exactly. So `"s"`, `"st"` and `"il"` contribute nothing until the third letter. (Changed 24 Oct: a space no longer finishes a word, so `"il "` is ignored too; not in last place, as in `"il 6"`, it matches exactly.) (Changed 20 Oct: the real vocabulary contains single letters such as `s` and `c`, from "cell's" and similar, so the earlier "any complete term" exception made `"s"` match 150 papers.)
 - **At most 64 expansions per prefix.** If more terms match, keep the 64 with the highest document frequency. Frequent terms are what a person is most likely typing, and this bounds the work.
 - Postings are merged into a reused `Float64Array` of per-paper scores, not a `Map`, to avoid garbage-collection pauses.
 - Results are ranked with a partial top-k (`limit` × 4 candidates), not a full sort.
@@ -183,7 +183,7 @@ When a citation is inserted (from the pop-up's `Cmd+Enter`, from `@@`, or from t
 
 - **Typing `@@` opens the suggestion list.** With nothing typed after it, the list shows one hint row: `Type to search your papers`.
 - **Keyword results** update on every keystroke.
-- **Semantic results** merge in after a 250 ms pause, under the same rules as the pop-up: at least 2 complete words or 12 characters.
+- **Semantic results** merge in after a 250 ms pause, under the same rules as the pop-up: 2 words, the last one 3+ characters or a digit, or 12 characters.
 - **`Enter` or `Tab`** replaces everything from `@@` to the cursor with the citation, then runs 1c.
 - **`Escape`** closes the list and leaves the text as typed.
 
@@ -327,12 +327,12 @@ Python tests use `unittest` and temporary directories, as now. TypeScript tests 
 **Keyword prefix: `test/bm25.test.ts` (additions)**
 - **K1 short unfinished word ignored:**
   - `"s"` gives the same ranking as `""` (empty);
-  - `"stiff g"` gives the same ranking as `"stiff "`.
-- **K2 a short word that's a real term still matches exactly:** `"il"`, `"3d"` with a vocabulary containing them.
+  - `"stiff g"` gives the same ranking as `"stiff in"` (`"stiff"` finished by a stopword).
+- **K2 a short word that's a real term still matches exactly:** `"3d"` as the last word, `"il"` before another word, with a vocabulary containing them.
 - **K3 three-letter prefix expands:** `"vis"` finds `viscoelastic` and `viscosity`.
 - **K4 at most 64 expansions, highest document frequency kept:** a vocabulary with 500 `stiff*` terms gives exactly 64, and the 64 kept are the most frequent.
-- **K5 a completed word never prefix-matches:** `"cell "` doesn't match `cellular`.
-- **K6 ranking unchanged for completed-word queries:** golden results on `index_small` for 20 queries, recorded before the change, must be identical after it.
+- **K5 a typed word that is a term ranks its exact matches above longer words:** `"cell"` and `"cell "` match `cellular` too, but rank `cell` first. (Changed 24 Oct: a completed word used to never prefix-match, which made a trailing space change the results.) **K5b** a rare longer word (`cells121`) scores no higher than the word typed.
+- **K6 ranking unchanged for completed-word queries:** golden results on `index_small` for 20 queries, recorded before the change, must be identical after it. (Re-recorded 24 Oct: the half weight on longer words changed the scores, not the order, of `roth`, `lesavage`, `wang` and `drug response organoid`.)
 - **K7 sorted vocabulary binary search agrees with a linear scan** for 1,000 random prefixes.
 - **K8 unicode and odd input don't crash:**
   - `"Φ29"`, `"β-catenin"`, `"naïve"`, emoji, 10 kB of `"a "`, only stopwords, only punctuation;
