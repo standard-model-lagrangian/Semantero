@@ -4,6 +4,7 @@ run under the pplxd venv (`make test-pplx`); in the main venv they are skipped."
 import array
 import base64
 import json
+import plistlib
 import shutil
 import tempfile
 import threading
@@ -137,6 +138,16 @@ class TestDoctor(unittest.TestCase):
             self.assertIsNone(health.check_search_tools(self.cfg()))
         with patch.object(pplx, "health", return_value={"ok": True, "model": "pplx-y"}):
             self.assertIn("pplx-y", health.check_search_tools(self.cfg()).message)
+
+
+class TestLaunchdJob(unittest.TestCase):
+    def test_service_is_not_throttled_as_background(self):
+        # It answers queries as the owner types; as a Background job macOS kept it on efficiency cores with throttled
+        # I/O and a query took ~2 s instead of ~0.25 s, past the app's 3 s timeout once requests overlapped.
+        with open(Path(__file__).parent.parent / "launchd" / "com.planner.pplxd.plist", "rb") as f:
+            pl = plistlib.load(f)
+        self.assertEqual(pl["Label"], "com.planner.pplxd")
+        self.assertEqual(pl.get("ProcessType"), "Interactive")
 
 
 @unittest.skipIf(np is None, "numpy not installed (run: make test-pplx)")

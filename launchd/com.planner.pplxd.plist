@@ -20,8 +20,10 @@
     <true/>
     <key>ThrottleInterval</key>
     <integer>30</integer>
+    <!-- Interactive, not Background: it answers queries as you type, and as a Background job macOS kept it on
+         efficiency cores with throttled I/O (~2 s a query instead of ~0.25 s, past the app's 3 s timeout). -->
     <key>ProcessType</key>
-    <string>Background</string>
+    <string>Interactive</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>PYTHONUNBUFFERED</key>
