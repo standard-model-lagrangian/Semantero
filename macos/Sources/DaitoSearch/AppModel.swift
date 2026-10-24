@@ -202,7 +202,7 @@ final class AppModel {
             loadMessage = nil
             scheduleSettleGC()
             await configureEmbedding(from: s)
-            await controller?.setQuery(query)
+            await controller?.setQuery(query, force: true)
             Task { await syncSpotlight() }
         case .failed(let message):
             loadMessage = "Index problem: \(message)"
@@ -267,7 +267,10 @@ final class AppModel {
 
     private func apply(_ update: QueryUpdate) {
         guard update.query == query, update.scope == scope else { return }
-        if lastAppliedQuery.map({ $0 != (update.query, update.scope) }) ?? true { selection.queryChanged() }
+        // A whitespace-only edit is the same query: the selection stays where it was moved to.
+        if lastAppliedQuery.map({ semanticText($0.0) != semanticText(update.query) || $0.1 != update.scope }) ?? true {
+            selection.queryChanged()
+        }
         lastAppliedQuery = (update.query, update.scope)
         selection.apply(update.results)
         semantic = update.semantic
@@ -303,7 +306,7 @@ final class AppModel {
         if Date().timeIntervalSince(lastQueryAt) > 60 { query = "" }
         showActionMenu = false
         Task { await controller?.panelOpened(); await reloadIndexes() }
-        if query.isEmpty { Task { await controller?.setQuery("") } }
+        if query.isEmpty { Task { await controller?.setQuery("", force: true) } }
     }
     func panelDidHide() { lastQueryAt = Date() }
 

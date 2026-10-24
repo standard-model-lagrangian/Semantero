@@ -408,3 +408,13 @@ Open:
   recent notes and, for `stress relaxation`, exactly the papers-only hybrid order, as if the notes corpus were missing
   for a few seconds; status still said 152 notes. Seven later runs (a fresh build, a cold Ollama, one during a notes
   rebuild) passed. Worth watching for if recent notes ever come up empty.
+
+Follow-up, same day: typing or deleting the space still made the list change for a moment. Every keystroke re-ran
+the query, which shows keyword-only results at once and the merge 200 ms later; the final list was the same, but the
+keyword-only one flashed in between. Now an edit that changes only whitespace re-sends the list on screen (and lets a
+pending merge land under the new text) in the app (`QueryController`), the plugin's modal and `@@`; the selection
+stays put. A second source of the same flash: when the 5-minute job re-indexes an edited note, the app reloads and
+re-ranks the open query. A forced re-rank of the same query now keeps a merged list on screen until the new merge
+replaces it. The app self-test samples the list every 20 ms for 0.8 s after typing and after deleting the space.
+Note that the self-test opens a real panel that takes keyboard focus: typing elsewhere while it runs lands in it
+(one run got `ath do` before `stress relaxation`), which may also explain the run without notes above.

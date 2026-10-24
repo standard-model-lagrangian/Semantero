@@ -100,6 +100,11 @@ export function maintainSelection(
  * Uses internal suggest.suggestions.setSuggestions if available;
  * otherwise caches results in LRU cache so the next call gets them.
  */
+/** content_hash (or build time, or load id) of a loaded index: what the cached and shown lists were ranked on. */
+function indexVersion(index: any): unknown {
+  return index?.manifest?.content_hash ?? index?.manifest?.built_at ?? index?.id;
+}
+
 export function refreshSuggestions(
   suggest: FakeSuggestLike | null | undefined,
   hits: SuggestionItem[],
@@ -157,6 +162,8 @@ export class InlineSuggestController {
   private ollamaDownNotified = false;
   /** content_hash (or load id) of the index the query cache was filled from. */
   private cacheVersion: unknown = undefined;
+  /** The list on screen, its query (as `semanticText`) and the version of the index it came from. */
+  private shown: { key: string; version: unknown; items: SuggestionItem[] } | null = null;
   private sessionNotices: Set<string>;
   showNotice?: (msg: string) => void;
   setTimeoutFn: (fn: () => void, ms: number) => any;
@@ -208,6 +215,7 @@ export class InlineSuggestController {
 
   /** Drop any pending or in-flight semantic request (list closed, or the query changed). */
   cancel(): void {
+    this.shown = null;
     this.currentSeq++;
     if (this.debounceTimer) {
       this.clearTimeoutFn(this.debounceTimer);
@@ -219,6 +227,11 @@ export class InlineSuggestController {
     query: string,
     suggestInstance?: FakeSuggestLike
   ): Promise<SuggestionItem[]> {
+    // Typing or deleting whitespace cannot change the results: keep the list on screen (and any semantic merge on its
+    // way) instead of flashing back to keyword-only results until the merge lands again.
+    const shown = this.shown;
+    if (shown && shown.key === semanticText(query) && shown.version === indexVersion(this.indexStore.getIndex())) return shown.items;
+
     // Every new query supersedes earlier requests, whether or not it runs semantic search itself.
     this.cancel();
 
@@ -238,13 +251,15 @@ export class InlineSuggestController {
 
     // 3. Cached results (adapter fallback or repeated query), dropped when the index changes
     const index = this.indexStore.getIndex();
-    const version = index?.manifest?.content_hash ?? index?.manifest?.built_at ?? index?.id;
+    const version = indexVersion(index);
     if (version !== this.cacheVersion) {
       this.queryCache.clear();
       this.cacheVersion = version;
     }
     if (this.queryCache.has(query)) {
-      return this.queryCache.get(query)!;
+      const cached = this.queryCache.get(query)!;
+      this.shown = { key: semanticText(query), version, items: cached };
+      return cached;
     }
 
     // 4. Keyword search
@@ -290,6 +305,7 @@ export class InlineSuggestController {
             score: h.score,
           }));
 
+          if (this.shown) this.shown.items = mergedItems;
           refreshSuggestions(suggestInstance, mergedItems, query, this.queryCache);
         } catch {
           if (seq !== this.currentSeq) return; // failure of an outdated request
@@ -298,6 +314,7 @@ export class InlineSuggestController {
       }, 250);
     }
 
+    this.shown = { key: semanticText(query), version, items: initialItems };
     return initialItems;
   }
 
@@ -309,6 +326,7 @@ export class InlineSuggestController {
     }
     const withSemanticOff: SuggestionItem[] = items.map((it) => ({ ...it, semanticOff: true }));
     withSemanticOff.push({ type: "footer", message: "Semantic search unavailable" });
+    this.shown = null; // the next call, even with only a space added, tries semantic search again
     refreshSuggestions(suggestInstance, withSemanticOff);
   }
 

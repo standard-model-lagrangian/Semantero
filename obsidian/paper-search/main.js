@@ -1568,6 +1568,9 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
   debounceTimer = null;
   footerEl = null;
   lastKeywordHits = [];
+  /** The query on screen (as `semanticText`) and the index it was ranked on. */
+  shownKey = null;
+  shownIndex = null;
   constructor(app, plugin) {
     super(app);
     this.plugin = plugin;
@@ -1633,6 +1636,10 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
     if (!ix || !this.plugin.indexStore.isReady()) {
       return [{ isLoadingRow: true }];
     }
+    const key = semanticText(query);
+    if (key === this.shownKey && ix === this.shownIndex) return this.currentItems;
+    this.shownKey = key;
+    this.shownIndex = ix;
     const kHits = keyword(ix, query, this.plugin.settings.limit);
     this.lastKeywordHits = kHits;
     const items = kHits.map((h) => ({
@@ -1978,6 +1985,9 @@ function selectionAfterRefresh(oldHits, oldSelected, newHits) {
   const idx = newHits.findIndex((h) => h.paper && h.paper.citekey === oldPaper.citekey);
   return idx === -1 ? 0 : idx;
 }
+function indexVersion(index) {
+  return index?.manifest?.content_hash ?? index?.manifest?.built_at ?? index?.id;
+}
 function refreshSuggestions(suggest, hits, query, cache) {
   if (!suggest) return;
   const s = suggest.suggestions;
@@ -2003,6 +2013,8 @@ var InlineSuggestController = class {
   ollamaDownNotified = false;
   /** content_hash (or load id) of the index the query cache was filled from. */
   cacheVersion = void 0;
+  /** The list on screen, its query (as `semanticText`) and the version of the index it came from. */
+  shown = null;
   sessionNotices;
   showNotice;
   setTimeoutFn;
@@ -2033,6 +2045,7 @@ var InlineSuggestController = class {
   }
   /** Drop any pending or in-flight semantic request (list closed, or the query changed). */
   cancel() {
+    this.shown = null;
     this.currentSeq++;
     if (this.debounceTimer) {
       this.clearTimeoutFn(this.debounceTimer);
@@ -2040,6 +2053,8 @@ var InlineSuggestController = class {
     }
   }
   async getSuggestions(query, suggestInstance) {
+    const shown = this.shown;
+    if (shown && shown.key === semanticText(query) && shown.version === indexVersion(this.indexStore.getIndex())) return shown.items;
     this.cancel();
     this.indexStore.ensureFresh?.().catch(() => {
     });
@@ -2050,13 +2065,15 @@ var InlineSuggestController = class {
       return [{ type: "hint", message: "Type to search your papers" }];
     }
     const index = this.indexStore.getIndex();
-    const version = index?.manifest?.content_hash ?? index?.manifest?.built_at ?? index?.id;
+    const version = indexVersion(index);
     if (version !== this.cacheVersion) {
       this.queryCache.clear();
       this.cacheVersion = version;
     }
     if (this.queryCache.has(query)) {
-      return this.queryCache.get(query);
+      const cached = this.queryCache.get(query);
+      this.shown = { key: semanticText(query), version, items: cached };
+      return cached;
     }
     const limit = this.settings.inlineLimit || 8;
     const kwHits = keyword(index, query, limit);
@@ -2095,6 +2112,7 @@ var InlineSuggestController = class {
             source: h.source,
             score: h.score
           }));
+          if (this.shown) this.shown.items = mergedItems;
           refreshSuggestions(suggestInstance, mergedItems, query, this.queryCache);
         } catch {
           if (seq !== this.currentSeq) return;
@@ -2102,6 +2120,7 @@ var InlineSuggestController = class {
         }
       }, 250);
     }
+    this.shown = { key: semanticText(query), version, items: initialItems };
     return initialItems;
   }
   /** Keyword-only results with one footer row. Never cached, so the next query retries semantic. */
@@ -2112,6 +2131,7 @@ var InlineSuggestController = class {
     }
     const withSemanticOff = items.map((it) => ({ ...it, semanticOff: true }));
     withSemanticOff.push({ type: "footer", message: "Semantic search unavailable" });
+    this.shown = null;
     refreshSuggestions(suggestInstance, withSemanticOff);
   }
   async selectSuggestion(item, editor, context) {

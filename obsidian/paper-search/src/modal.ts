@@ -26,6 +26,9 @@ export class PaperSearchModal extends SuggestModal<SearchModalItem> {
   debounceTimer: any = null;
   footerEl: HTMLElement | null = null;
   lastKeywordHits: Hit[] = [];
+  /** The query on screen (as `semanticText`) and the index it was ranked on. */
+  shownKey: string | null = null;
+  shownIndex: LoadedIndex | null = null;
 
   constructor(app: App, plugin: PaperSearchPlugin) {
     super(app);
@@ -105,6 +108,13 @@ export class PaperSearchModal extends SuggestModal<SearchModalItem> {
     if (!ix || !this.plugin.indexStore.isReady()) {
       return [{ isLoadingRow: true }];
     }
+
+    // Typing or deleting whitespace cannot change the results: keep the list on screen (and any semantic merge on its
+    // way) instead of flashing back to keyword-only results until the merge lands again.
+    const key = semanticText(query);
+    if (key === this.shownKey && ix === this.shownIndex) return this.currentItems;
+    this.shownKey = key;
+    this.shownIndex = ix;
 
     // 1. Instant keyword search
     const kHits = keyword(ix, query, this.plugin.settings.limit);

@@ -43,19 +43,20 @@ enum SelfTest {
         check("typing reaches the search field", model.query == "stress relaxation", "query = \(model.query)")
         check("results for the typed query", !model.results.isEmpty, model.results.prefix(3).map(\.title).joined(separator: " | "))
         let typedResults = model.results, typedSemantic = model.semantic
-        // A trailing space must not change the results (keyword, semantic gate and the embedded text all ignore it).
-        await key(49, " ")
-        for _ in 0..<10 { if case .pending = model.semantic { break }; try? await Task.sleep(nanoseconds: 100_000_000) }
-        for _ in 0..<60 {
-            if case .merged = model.semantic { break }
-            if case .off = model.semantic { break }
-            try? await Task.sleep(nanoseconds: 100_000_000)
+        // Typing a space and deleting it again must not change the results, not even for a moment (no keyword-only
+        // flash while semantic search re-runs): sample the list every 20 ms for 0.8 s after each key.
+        for (code, chars, expected) in [(UInt16(49), " ", "stress relaxation "), (UInt16(51), "\u{7f}", "stress relaxation")] {
+            await key(code, chars)
+            var changed: String?
+            for _ in 0..<40 where changed == nil {
+                if model.results != typedResults || model.semantic != typedSemantic {
+                    changed = "semantic \(model.semantic); top \(model.results.prefix(2).map(\.title).joined(separator: " | "))"
+                }
+                try? await Task.sleep(nanoseconds: 20_000_000)
+            }
+            check(expected.hasSuffix(" ") ? "typing a space leaves the results unchanged" : "deleting it leaves them unchanged",
+                  model.query == expected && changed == nil, "query \"\(model.query)\"\(changed.map { "; changed: " + $0 } ?? "")")
         }
-        try? await Task.sleep(nanoseconds: 200_000_000)
-        check("a trailing space leaves the results unchanged",
-              model.query == "stress relaxation " && model.semantic == typedSemantic && model.results == typedResults,
-              "query \"\(model.query)\", semantic \(model.semantic) vs \(typedSemantic); top \(model.results.prefix(3).map(\.title).joined(separator: " | "))")
-
 
         check("top result selected after semantic re-rank", model.selection.selectedIndex == 0,
               "index \(model.selection.selectedIndex.map(String.init) ?? "nil"), semantic \(model.semantic)")
@@ -66,7 +67,7 @@ enum SelfTest {
         await key(126, up)
         check("↑ moves it back one", model.selection.selectedIndex == start + 1)
         let selected = model.selection.selectedID ?? ""
-        check("query unchanged by arrows", model.query == "stress relaxation ")
+        check("query unchanged by arrows", model.query == "stress relaxation")
 
         await key(36, "\r", .command)
         await key(36, "\r", [.command, .shift])

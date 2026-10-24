@@ -55,6 +55,64 @@ struct QueryControllerTests {
         #expect(log.all.last?.query == " stiff  gels\t", "the ranker still gets the text as typed")
     }
 
+    @Test func aWhitespaceEditKeepsTheMergedResultsInsteadOfReRanking() async {
+        let ranker = FakeRanker(), sleeper = FakeSleeper(immediate: true), log = UpdateLog()
+        let c = await controller(ranker, sleeper: sleeper, log: log)
+        await c.setQuery("stiff gels")
+        await log.wait { $0.last?.semantic == .merged }
+        let before = log.all.count
+        await c.setQuery("stiff gels ")
+        await c.setQuery("stiff gels")
+        await log.wait { $0.count == before + 2 }
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        // no keyword-only flash: each edit re-sends the merged list, under the text as typed now
+        #expect(log.all.dropFirst(before).map(\.query) == ["stiff gels ", "stiff gels"])
+        #expect(log.all.dropFirst(before).allSatisfy { $0.semantic == .merged && $0.results.map(\.id) == ["H:stiff gels"] })
+        #expect(ranker.keywordCalls == ["stiff gels"] && ranker.hybridCalls == ["stiff gels"])
+    }
+
+    @Test func aWhitespaceEditWhileSemanticIsPendingStillGetsTheMerge() async {
+        let ranker = FakeRanker(), sleeper = FakeSleeper(), log = UpdateLog()
+        let c = await controller(ranker, sleeper: sleeper, log: log)
+        await c.setQuery("stiff gels")
+        await log.wait { $0.last?.semantic == .pending }
+        await c.setQuery("stiff gels ")
+        await log.wait { $0.last?.query == "stiff gels " }
+        sleeper.releaseAll()
+        await log.wait { $0.last?.semantic == .merged }
+        #expect(log.all.last?.query == "stiff gels ", "the merge is labelled with the text on screen, so the app shows it")
+        #expect(log.all.map(\.semantic) == [.pending, .pending, .merged])
+        #expect(ranker.keywordCalls == ["stiff gels"])
+    }
+
+    @Test func forceRanksTheSameTextAgain() async {
+        let ranker = FakeRanker(), sleeper = FakeSleeper(immediate: true), log = UpdateLog()
+        let c = await controller(ranker, sleeper: sleeper, log: log)
+        await c.setQuery("organoid")
+        await log.wait { $0.count == 1 }
+        await c.setQuery("organoid", force: true)
+        await log.wait { $0.count == 2 }
+        #expect(ranker.keywordCalls == ["organoid", "organoid"])
+    }
+
+    @Test func aForcedReRankKeepsTheMergedListUntilTheNewMergeLands() async {
+        let ranker = FakeRanker(), sleeper = FakeSleeper(), log = UpdateLog()
+        let c = await controller(ranker, sleeper: sleeper, log: log)
+        await c.setQuery("stiff gels")
+        await log.wait { $0.last?.semantic == .pending }
+        sleeper.releaseAll()
+        await log.wait { $0.last?.semantic == .merged }
+        let before = log.all.count
+        ranker.hybridResults = { q, _ in [vm("H2:\(q)")] }             // the reloaded index ranks differently
+        await c.setQuery("stiff gels", force: true)
+        await ranker.waitForKeyword(count: 2)
+        try? await Task.sleep(nanoseconds: 30_000_000)
+        #expect(log.all.count == before, "no keyword-only list in between")
+        sleeper.releaseAll()
+        await log.wait { $0.last?.results.map(\.id) == ["H2:stiff gels"] }
+        #expect(log.all.dropFirst(before).map(\.semantic) == [.merged])
+    }
+
     @Test func semanticTextMatchesTheTypeScriptRule() {
         #expect(semanticText("stiff gels ") == "stiff gels")
         #expect(semanticText("  stiff \t gels\n") == "stiff gels")
@@ -183,5 +241,8 @@ actor AsyncGate {
 extension FakeRanker {
     func waitForHybrid(_ q: String) async {
         for _ in 0..<500 { if hybridCalls.contains(q) { return }; try? await Task.sleep(nanoseconds: 2_000_000) }
+    }
+    func waitForKeyword(count: Int) async {
+        for _ in 0..<500 { if keywordCalls.count >= count { return }; try? await Task.sleep(nanoseconds: 2_000_000) }
     }
 }

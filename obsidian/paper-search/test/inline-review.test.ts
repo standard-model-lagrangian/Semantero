@@ -251,3 +251,41 @@ test("IM12 onTrigger calls findTrigger before isExcludedContext (sections untouc
   assert.strictEqual(controller.onTrigger({ line: 0, ch: 10 }, "plain text here", sections), null);
   assert.strictEqual(touched, 0);
 });
+
+test("a whitespace edit keeps the merged list instead of flashing keyword-only results", async () => {
+  const { clock, calls, controller } = setup(async () => new Float32Array(4).fill(1));
+  const shown: SuggestionItem[][] = [];
+  const suggest: FakeSuggestLike = { suggestions: { values: [], setSuggestions(items) { shown.push(items); this.values = items; } } };
+  await controller.getSuggestions("stiff gels", suggest);
+  clock.advance(300);
+  await flush();
+  assert.strictEqual(shown.length, 1, "the semantic merge was applied");
+  const merged = shown[0];
+
+  for (const q of ["stiff gels ", "stiff gels", "stiff  gels  "]) {
+    assert.strictEqual(await controller.getSuggestions(q, suggest), merged, JSON.stringify(q));
+  }
+  clock.advance(300);
+  await flush();
+  assert.deepStrictEqual(calls, ["stiff gels"], "no new embedding");
+  assert.strictEqual(shown.length, 1, "no re-render");
+});
+
+test("a whitespace edit while semantic is pending lets the merge land", async () => {
+  const { clock, calls, controller } = setup(async () => new Float32Array(4).fill(1));
+  const shown: SuggestionItem[][] = [];
+  const suggest: FakeSuggestLike = { suggestions: { values: [], setSuggestions(items) { shown.push(items); this.values = items; } } };
+  const first = await controller.getSuggestions("stiff gels", suggest);
+  clock.advance(100);
+  assert.strictEqual(await controller.getSuggestions("stiff gels ", suggest), first);
+  clock.advance(200);
+  await flush();
+  assert.deepStrictEqual(calls, ["stiff gels"]);
+  assert.strictEqual(shown.length, 1, "the pending merge was not cancelled");
+
+  // a real edit still re-ranks
+  await controller.getSuggestions("stiff gel", suggest);
+  clock.advance(300);
+  await flush();
+  assert.deepStrictEqual(calls, ["stiff gels", "stiff gel"]);
+});

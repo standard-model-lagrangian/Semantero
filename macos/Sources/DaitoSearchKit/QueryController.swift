@@ -40,6 +40,7 @@ public actor QueryController {
     private var query = ""
     private var scope: Scope
     private var semanticTask: Task<Void, Never>?
+    private var lastUpdate: QueryUpdate?
 
     public init(ranker: Ranker, sleeper: Sleeper = SystemSleeper(), debounce: Double = 0.2, limit: Int = 15,
                 scope: Scope = .all, onUpdate: @escaping @Sendable (QueryUpdate) -> Void) {
@@ -74,25 +75,49 @@ public actor QueryController {
     public func setScope(_ new: Scope) { scope = new; run() }
     /// Applies a new result limit and re-runs the current query.
     public func setLimit(_ new: Int) { limit = max(1, new); run() }
-    public func setQuery(_ text: String) { query = text; run() }
+    /// A new query. Typing or deleting whitespace cannot change the results, so it keeps the list on screen (and any
+    /// semantic merge on its way) instead of flashing back to keyword-only results until the merge lands again.
+    /// `force` ranks it again anyway (the index was reloaded, or the recent notes may have changed); a merged list
+    /// then stays on screen until the new merge replaces it, rather than flashing keyword-only results in between.
+    public func setQuery(_ text: String, force: Bool = false) {
+        let sameResults = semanticText(text) == semanticText(query)
+        query = text
+        if sameResults, let last = lastUpdate, last.seq == seq, last.scope == scope {
+            if !force {
+                publish(QueryUpdate(seq: seq, query: text, scope: last.scope, results: last.results, semantic: last.semantic))
+                return
+            }
+            run(keepMerged: last.semantic == .merged)
+            return
+        }
+        run()
+    }
     public var currentSeq: Int { seq }
 
-    private func run() {
+    private func run(keepMerged: Bool = false) {
         seq += 1
         let mySeq = seq, q = query, s = scope
         semanticTask?.cancel()
         semanticTask = nil
-        Task { await self.keywordPhase(seq: mySeq, query: q, scope: s) }
+        Task { await self.keywordPhase(seq: mySeq, query: q, scope: s, keepMerged: keepMerged) }
     }
 
-    private func keywordPhase(seq mySeq: Int, query q: String, scope s: Scope) async {
+    /// Updates carry the query as it is typed now: a whitespace-only edit since this request started kept its `seq`.
+    private func publish(_ update: QueryUpdate) {
+        lastUpdate = update
+        onUpdate(update)
+    }
+
+    private func keywordPhase(seq mySeq: Int, query q: String, scope s: Scope, keepMerged: Bool) async {
         let kw = (try? await ranker.keyword(q, scope: s, limit: limit)) ?? []
         guard mySeq == seq else { return }
         var wantsSemantic = false
         if !q.trimmingCharacters(in: .whitespaces).isEmpty { wantsSemantic = await ranker.shouldRunSemantic(q) }
         guard mySeq == seq else { return }
         let state: SemanticState = !wantsSemantic ? .notRun : (semanticAvailable ? .pending : .off(semanticOffReason ?? ""))
-        onUpdate(QueryUpdate(seq: mySeq, query: q, scope: s, results: kw, semantic: state))
+        if !(keepMerged && state == .pending) {
+            publish(QueryUpdate(seq: mySeq, query: query, scope: s, results: kw, semantic: state))
+        }
         guard wantsSemantic, semanticAvailable else { return }
         semanticTask = Task { await self.semanticPhase(seq: mySeq, query: q, scope: s, keyword: kw) }
     }
@@ -114,10 +139,10 @@ public actor QueryController {
                 merged = try await ranker.hybrid(q, queryVector: vector, scope: s, limit: limit)
             }
             guard mySeq == seq else { return }
-            onUpdate(QueryUpdate(seq: mySeq, query: q, scope: s, results: merged, semantic: .merged))
+            publish(QueryUpdate(seq: mySeq, query: query, scope: s, results: merged, semantic: .merged))
         } catch {
             guard mySeq == seq else { return }
-            onUpdate(QueryUpdate(seq: mySeq, query: q, scope: s, results: kw, semantic: .off(unreachable)))
+            publish(QueryUpdate(seq: mySeq, query: query, scope: s, results: kw, semantic: .off(unreachable)))
         }
     }
 }
