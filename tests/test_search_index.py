@@ -228,8 +228,8 @@ class TestPdfText(unittest.TestCase):
             self.assertFalse(has_text)
             self.assertEqual(chunks, [])
 
-    # 13. Live test sample PDF (runs only when DAITO_LIVE=1)
-    @unittest.skipUnless(os.environ.get("DAITO_LIVE") == "1", "Requires DAITO_LIVE=1")
+    # 13. Live test sample PDF (runs only when SEMANTERO_LIVE=1)
+    @unittest.skipUnless(os.environ.get("SEMANTERO_LIVE") == "1", "Requires SEMANTERO_LIVE=1")
     def test_live_sample_pdf(self):
         sample_path = FIXTURES_DIR / "sample.pdf"
         has_text, num_pages, chunks = pdftext.extract_chunks(sample_path)
@@ -373,8 +373,8 @@ class TestEmbed(unittest.TestCase):
         # Initial call + 3 retries = 4 calls total
         self.assertEqual(mock_urlopen.call_count, 4)
 
-    # 19. Live test ollama roundtrip (DAITO_LIVE=1)
-    @unittest.skipUnless(os.environ.get("DAITO_LIVE") == "1", "Requires DAITO_LIVE=1")
+    # 19. Live test ollama roundtrip (SEMANTERO_LIVE=1)
+    @unittest.skipUnless(os.environ.get("SEMANTERO_LIVE") == "1", "Requires SEMANTERO_LIVE=1")
     def test_live_ollama_roundtrip(self):
         from planner import embed
 

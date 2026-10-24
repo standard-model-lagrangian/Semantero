@@ -84,7 +84,7 @@ hybrid(keywordHits, semanticHits, limit, k = 60): Hit[]                 // RRF, 
 ### 1a. Hotkey
 
 - **Remove the hard-coded default hotkey from the plugin.** `Mod+Shift+F` clashes with Obsidian's "Search in all files", and Obsidian's plugin guidelines advise against default hotkeys anyway.
-- During install (a manual step you approve), add an entry to `.obsidian/hotkeys.json`: `"daito-paper-search:open-paper-search": [{"modifiers": ["Mod", "Shift"], "key": "0"}]`. That sits next to Omnisearch on `Mod+0`.
+- During install (a manual step you approve), add an entry to `.obsidian/hotkeys.json`: `"semantero:open-paper-search": [{"modifiers": ["Mod", "Shift"], "key": "0"}]`. That sits next to Omnisearch on `Mod+0`.
 - The plugin checks for conflicts at load: if another command has the same binding, it shows one notice naming that command.
 
 ### 1b. Index new Zotero papers within about a minute
@@ -222,7 +222,7 @@ The Pandoc Reference List plugin can suggest citekeys after `@`. Our trigger nee
 
 ### 3a. Behaviour
 
-- A right-sidebar view, `daito-related-papers`.
+- A right-sidebar view, `semantero-related-papers`.
 - Commands:
   - **"Show related papers"** opens or reveals the panel;
   - **"Find papers related to this note"** refreshes it from the current editor.
@@ -299,7 +299,7 @@ expect = ["glockerXXXX", "…"]                                # papers you'd wa
 
 ## Performance budgets
 
-Measured on this Mac. Benchmarks run on a **synthetic index 3× today's size** (500 papers, about 25k chunks, 1,024 dimensions, Zipf-distributed vocabulary of 30k terms, fixed seed), so there's headroom as the library grows. They run under `DAITO_PERF=1`, report p50/p95/p99/max, and fail on any budget breach.
+Measured on this Mac. Benchmarks run on a **synthetic index 3× today's size** (500 papers, about 25k chunks, 1,024 dimensions, Zipf-distributed vocabulary of 30k terms, fixed seed), so there's headroom as the library grows. They run under `SEMANTERO_PERF=1`, report p50/p95/p99/max, and fail on any budget breach.
 
 | # | What | Budget | Today |
 |---|---|---|---|
@@ -320,7 +320,7 @@ Measured on this Mac. Benchmarks run on a **synthetic index 3× today's size** (
 
 ## Tests
 
-Python tests use `unittest` and temporary directories, as now. TypeScript tests use `node --test`, as now. Glue code that imports `obsidian` isn't unit-tested; everything it calls is pure and tested through `test/fakes.ts`, and the glue itself is covered by the manual checklist. **No test touches the real vault or the real Zotero folder.** Performance tests use the synthetic index. `DAITO_LIVE=1` enables the tests that call Ollama.
+Python tests use `unittest` and temporary directories, as now. TypeScript tests use `node --test`, as now. Glue code that imports `obsidian` isn't unit-tested; everything it calls is pure and tested through `test/fakes.ts`, and the glue itself is covered by the manual checklist. **No test touches the real vault or the real Zotero folder.** Performance tests use the synthetic index. `SEMANTERO_LIVE=1` enables the tests that call Ollama.
 
 ### Phase 0
 
@@ -478,7 +478,7 @@ Python tests use `unittest` and temporary directories, as now. TypeScript tests 
   - clicking the row opens `zotero://open-pdf/...?page=N`.
 - **P8 Ollama down** → the "needs Ollama" state; one notice per session at most.
 
-### Performance: `test/perf.test.ts` (`DAITO_PERF=1`, synthetic index)
+### Performance: `test/perf.test.ts` (`SEMANTERO_PERF=1`, synthetic index)
 
 - **PF1** B1 over every prefix of 40 queries (the query list is a fixture: your 22 evaluation queries, 10 author names, 8 one-word queries).
 - **PF2** B2 with lines of 10, 1,000 and 10,000 characters, with and without `@@`.
@@ -487,7 +487,7 @@ Python tests use `unittest` and temporary directories, as now. TypeScript tests 
 - **PF5** B7: 1,000 `ensureFresh` calls with a fake clock advancing 1 s each → at most 100 manifest reads, and p99 ≤ 2 ms.
 - **PF6** B10 on a 200 kB generated note.
 - **PF7** B14: 1,000 random type/pause/response-order sequences through the inline glue with fakes → zero selection jumps.
-- **PF8** (`DAITO_LIVE=1` as well) B9 end to end with real Ollama and the 0.6b model; warm-up excluded; 20 runs.
+- **PF8** (`SEMANTERO_LIVE=1` as well) B9 end to end with real Ollama and the 0.6b model; warm-up excluded; 20 runs.
 - **Python PF9** B12: `watch-run` on the fixture library with an unchanged fingerprint, run 10 times → p95 ≤ 1.5 s, and a recursive byte and mtime snapshot of `search/` is unchanged.
 
 ### Edge-case matrix (where each one is covered)

@@ -7,7 +7,7 @@
 #   4. reference vectors from sentence-transformers -> parity check of both GGUFs against them (PARITY.md)
 #   5. SHA256SUMS, checked by planner/pplx.py before it serves or indexes anything
 #
-# Everything lands in ~/Library/Application Support/daito/. Nothing here is needed again unless a version changes.
+# Everything lands in ~/Library/Application Support/Semantero/. Nothing here is needed again unless a version changes.
 set -euo pipefail
 
 LLAMA_TAG="${LLAMA_TAG:-b11829}"
@@ -16,7 +16,7 @@ HF_REV="${HF_REV:-7bba8e7cf2075dec747fa8557f41eb90e70361ed}"
 SHORT="${HF_REV:0:7}"
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-D="$HOME/Library/Application Support/daito"
+D="$HOME/Library/Application Support/Semantero"
 LLAMA_DIR="$D/llama/$LLAMA_TAG"
 SRC_DIR="$D/llama-src/$LLAMA_TAG"
 HF_DIR="$D/hf/pplx-embed-v2-late-0.6b@$SHORT"

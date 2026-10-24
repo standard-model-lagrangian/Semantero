@@ -389,32 +389,32 @@ export class InlineSuggestController {
     el.empty?.();
 
     if (item.type === "loading") {
-      const row = el.createDiv?.({ cls: "daito-suggest-loading" }) || el;
+      const row = el.createDiv?.({ cls: "semantero-suggest-loading" }) || el;
       row.setText?.(item.message || "Loading paper index…");
       return;
     }
 
     if (item.type === "footer") {
-      const row = el.createDiv?.({ cls: "daito-suggest-footer" }) || el;
+      const row = el.createDiv?.({ cls: "semantero-suggest-footer" }) || el;
       row.setText?.(item.message || "Semantic search unavailable");
       return;
     }
 
     if (item.type === "hint") {
-      const row = el.createDiv?.({ cls: "daito-suggest-hint" }) || el;
+      const row = el.createDiv?.({ cls: "semantero-suggest-hint" }) || el;
       row.setText?.(item.message || "Type to search your papers");
       return;
     }
 
     if (item.type === "paper" && item.paper) {
-      const container = el.createDiv?.({ cls: "daito-suggest-paper" }) || el;
+      const container = el.createDiv?.({ cls: "semantero-suggest-paper" }) || el;
 
       // Title cut at 80 characters (I11)
       let title = item.paper.title || "Untitled";
       if (title.length > 80) {
         title = title.slice(0, 79) + "…";
       }
-      const titleEl = container.createDiv?.({ cls: "daito-suggest-title" });
+      const titleEl = container.createDiv?.({ cls: "semantero-suggest-title" });
       titleEl?.setText?.(title);
 
       // Subtitle: first author · year
@@ -423,12 +423,12 @@ export class InlineSuggestController {
           ? item.paper.authors[0]
           : "Unknown author";
       const year = item.paper.year ? String(item.paper.year) : "n.d.";
-      const metaEl = container.createDiv?.({ cls: "daito-suggest-meta" });
+      const metaEl = container.createDiv?.({ cls: "semantero-suggest-meta" });
       metaEl?.setText?.(`${firstAuthor} · ${year}`);
 
       // Snippet only when inlineShowSnippet is enabled
       if (this.settings.inlineShowSnippet !== false && item.snippet) {
-        const snippetEl = container.createDiv?.({ cls: "daito-suggest-snippet" });
+        const snippetEl = container.createDiv?.({ cls: "semantero-suggest-snippet" });
         snippetEl?.setText?.(item.snippet);
       }
     }

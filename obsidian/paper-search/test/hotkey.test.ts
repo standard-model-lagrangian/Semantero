@@ -23,7 +23,7 @@ test("H2 conflict check names conflicting command when Mod+Shift+0 is taken, no 
 
   // 2. Bound to our command itself -> no conflict
   const hotkeysOurs = {
-    "daito-paper-search:open-paper-search": [{ modifiers: ["Mod", "Shift"], key: "0" }],
+    "semantero:open-paper-search": [{ modifiers: ["Mod", "Shift"], key: "0" }],
   };
   const conflictSelf = checkHotkeyConflict(hotkeysOurs, ["Mod", "Shift"], "0");
   assert.strictEqual(conflictSelf, null);

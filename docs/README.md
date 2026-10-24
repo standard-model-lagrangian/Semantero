@@ -1,11 +1,11 @@
-# daito documentation
+# Semantero documentation
 
 Start with the page for what you want to do. Specs are design records: they explain why things are the way they are
 and number the tests that pin each behaviour. Where an implementation differs from its spec, the decisions log says so.
 
 | I want to… | Read |
 |---|---|
-| Install daito: **Obsidian only** or **Global** (Obsidian + notes + the Daito Search app), and switch between them | [INSTALL.md](INSTALL.md#choose-your-setup) |
+| Install Semantero: **Obsidian only** or **Global** (Obsidian + notes + the Semantero app), and switch between them | [INSTALL.md](INSTALL.md#choose-your-setup) |
 | Work on the code (architecture, commands, workflows, gotchas) | [DEVELOPMENT.md](DEVELOPMENT.md), then [AGENTS.md](../AGENTS.md) (rules) |
 | Know why a design choice was made, what was measured, what's still open | [DECISIONS_AND_GAPS.md](DECISIONS_AND_GAPS.md) |
 | Try other embedding models in the real plugin and app (Qwen3-Embedding 0.6B vs pplx-embed-v2-late) and switch between them | [EMBED_INSTALLS.md](EMBED_INSTALLS.md); pplx internals: [pplx/README.md](../pplx/README.md) |
@@ -24,7 +24,7 @@ and number the tests that pin each behaviour. Where an implementation differs fr
 ## Where things live
 
 ```
-README.md               what daito is, quick start for the paper search
+README.md               what Semantero is, quick start for the paper search
 AGENTS.md               rules for anyone (person or agent) changing the code: read before committing
 docs/INSTALL.md         install tiers, tools per tier, uninstall, troubleshooting
 docs/DEVELOPMENT.md     architecture, components, commands, workflows, testing, debugging, gotchas

@@ -1788,7 +1788,7 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
 };
 
 // src/hotkey.ts
-function checkHotkeyConflict(customHotkeys, targetModifiers = ["Mod", "Shift"], targetKey = "0", ourCommandId = "daito-paper-search:open-paper-search") {
+function checkHotkeyConflict(customHotkeys, targetModifiers = ["Mod", "Shift"], targetKey = "0", ourCommandId = "semantero:open-paper-search") {
   for (const [cmdId, bindings] of Object.entries(customHotkeys)) {
     if (cmdId === ourCommandId) continue;
     if (!Array.isArray(bindings)) continue;
@@ -2172,34 +2172,34 @@ var InlineSuggestController = class {
   renderSuggestion(item, el) {
     el.empty?.();
     if (item.type === "loading") {
-      const row = el.createDiv?.({ cls: "daito-suggest-loading" }) || el;
+      const row = el.createDiv?.({ cls: "semantero-suggest-loading" }) || el;
       row.setText?.(item.message || "Loading paper index\u2026");
       return;
     }
     if (item.type === "footer") {
-      const row = el.createDiv?.({ cls: "daito-suggest-footer" }) || el;
+      const row = el.createDiv?.({ cls: "semantero-suggest-footer" }) || el;
       row.setText?.(item.message || "Semantic search unavailable");
       return;
     }
     if (item.type === "hint") {
-      const row = el.createDiv?.({ cls: "daito-suggest-hint" }) || el;
+      const row = el.createDiv?.({ cls: "semantero-suggest-hint" }) || el;
       row.setText?.(item.message || "Type to search your papers");
       return;
     }
     if (item.type === "paper" && item.paper) {
-      const container = el.createDiv?.({ cls: "daito-suggest-paper" }) || el;
+      const container = el.createDiv?.({ cls: "semantero-suggest-paper" }) || el;
       let title = item.paper.title || "Untitled";
       if (title.length > 80) {
         title = title.slice(0, 79) + "\u2026";
       }
-      const titleEl = container.createDiv?.({ cls: "daito-suggest-title" });
+      const titleEl = container.createDiv?.({ cls: "semantero-suggest-title" });
       titleEl?.setText?.(title);
       const firstAuthor = item.paper.authors && item.paper.authors.length > 0 ? item.paper.authors[0] : "Unknown author";
       const year = item.paper.year ? String(item.paper.year) : "n.d.";
-      const metaEl = container.createDiv?.({ cls: "daito-suggest-meta" });
+      const metaEl = container.createDiv?.({ cls: "semantero-suggest-meta" });
       metaEl?.setText?.(`${firstAuthor} \xB7 ${year}`);
       if (this.settings.inlineShowSnippet !== false && item.snippet) {
-        const snippetEl = container.createDiv?.({ cls: "daito-suggest-snippet" });
+        const snippetEl = container.createDiv?.({ cls: "semantero-suggest-snippet" });
         snippetEl?.setText?.(item.snippet);
       }
     }
@@ -2643,7 +2643,7 @@ function createRelatedPapersViewClass(ItemViewBase) {
       this.controller.onStateChange = () => this.render();
     }
     getViewType() {
-      return "daito-related-papers";
+      return "semantero-related-papers";
     }
     getDisplayText() {
       return "Related papers";
@@ -2657,7 +2657,7 @@ function createRelatedPapersViewClass(ItemViewBase) {
     render() {
       const container = this.containerEl.children[1] || this.containerEl;
       container.empty?.();
-      const header = container.createDiv?.({ cls: "daito-related-header" }) || container;
+      const header = container.createDiv?.({ cls: "semantero-related-header" }) || container;
       const titleEl = header.createEl?.("h4", { text: "Related papers" });
       const refreshBtn = header.createEl?.("button", { text: "Refresh" });
       refreshBtn?.addEventListener?.("click", () => {
@@ -2666,45 +2666,45 @@ function createRelatedPapersViewClass(ItemViewBase) {
           this.controller.refresh(snap.text, snap.cursorOffset, snap.selection, snap.filePath);
         }
       });
-      const body = container.createDiv?.({ cls: "daito-related-body" }) || container;
+      const body = container.createDiv?.({ cls: "semantero-related-body" }) || container;
       if (this.controller.state === "empty") {
         body.createEl?.("div", {
-          cls: "daito-related-empty",
+          cls: "semantero-related-empty",
           text: "Open a note and press Refresh to find related papers."
         });
         return;
       }
       if (this.controller.state === "index-loading") {
         body.createEl?.("div", {
-          cls: "daito-related-loading",
+          cls: "semantero-related-loading",
           text: "Loading paper index\u2026"
         });
         return;
       }
       if (this.controller.state === "loading") {
         body.createEl?.("div", {
-          cls: "daito-related-loading",
+          cls: "semantero-related-loading",
           text: "Searching for related papers\u2026"
         });
         return;
       }
       if (this.controller.state === "too-short") {
         body.createEl?.("div", {
-          cls: "daito-related-empty",
+          cls: "semantero-related-empty",
           text: "Write a bit more first"
         });
         return;
       }
       if (this.controller.state === "needs-ollama") {
         body.createEl?.("div", {
-          cls: "daito-related-warning",
+          cls: "semantero-related-warning",
           text: "Related papers needs Ollama running"
         });
         return;
       }
       if (this.controller.state === "nothing-close") {
         body.createEl?.("div", {
-          cls: "daito-related-empty",
+          cls: "semantero-related-empty",
           text: "Nothing close in your library"
         });
         if (this.controller.getDisplayItems().hiddenCount === 0) return;
@@ -2712,25 +2712,25 @@ function createRelatedPapersViewClass(ItemViewBase) {
       if (this.controller.state === "results" || this.controller.state === "nothing-close") {
         const { items, hiddenCount, showHidden } = this.controller.getDisplayItems();
         for (const item of items) {
-          const row = body.createDiv?.({ cls: "daito-related-row" });
+          const row = body.createDiv?.({ cls: "semantero-related-row" });
           const rowTitle = row?.createDiv?.({
-            cls: "daito-related-title",
+            cls: "semantero-related-title",
             text: item.paper.title || "Untitled"
           });
           rowTitle?.addEventListener?.("click", () => {
             const url = this.controller.getPdfUrl(item.paper, item.hit);
             window.open(url);
           });
-          const meta = row?.createDiv?.({ cls: "daito-related-meta" });
+          const meta = row?.createDiv?.({ cls: "semantero-related-meta" });
           const author = item.paper.authors?.[0] || "Unknown";
           const year = item.paper.year ? String(item.paper.year) : "n.d.";
           const badge = item.hit.page ? `p. ${item.hit.page}` : item.hit.fromAbstract === false ? "web page" : "abstract";
           meta?.setText?.(`${author} \xB7 ${year} \xB7 [${badge}]`);
           if (item.hit.snippet) {
-            const snippet = row?.createDiv?.({ cls: "daito-related-snippet" });
+            const snippet = row?.createDiv?.({ cls: "semantero-related-snippet" });
             snippet?.setText?.(item.hit.snippet);
           }
-          const actions = row?.createDiv?.({ cls: "daito-related-actions" });
+          const actions = row?.createDiv?.({ cls: "semantero-related-actions" });
           const citeBtn = actions?.createEl?.("button", { text: "Cite" });
           citeBtn?.addEventListener?.("click", () => {
             this.controller.handleCiteAction(
@@ -2745,7 +2745,7 @@ function createRelatedPapersViewClass(ItemViewBase) {
           });
         }
         if (hiddenCount > 0) {
-          const footer = body.createDiv?.({ cls: "daito-related-footer" });
+          const footer = body.createDiv?.({ cls: "semantero-related-footer" });
           const toggleText = showHidden ? "hide" : "show";
           const link = footer?.createEl?.("a", {
             text: `${hiddenCount} already cited \xB7 ${toggleText}`
@@ -2858,7 +2858,7 @@ var PaperSearchPlugin = class extends import_obsidian2.Plugin {
     this.app.workspace.onLayoutReady(() => this.editorTracker.seed(this.app.workspace.getActiveViewOfType(import_obsidian2.MarkdownView)));
     const RelatedPapersView = createRelatedPapersViewClass(import_obsidian2.ItemView);
     this.registerView(
-      "daito-related-papers",
+      "semantero-related-papers",
       (leaf) => new RelatedPapersView(leaf, relatedController, this.editorTracker)
     );
     this.registerEvent(
@@ -2892,14 +2892,14 @@ var PaperSearchPlugin = class extends import_obsidian2.Plugin {
   async activateRelatedView() {
     const { workspace } = this.app;
     let leaf = null;
-    const leaves = workspace.getLeavesOfType("daito-related-papers");
+    const leaves = workspace.getLeavesOfType("semantero-related-papers");
     if (leaves.length > 0) {
       leaf = leaves[0];
     } else {
       leaf = workspace.getRightLeaf(false);
       if (leaf) {
         await leaf.setViewState({
-          type: "daito-related-papers",
+          type: "semantero-related-papers",
           active: true
         });
       }

@@ -1,12 +1,12 @@
-# Installing daito
+# Installing Semantero
 
 ## Choose your setup
 
-daito is one repository with two ways to use it. Pick one; you can switch later (below).
+Semantero is one repository with two ways to use it. Pick one; you can switch later (below).
 
 | | **Obsidian only** | **Global** |
 |---|---|---|
-| What you get | Paper search inside Obsidian: `⌘⇧0` pop-up over your Zotero library, `@@` inline citations, literature notes, related-papers panel. Index kept fresh in the background | Everything in Obsidian only, **plus** your vault's notes indexed, and **Daito Search**: press **⌥Space in any app** to search papers *and* notes, paste the PDF into Mail/Teams/an LLM, copy citations, drag files; also in Spotlight |
+| What you get | Paper search inside Obsidian: `⌘⇧0` pop-up over your Zotero library, `@@` inline citations, literature notes, related-papers panel. Index kept fresh in the background | Everything in Obsidian only, **plus** your vault's notes indexed, and **Semantero**: press **⌥Space in any app** to search papers *and* notes, paste the PDF into Mail/Teams/an LLM, copy citations, drag files; also in Spotlight |
 | Runs | Obsidian plugin + one background watcher | The same, plus a menu-bar app and the notes index |
 | You need | Zotero (+ Better BibTeX), Obsidian, Homebrew, Python 3.11+, poppler; Ollama optional | The same, plus macOS 26, Node.js, and Apple's free **Command Line Tools**. Full Xcode is optional: see [Do I need Xcode?](#do-i-need-xcode) |
 | Setup time | ~5 minutes | ~10 minutes (longer if you also download Xcode) |
@@ -22,7 +22,7 @@ cd Semantero
 ./setup-search.sh            # add --vault "/path/to/Vault" --zotero "/path/to/Zotero" if not in the default places
 ```
 
-Then in Obsidian: **Settings → Community plugins → Installed plugins → reload → enable "Daito Paper Search"**, and press
+Then in Obsidian: **Settings → Community plugins → Installed plugins → reload → enable "Semantero"**, and press
 `⌘⇧0`. That's it. Details and management commands: [tier 1](#tier-1-paper-search-in-obsidian).
 
 The notes index is **off** in this setup (`config.toml` ships with `[notes] enabled = false`), so nothing reads your
@@ -50,8 +50,8 @@ notes and `planner doctor` doesn't expect a notes index. You don't need Xcode or
 
    ```bash
    (cd launcher-core && npm install)
-   make install-global          # builds the notes index, then builds and installs Daito Search.app
-   open "/Applications/Daito Search.app"
+   make install-global          # builds the notes index, then builds and installs Semantero.app
+   open "/Applications/Semantero.app"
    ```
 
 5. Allow **Documents** access when asked; allow **Accessibility** the first time you press ⌘↵. Then press **⌥Space**.
@@ -59,14 +59,14 @@ notes and `planner doctor` doesn't expect a notes index. You don't need Xcode or
    `.venv/bin/python -m planner notes index` when you like, or schedule `bin/planner-run.sh notes index` with launchd
    (see [tier 2](#tier-2-notes-index)).
 
-Details: [tier 2](#tier-2-notes-index) (notes index) and [tier 3](#tier-3-the-launcher-app-daito-searchapp) (the app).
+Details: [tier 2](#tier-2-notes-index) (notes index) and [tier 3](#tier-3-the-launcher-app-semanteroapp) (the app).
 
 ### Switching
 
 | From → to | Do |
 |---|---|
 | Obsidian only → Global | Steps 2–6 of **Global** above. Nothing in the Obsidian setup changes |
-| Global → Obsidian only | Menu bar → Settings… → untick the three Spotlight options → Save; Quit the app; `rm -rf "/Applications/Daito Search.app"`; set `[notes] enabled = false` in `config.local.toml`; optionally delete `<vault>/.planner/notes/`. The Obsidian plugin and the watcher are unaffected |
+| Global → Obsidian only | Menu bar → Settings… → untick the three Spotlight options → Save; Quit the app; `rm -rf "/Applications/Semantero.app"`; set `[notes] enabled = false` in `config.local.toml`; optionally delete `<vault>/.planner/notes/`. The Obsidian plugin and the watcher are unaffected |
 | Update either | `git pull`, then `./setup-search.sh` (plugin, watcher). Global also: `make install-global`, quit and reopen the app |
 
 ---
@@ -79,7 +79,7 @@ Tier 1 is the **Obsidian only** setup; tiers 1–3 are **Global**; tier 4 (the p
 |---|---|---|---|
 | **1. Paper search in Obsidian** | `⌘⇧0` search pop-up over your Zotero library, `@@` inline citations, literature notes, related-papers panel; index kept fresh by a background watcher | Obsidian plugin + `com.planner.zotero-watch` (launchd) | Zotero, Obsidian, Homebrew, Python 3.11+, poppler, Ollama (optional) |
 | **2. Notes index** | Your vault's Markdown notes searchable too (the index the launcher uses) | `planner notes index` | Tier 1's Python setup |
-| **3. Launcher app** | **⌥Space from any app** → glass panel over papers *and* notes; open, paste the PDF into Mail/Teams/LLMs, copy citations, drag files; Spotlight entries and a Spotlight action | `Daito Search.app` (menu bar) | Tiers 1–2, Command Line Tools (full Xcode optional), Node + npm |
+| **3. Launcher app** | **⌥Space from any app** → glass panel over papers *and* notes; open, paste the PDF into Mail/Teams/LLMs, copy citations, drag files; Spotlight entries and a Spotlight action | `Semantero.app` (menu bar) | Tiers 1–2, Command Line Tools (full Xcode optional), Node + npm |
 | **4. Planner** (owner's setup) | Daily brief in today's note, `Threads.md`, weekly review, evening reminder | `com.planner.morning` (every 5 min), `com.planner.weekly` (launchd) | Tier 1's Python, API keys (Groq, Anthropic) |
 
 Everything runs locally. The only network calls are the planner's model calls (tier 4) and Ollama on `127.0.0.1`.
@@ -90,7 +90,7 @@ Everything runs locally. The only network calls are the planner's model calls (t
 |---|---|---|---|---|
 | macOS | 26 (Tahoe) on Apple silicon | all | — | The launcher needs macOS 26 (Liquid Glass, App Intents). Tiers 1–2 also run on older macOS but are untested there |
 | [Homebrew](https://brew.sh) | any | all | see site | Puts Python, poppler and Ollama on the path launchd uses (`/opt/homebrew/bin`) |
-| [Zotero](https://www.zotero.org) | 7 | 1+ | `brew install --cask zotero` | Data folder `~/Zotero` by default. Read-only to daito: it never writes to `zotero.sqlite` or `storage/` |
+| [Zotero](https://www.zotero.org) | 7 | 1+ | `brew install --cask zotero` | Data folder `~/Zotero` by default. Read-only to semantero: it never writes to `zotero.sqlite` or `storage/` |
 | [Better BibTeX](https://retorque.re/zotero-better-bibtex/) | current | 1+ | Zotero → Tools → Plugins → install from file | Citekeys for `[[citekey]]` links and literature notes. `setup-search.sh` warns if your library has none |
 | [Obsidian](https://obsidian.md) | 1.x | 1+ | `brew install --cask obsidian` | An existing vault. Default `~/Documents/Obsidian Vault` |
 | Python | 3.11+ (3.15 here) | 1+ | `brew install python` | Standard library only, plus `anthropic` for tier 4. The setup script makes `.venv` |
@@ -122,12 +122,12 @@ git-ignored `config.local.toml`, so `git pull` never conflicts with them. (`setu
 The script:
 1. makes `.venv` with Python 3.11+ (installing it with Homebrew if needed);
 2. checks for `pdftotext`, Ollama and the embedding model, and offers to install them;
-3. copies the plugin into `<vault>/.obsidian/plugins/daito-paper-search/`;
+3. copies the plugin into `<vault>/.obsidian/plugins/semantero/`;
 4. checks your library has citekeys, then builds the first index into `<vault>/.planner/search/`;
 5. writes and loads `~/Library/LaunchAgents/com.planner.zotero-watch.plist`. This re-indexes about 20 s after Zotero
    changes, plus an hourly retry while the index is keyword-only.
 
-Then in Obsidian: **Settings → Community plugins → Installed plugins → reload → enable "Daito Paper Search"**.
+Then in Obsidian: **Settings → Community plugins → Installed plugins → reload → enable "Semantero"**.
 
 Check: `./setup-search.sh status`, or `.venv/bin/python -m planner doctor --search`.
 
@@ -183,27 +183,27 @@ its file name matches a Zotero citekey.
 
 ---
 
-## Tier 3: the launcher app (Daito Search.app)
+## Tier 3: the launcher app (Semantero.app)
 
 ```bash
 # once: Command Line Tools (xcode-select --install) or full Xcode (see "Do I need Xcode?" below), and Node
 (cd launcher-core && npm install)          # tools for building the ranking engine
 make install-app                           # builds, signs and copies to /Applications
 # or, notes index + app in one go (checks the notes index is enabled first):  make install-global
-open "/Applications/Daito Search.app"
+open "/Applications/Semantero.app"
 ```
 
 On first launch:
-1. **Documents access.** macOS asks: *"Daito Search would like to access files in your Documents folder"* → **Allow**.
+1. **Documents access.** macOS asks: *"Semantero would like to access files in your Documents folder"* → **Allow**.
    This is needed because the vault usually lives in `~/Documents`. If you missed the prompt: System Settings → Privacy
-   & Security → Files and Folders → Daito Search → Documents.
+   & Security → Files and Folders → Semantero → Documents.
 2. **Accessibility** (asked the first time you press ⌘↵). It lets the app paste into the app you're in. Without it,
    ⌘↵ copies and a toast tells you to press ⌘V.
 3. A magnifying glass appears in the menu bar. Its menu shows "N papers, M notes".
 4. Press **⌥Space**. Change the hotkey in Settings… if another app already uses it.
 
 **Signing.** `make install-app` signs with the first "Apple Development" identity in your keychain, or with
-`$DAITO_SIGN_IDENTITY`, or ad hoc (`signing with: -`). With an ad hoc signature, macOS forgets permissions 1 and 2 at
+`$SEMANTERO_SIGN_IDENTITY`, or ad hoc (`signing with: -`). With an ad hoc signature, macOS forgets permissions 1 and 2 at
 every reinstall. Adding your Apple ID in Xcode creates a free development identity and fixes that.
 
 ### Do I need Xcode?
@@ -215,7 +215,7 @@ The app ships as source, so it is built on your Mac. What each tool is actually 
 | Building and running the app: the ⌥Space panel, every action (open, paste file, paste passage, copy, Finder, Quick Look, drag), notes + papers search | **Yes, enough**. Checked: the app compiles and links with the Command Line Tools alone | yes |
 | Paper and note titles in Spotlight (⌘Space) | **Yes**: plain Core Spotlight, no extra build step | yes |
 | The Spotlight **"Search Everything"** action (⌘Space → type it → Tab → query) | **No**. Spotlight only sees the action if a metadata file is generated at build time by `appintentsmetadataprocessor`, which ships only with Xcode. Without it `make install-app` prints a warning and builds the app without that one action | yes |
-| A stable signature, so macOS keeps the Documents and Accessibility permissions across updates | Possible, untested: create a self-signed *Code Signing* certificate in Keychain Access (Certificate Assistant) and build with `DAITO_SIGN_IDENTITY="<its name>" make install-app`. Otherwise the app is signed ad hoc and the two permissions are asked for again after every update | Easy: add your Apple ID (free) in Xcode → Settings → Accounts |
+| A stable signature, so macOS keeps the Documents and Accessibility permissions across updates | Possible, untested: create a self-signed *Code Signing* certificate in Keychain Access (Certificate Assistant) and build with `SEMANTERO_SIGN_IDENTITY="<its name>" make install-app`. Otherwise the app is signed ad hoc and the two permissions are asked for again after every update | Easy: add your Apple ID (free) in Xcode → Settings → Accounts |
 | The Swift test suite (`make test-swift`, `make check`): contributors only | **No**: Swift's test frameworks aren't in the Command Line Tools | yes |
 
 Caveat: the Command-Line-Tools-only path was checked by compiling the app, not by a full `make install-global` run on a
@@ -226,7 +226,7 @@ account) to open without macOS's "unidentified developer" warning, so it isn't o
 **Updating the app** (the running copy isn't replaced in place):
 
 ```bash
-make install-app && pkill -f "Daito Search.app/Contents/MacOS/DaitoSearch"; sleep 1; open "/Applications/Daito Search.app"
+make install-app && pkill -f "Semantero.app/Contents/MacOS/Semantero"; sleep 1; open "/Applications/Semantero.app"
 ```
 
 **Settings** (menu bar → Settings…; changes apply when you press Save): vault path, hotkey, Ollama URL, result count,
@@ -272,10 +272,10 @@ updates the notes index on every run. Logs go to `logs/morning.log` and `logs/we
 
 | Piece | How |
 |---|---|
-| Launcher | First menu bar → Settings… → untick the three Spotlight boxes → Save (this removes its Spotlight entries). Then Quit, and `rm -rf "/Applications/Daito Search.app" ~/Library/Application\ Support/Daito\ Search`; `defaults delete dev.daito.search` |
+| Launcher | First menu bar → Settings… → untick the three Spotlight boxes → Save (this removes its Spotlight entries). Then Quit, and `rm -rf "/Applications/Semantero.app" ~/Library/Application\ Support/Semantero\ Search`; `defaults delete dev.semantero.app` |
 | Watcher | `./setup-search.sh stop` and `rm ~/Library/LaunchAgents/com.planner.zotero-watch.plist` |
 | Planner jobs | `launchctl bootout gui/$(id -u)/com.planner.morning` (and `.weekly`), then remove the plists |
-| Plugin | Disable it in Obsidian, then delete `<vault>/.obsidian/plugins/daito-paper-search` |
+| Plugin | Disable it in Obsidian, then delete `<vault>/.obsidian/plugins/semantero` |
 | Indexes and state | `<vault>/.planner/` (indexes, sidecars, state). Your notes are not touched |
 
 ---
@@ -285,7 +285,7 @@ updates the notes index on every run. Logs go to `logs/morning.log` and `logs/we
 | Symptom | Cause and fix |
 |---|---|
 | Launcher says "isn't allowed to read your vault" | Allow Documents in Privacy & Security → Files and Folders, then menu bar → Reload Indexes |
-| ⌘↵ only copies ("press ⌘V" toast) | Allow Daito Search under Privacy & Security → Accessibility. With an ad hoc signature this resets on each reinstall |
+| ⌘↵ only copies ("press ⌘V" toast) | Allow Semantero under Privacy & Security → Accessibility. With an ad hoc signature this resets on each reinstall |
 | Grey dot "semantic off: Ollama not reachable" | `brew services start ollama`; `ollama list` should include `qwen3-embedding:0.6b` |
 | `_LSOpenURLsWithCompletionHandler() failed with error -600` after reinstalling | The old copy was still quitting: run `open` again (or put `sleep 1` before it) |
 | ⌥Space does something else | Another app has it (e.g. an assistant's quick-entry key). Pick another hotkey in Settings |

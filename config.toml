@@ -50,7 +50,7 @@ keep_alive = "5m"                   # Ollama unloads the model (~400 MB) this lo
 
 
 [notes]
-# Off for the Obsidian-only setup. The global setup (notes index + Daito Search app) turns it on in config.local.toml:
+# Off for the Obsidian-only setup. The global setup (notes index + Semantero app) turns it on in config.local.toml:
 #   [notes]
 #   enabled = true
 #   exclude = [ ...defaults..., "Private/**" ]   # see docs/INSTALL.md

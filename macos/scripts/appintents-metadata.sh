@@ -7,16 +7,16 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 APP="$1"
 DD="build/dd"
-xcodebuild -scheme DaitoSearch -destination 'platform=macOS' -derivedDataPath "$DD" build >"$DD.log" 2>&1 \
+xcodebuild -scheme Semantero -destination 'platform=macOS' -derivedDataPath "$DD" build >"$DD.log" 2>&1 \
   || { echo "xcodebuild failed, see macos/$DD.log" >&2; exit 1; }
-OBJ="$(find "$DD/Build/Intermediates.noindex/DaitoSearch.build" -type d -path '*DaitoSearch-p.build/Objects-normal/arm64' | head -1)"
+OBJ="$(find "$DD/Build/Intermediates.noindex/Semantero.build" -type d -path '*Semantero-p.build/Objects-normal/arm64' | head -1)"
 ls "$OBJ"/*.swiftconstvalues > "$DD/constvalues.txt"
-find Sources/DaitoSearch -name '*.swift' > "$DD/sources.txt"
+find Sources/Semantero -name '*.swift' > "$DD/sources.txt"
 TOOL="$(xcrun --find appintentsmetadataprocessor)"
 TOOLCHAIN="$(dirname "$(dirname "$(dirname "$TOOL")")")"
 "$TOOL" \
   --toolchain-dir "$TOOLCHAIN" \
-  --module-name DaitoSearch \
+  --module-name Semantero \
   --sdk-root "$(xcrun --sdk macosx --show-sdk-path)" \
   --xcode-version "$(xcodebuild -version | awk '/Build version/ {print $3}')" \
   --platform-family macOS \

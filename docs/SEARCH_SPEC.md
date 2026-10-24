@@ -39,7 +39,7 @@ Status: implemented; kept as the design record. Companion to [SPEC.md](SPEC.md) 
 ## Architecture
 
 ```
- Zotero (read-only)                daito (Python, offline)                     Obsidian (TypeScript, live)
+ Zotero (read-only)                Semantero (Python, offline)                     Obsidian (TypeScript, live)
  ──────────────────                ───────────────────────                     ───────────────────────────
  zotero.sqlite ──► zotlib.py ──┐
                                ├─► searchindex.py ──► .planner/search/ ──► loader.ts ─┐
@@ -50,7 +50,7 @@ Status: implemented; kept as the design record. Companion to [SPEC.md](SPEC.md) 
 ```
 
 Why it's split this way:
-- **Indexing is Python.** It belongs with daito, uses the existing config, runs from the morning job, and needs no new Python dependency: vectors are written with the standard library's `array('f')`.
+- **Indexing is Python.** It belongs with Semantero, uses the existing config, runs from the morning job, and needs no new Python dependency: vectors are written with the standard library's `array('f')`.
 - **Ranking is TypeScript, inside the plugin.** That means no extra background service to keep alive. A few thousand vectors fit in memory, and comparing against all of them takes a few milliseconds in JS.
 - **The ranking core (`rank.ts`, `bm25.ts`, `text.ts`) has no Obsidian imports.** Node 26 runs `.ts` files directly, so it's tested with `node --test` and reused by the evaluation command.
 
@@ -110,7 +110,7 @@ Written into `.planner/search.tmp/`, then renamed into place, so the plugin neve
 
 **`state.json`** (indexer only): per attachment `{mtime, size, chunks: [rows]}` and per paper `abstract_sha`, so re-indexing only touches what changed.
 
-## Python side (daito)
+## Python side (semantero)
 
 ### Files
 
@@ -185,7 +185,7 @@ keep_alive = "30m"
 
 ## TypeScript side (Obsidian plugin)
 
-Lives in `obsidian/paper-search/` inside this repository. The build symlinks it into `<vault>/.obsidian/plugins/daito-paper-search/`.
+Lives in `obsidian/paper-search/` inside this repository. The build symlinks it into `<vault>/.obsidian/plugins/semantero/`.
 
 ### Files
 
@@ -234,7 +234,7 @@ Lives in `obsidian/paper-search/` inside this repository. The build symlinks it 
 
 ## Tests
 
-Python tests use `unittest` with temporary directories, as `tests/test_r1.py` does. TypeScript tests use `node --test`. **No test calls a real model.** Embeddings come from a fake embedder: a deterministic vector derived from a hash of the token set, normalised. That makes texts that share words similar, which is enough to test the plumbing. Tests that touch Ollama or real PDFs run only when `DAITO_LIVE=1`.
+Python tests use `unittest` with temporary directories, as `tests/test_r1.py` does. TypeScript tests use `node --test`. **No test calls a real model.** Embeddings come from a fake embedder: a deterministic vector derived from a hash of the token set, normalised. That makes texts that share words similar, which is enough to test the plumbing. Tests that touch Ollama or real PDFs run only when `SEMANTERO_LIVE=1`.
 
 ### Fixtures (`tests/fixtures/search/`)
 
@@ -265,7 +265,7 @@ Python tests use `unittest` with temporary directories, as `tests/test_r1.py` do
 10. `test_max_chunks_per_paper_caps`: a 400-page fake document produces at most `max_chunks_per_paper` chunks, the first pages kept.
 11. `test_scanned_pdf_has_no_text`: `hasText = false`, no chunks.
 12. `test_pdftotext_timeout_is_a_skipped_pdf_not_a_crash`
-13. `live_test_sample_pdf` (`DAITO_LIVE=1`): the real `pdftotext` on `sample.pdf` matches tests 5–8.
+13. `live_test_sample_pdf` (`SEMANTERO_LIVE=1`): the real `pdftotext` on `sample.pdf` matches tests 5–8.
 
 **embed** (HTTP patched)
 14. `test_batches_inputs`: 70 inputs with batch size 32 → 3 requests, in order.
@@ -273,7 +273,7 @@ Python tests use `unittest` with temporary directories, as `tests/test_r1.py` do
 16. `test_documents_have_no_instruction`: the request text is exactly the document text.
 17. `test_missing_model_error_mentions_pull`
 18. `test_retries_connection_errors_then_raises`
-19. `live_test_ollama_roundtrip` (`DAITO_LIVE=1`): the real model returns `dims` floats; similar sentences score higher than unrelated ones.
+19. `live_test_ollama_roundtrip` (`SEMANTERO_LIVE=1`): the real model returns `dims` floats; similar sentences score higher than unrelated ones.
 
 **searchindex** (fake embedder)
 20. `test_full_build_writes_all_files_consistently`: every `row` and `abstractRow` is in range; the vector file has exactly `rows × dims × 4` bytes; all rows have unit length.

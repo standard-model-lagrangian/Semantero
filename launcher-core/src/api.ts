@@ -1,5 +1,5 @@
 /**
- * The JavaScriptCore entry point: `globalThis.daito`. Everything crossing the boundary is a JSON string,
+ * The JavaScriptCore entry point: `globalThis.semantero`. Everything crossing the boundary is a JSON string,
  * except the large inputs, which are ArrayBuffers (or strings) and the vector arguments (ArrayBuffers).
  * No Node or DOM globals are used.
  */
@@ -33,7 +33,7 @@ function raw(part: CorpusPart | null | undefined): RawCorpus | null {
 }
 
 function need(): Engine {
-  if (!engine) throw new Error("daito: no index loaded");
+  if (!engine) throw new Error("semantero: no index loaded");
   return engine;
 }
 
@@ -100,5 +100,5 @@ const api = {
   },
 };
 
-(globalThis as unknown as { daito: typeof api }).daito = api;
+(globalThis as unknown as { semantero: typeof api }).semantero = api;
 export default api;

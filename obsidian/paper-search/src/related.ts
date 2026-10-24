@@ -393,7 +393,7 @@ export function createRelatedPapersViewClass(
     }
 
     getViewType(): string {
-      return "daito-related-papers";
+      return "semantero-related-papers";
     }
 
     getDisplayText(): string {
@@ -413,7 +413,7 @@ export function createRelatedPapersViewClass(
       container.empty?.();
 
       // Header with Refresh button
-      const header = container.createDiv?.({ cls: "daito-related-header" }) || container;
+      const header = container.createDiv?.({ cls: "semantero-related-header" }) || container;
       const titleEl = header.createEl?.("h4", { text: "Related papers" });
       const refreshBtn = header.createEl?.("button", { text: "Refresh" });
       refreshBtn?.addEventListener?.("click", () => {
@@ -424,12 +424,12 @@ export function createRelatedPapersViewClass(
         }
       });
 
-      const body = container.createDiv?.({ cls: "daito-related-body" }) || container;
+      const body = container.createDiv?.({ cls: "semantero-related-body" }) || container;
 
       // State views
       if (this.controller.state === "empty") {
         body.createEl?.("div", {
-          cls: "daito-related-empty",
+          cls: "semantero-related-empty",
           text: "Open a note and press Refresh to find related papers.",
         });
         return;
@@ -437,7 +437,7 @@ export function createRelatedPapersViewClass(
 
       if (this.controller.state === "index-loading") {
         body.createEl?.("div", {
-          cls: "daito-related-loading",
+          cls: "semantero-related-loading",
           text: "Loading paper index…",
         });
         return;
@@ -445,7 +445,7 @@ export function createRelatedPapersViewClass(
 
       if (this.controller.state === "loading") {
         body.createEl?.("div", {
-          cls: "daito-related-loading",
+          cls: "semantero-related-loading",
           text: "Searching for related papers…",
         });
         return;
@@ -453,7 +453,7 @@ export function createRelatedPapersViewClass(
 
       if (this.controller.state === "too-short") {
         body.createEl?.("div", {
-          cls: "daito-related-empty",
+          cls: "semantero-related-empty",
           text: "Write a bit more first",
         });
         return;
@@ -461,7 +461,7 @@ export function createRelatedPapersViewClass(
 
       if (this.controller.state === "needs-ollama") {
         body.createEl?.("div", {
-          cls: "daito-related-warning",
+          cls: "semantero-related-warning",
           text: "Related papers needs Ollama running",
         });
         return;
@@ -469,7 +469,7 @@ export function createRelatedPapersViewClass(
 
       if (this.controller.state === "nothing-close") {
         body.createEl?.("div", {
-          cls: "daito-related-empty",
+          cls: "semantero-related-empty",
           text: "Nothing close in your library",
         });
         // Every close match is already cited: still offer to reveal them.
@@ -480,9 +480,9 @@ export function createRelatedPapersViewClass(
         const { items, hiddenCount, showHidden } = this.controller.getDisplayItems();
 
         for (const item of items) {
-          const row = body.createDiv?.({ cls: "daito-related-row" });
+          const row = body.createDiv?.({ cls: "semantero-related-row" });
           const rowTitle = row?.createDiv?.({
-            cls: "daito-related-title",
+            cls: "semantero-related-title",
             text: item.paper.title || "Untitled",
           });
           rowTitle?.addEventListener?.("click", () => {
@@ -490,19 +490,19 @@ export function createRelatedPapersViewClass(
             window.open(url);
           });
 
-          const meta = row?.createDiv?.({ cls: "daito-related-meta" });
+          const meta = row?.createDiv?.({ cls: "semantero-related-meta" });
           const author = item.paper.authors?.[0] || "Unknown";
           const year = item.paper.year ? String(item.paper.year) : "n.d.";
           const badge = item.hit.page ? `p. ${item.hit.page}` : item.hit.fromAbstract === false ? "web page" : "abstract";
           meta?.setText?.(`${author} · ${year} · [${badge}]`);
 
           if (item.hit.snippet) {
-            const snippet = row?.createDiv?.({ cls: "daito-related-snippet" });
+            const snippet = row?.createDiv?.({ cls: "semantero-related-snippet" });
             snippet?.setText?.(item.hit.snippet);
           }
 
           // Action buttons
-          const actions = row?.createDiv?.({ cls: "daito-related-actions" });
+          const actions = row?.createDiv?.({ cls: "semantero-related-actions" });
           const citeBtn = actions?.createEl?.("button", { text: "Cite" });
           citeBtn?.addEventListener?.("click", () => {
             this.controller.handleCiteAction(
@@ -519,7 +519,7 @@ export function createRelatedPapersViewClass(
         }
 
         if (hiddenCount > 0) {
-          const footer = body.createDiv?.({ cls: "daito-related-footer" });
+          const footer = body.createDiv?.({ cls: "semantero-related-footer" });
           const toggleText = showHidden ? "hide" : "show";
           const link = footer?.createEl?.("a", {
             text: `${hiddenCount} already cited · ${toggleText}`,

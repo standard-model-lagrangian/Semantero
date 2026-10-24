@@ -193,7 +193,7 @@ test("IM7 'Semantic search unavailable' is a single footer row, not one per pape
   for (const item of latest) {
     const el = fakeEl();
     controller.renderSuggestion(item, el);
-    footers += allClasses(el).filter((c) => c === "daito-suggest-footer").length;
+    footers += allClasses(el).filter((c) => c === "semantero-suggest-footer").length;
   }
   assert.strictEqual(footers, 1);
   assert.strictEqual(latest[latest.length - 1].type, "footer", "footer is the last row");
@@ -214,12 +214,12 @@ test("IM9 title is cut at 80 characters including the ellipsis", () => {
   const { controller } = setup(async () => null);
   const el = fakeEl();
   controller.renderSuggestion({ type: "paper", paper: paper("x", "A".repeat(95)) }, el);
-  const title = el.children[0].children.find((c: any) => c.className === "daito-suggest-title");
+  const title = el.children[0].children.find((c: any) => c.className === "semantero-suggest-title");
   assert.strictEqual(title.text.length, 80);
   assert.ok(title.text.endsWith("…"));
   const el2 = fakeEl();
   controller.renderSuggestion({ type: "paper", paper: paper("y", "B".repeat(80)) }, el2);
-  const title2 = el2.children[0].children.find((c: any) => c.className === "daito-suggest-title");
+  const title2 = el2.children[0].children.find((c: any) => c.className === "semantero-suggest-title");
   assert.strictEqual(title2.text, "B".repeat(80), "exactly 80 is not cut");
 });
 

@@ -159,7 +159,7 @@ export default class PaperSearchPlugin extends Plugin {
 
     const RelatedPapersView = createRelatedPapersViewClass(ItemView);
     this.registerView(
-      "daito-related-papers",
+      "semantero-related-papers",
       (leaf) => new RelatedPapersView(leaf, relatedController, this.editorTracker)
     );
 
@@ -201,14 +201,14 @@ export default class PaperSearchPlugin extends Plugin {
   async activateRelatedView() {
     const { workspace } = this.app;
     let leaf: WorkspaceLeaf | null = null;
-    const leaves = workspace.getLeavesOfType("daito-related-papers");
+    const leaves = workspace.getLeavesOfType("semantero-related-papers");
     if (leaves.length > 0) {
       leaf = leaves[0];
     } else {
       leaf = workspace.getRightLeaf(false);
       if (leaf) {
         await leaf.setViewState({
-          type: "daito-related-papers",
+          type: "semantero-related-papers",
           active: true,
         });
       }

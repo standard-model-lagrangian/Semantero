@@ -24,7 +24,7 @@ function markdownView(pathName: string, text = "note text", cursorOffset = 3, se
 
 function panelView() {
   const leaf: any = {};
-  const view: any = { leaf, getViewType: () => "daito-related-papers" };
+  const view: any = { leaf, getViewType: () => "semantero-related-papers" };
   leaf.view = view;
   return view;
 }

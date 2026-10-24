@@ -1,4 +1,4 @@
-# Developing daito
+# Developing Semantero
 
 For contributors and coding agents. Read [AGENTS.md](../AGENTS.md) first: its rules (vault safety, test-first, privacy)
 override anything here. To install, see [INSTALL.md](INSTALL.md).
@@ -13,7 +13,7 @@ override anything here. To install, see [INSTALL.md](INSTALL.md).
  storage/*.html ► htmltext ┘      ▲    (manifest, papers, chunks,      │
                                   │     vectors.f32, state)            ├─► launcher-core   (TS → dist/ranker.js)
             zotwatch (launchd) ───┘                                    │        ▲ runs inside
-                                                                       │   Daito Search.app  macos/  (Swift, JavaScriptCore)
+                                                                       │   Semantero.app  macos/  (Swift, JavaScriptCore)
  vault/**/*.md ─► mdtext ─► notesindex ─► <vault>/.planner/notes/ ─────┘        │
                                   ▲    (same format, one entry per note)        ├─► panel (⌥Space), actions, clipboard
        morning tick (launchd) ────┘                                             ├─► Core Spotlight entries
@@ -39,8 +39,8 @@ tests.
 |---|---|---|---|---|
 | `planner/` | Python 3.11+, stdlib (+ `anthropic`) | CLI `python -m planner …`: planner, paper index, notes index, watcher, doctor | `tests/` (`unittest`) | — |
 | `obsidian/paper-search/` | TypeScript (Node 26 runs `.ts` directly) | Obsidian plugin + the shared ranking core | `test/*.test.ts` (`node --test`) | `main.js` |
-| `launcher-core/` | TypeScript, no Node/DOM APIs in `src/` | Merges papers + notes, builds `ResultVM`s; JavaScriptCore API `globalThis.daito` | `test/*.test.ts`, `conformance/cases.json` | `dist/ranker.js` |
-| `macos/` | Swift 6.2 package, no dependencies | `DaitoSearchKit` (all logic, testable), `DaitoSearch` (the app), `DaitoBench` (benchmarks) | `Tests/DaitoSearchKitTests` (Swift Testing); `make app-selftest` | `macos/build/` (git-ignored) |
+| `launcher-core/` | TypeScript, no Node/DOM APIs in `src/` | Merges papers + notes, builds `ResultVM`s; JavaScriptCore API `globalThis.semantero` | `test/*.test.ts`, `conformance/cases.json` | `dist/ranker.js` |
+| `macos/` | Swift 6.2 package, no dependencies | `SemanteroKit` (all logic, testable), `Semantero` (the app), `SemanteroBench` (benchmarks) | `Tests/SemanteroKitTests` (Swift Testing); `make app-selftest` | `macos/build/` (git-ignored) |
 | `eval/` | TOML | Ground-truth queries (`expect` citekeys, `expect_note` note paths) | `scripts/eval.ts` in both TS packages | — |
 | `launchd/`, `bin/` | plist, zsh | The owner's launchd jobs; `planner-run.sh` adds Homebrew to launchd's PATH | — | — |
 | `docs/` | Markdown | Specs, decisions log, checklists, these guides | — | — |
@@ -80,12 +80,12 @@ make ci            # the same without the Swift suite: what GitHub Actions runs
 | `cd launcher-core && npm run build` | Rebuild `dist/ranker.js`. The build fails if Node built-ins, `console.` or `TextDecoder` slip in: JavaScriptCore's bare context has none |
 | `make fixtures` | Rebuild `launcher-core/test/fixtures/notes_small/` from `tests/fixtures/notes/vault_small/` with the fake embedder |
 | `make record-conformance` | Re-record `launcher-core/conformance/cases.json` from the TypeScript implementation (a deliberate, reviewed commit) |
-| `make app` / `make install-app` | Build (and install) `Daito Search.app`: release build, `ranker.js` + `shortcuts.json` copied in, App Intents metadata, hardened runtime + JIT entitlement |
-| `make app-selftest` | Runs the built app with `DAITO_SELFTEST`: shows the real panel, sends synthetic key events to it, records actions instead of running them, prints pass/fail |
+| `make app` / `make install-app` | Build (and install) `Semantero.app`: release build, `ranker.js` + `shortcuts.json` copied in, App Intents metadata, hardened runtime + JIT entitlement |
+| `make app-selftest` | Runs the built app with `SEMANTERO_SELFTEST`: shows the real panel, sends synthetic key events to it, records actions instead of running them, prints pass/fail |
 | `make bench-app` | Spike S1 benchmark on your vault: load, keystroke, hybrid (JavaScriptCore vs Accelerate), memory; three signing modes |
 | `node launcher-core/scripts/eval.ts --vault <dir> --scope compare` | Recall@1/@5 and MRR, papers vs all; `--keyword-only`, `--per-corpus-instruction` |
-| `DAITO_PERF=1 node --test test/perf.test.ts` | Gated performance budgets (both TS packages; generates a 3× synthetic index once, git-ignored) |
-| `DAITO_LIVE=1 …` | Python tests that call the real `pdftotext` / Ollama |
+| `SEMANTERO_PERF=1 node --test test/perf.test.ts` | Gated performance budgets (both TS packages; generates a 3× synthetic index once, git-ignored) |
+| `SEMANTERO_LIVE=1 …` | Python tests that call the real `pdftotext` / Ollama |
 
 ## Workflows
 
@@ -114,7 +114,7 @@ make ci            # the same without the Swift suite: what GitHub Actions runs
 1. Add it to `launcher-core/shortcuts.json`: id, title, key, the kinds it applies to, and what it needs (`filePath`,
    `noteUrl`, `selectUrl`).
 2. If it needs data, add a field to `ResultVM` (`launcher-core/src/vm.ts`) and its Swift mirror
-   (`macos/Sources/DaitoSearchKit/Models.swift`).
+   (`macos/Sources/SemanteroKit/Models.swift`).
 3. Implement it in `ActionExecutor.run` and add the id to `ActionExecutor.supportedIDs`. A test fails until the two match.
 4. Add an icon in `ActionMenu.icon(_:)`. Re-record conformance (the action list is part of each `ResultVM`).
 
@@ -138,18 +138,18 @@ the morning brief shows as `⚠ Setup:` lines.
   Spotlight index, HTTP, sleep and scheduler. No test touches the real clipboard, keyboard or Spotlight.
 - **What only a person can check** is in [`macos/CHECK.md`](../macos/CHECK.md) (launcher) and [MANUAL_CHECKS.md](MANUAL_CHECKS.md)
   (plugin). `make app-selftest` covers the launcher's keyboard path in the real app.
-- **Gated tests**: `DAITO_PERF=1` (performance budgets), `DAITO_LIVE=1` (real `pdftotext` and Ollama).
+- **Gated tests**: `SEMANTERO_PERF=1` (performance budgets), `SEMANTERO_LIVE=1` (real `pdftotext` and Ollama).
 
 ## Debugging aids
 
 | Aid | What |
 |---|---|
-| `DAITO_DEBUG=1 "/Applications/Daito Search.app/Contents/MacOS/DaitoSearch"` | Logs reload outcomes, compactions, the memory watchdog and Spotlight syncs to stderr |
-| `DAITO_SHOW_PANEL="<query>"` | Opens the panel with that query once the index is loaded |
-| `DAITO_SNAPSHOT=<png>` (+ `DAITO_SNAPSHOT_ACTIONS=1`) | With `DAITO_SHOW_PANEL`: saves the panel (optionally with ⌘K open) to a PNG via `cacheDisplay`, then quits. Needs no screen-recording permission. Glass and SF Symbols may not render in the capture |
-| `DAITO_SELFTEST=<json>` | See `make app-selftest`. Test modes take no hotkey or login item, so they run beside the installed app |
-| `daito-bench` (`swift run -c release daito-bench --vault …`; sign it with the JIT entitlement first, see `macos/scripts/bench.sh`) | default: load/keyword/hybrid timings for options A and B. `--heapprobe` (live heap, objects by type, footprint over idle time), `--notesprobe` (notes-only reload cost), `--parseprobe` (JSON.parse/string costs), `--dropprobe <debug bundle>` (heap owned by each engine part), `--memprobe`, `--jsprobe`, `--jsprobe2 <bundle>` |
-| `DAITO_VAULT=<dir> DAITO_NO_HOTKEY=1` | Run a build of the app against another vault (e.g. a copy of the indexes) without touching the installed app's hotkey or settings |
+| `SEMANTERO_DEBUG=1 "/Applications/Semantero.app/Contents/MacOS/Semantero"` | Logs reload outcomes, compactions, the memory watchdog and Spotlight syncs to stderr |
+| `SEMANTERO_SHOW_PANEL="<query>"` | Opens the panel with that query once the index is loaded |
+| `SEMANTERO_SNAPSHOT=<png>` (+ `SEMANTERO_SNAPSHOT_ACTIONS=1`) | With `SEMANTERO_SHOW_PANEL`: saves the panel (optionally with ⌘K open) to a PNG via `cacheDisplay`, then quits. Needs no screen-recording permission. Glass and SF Symbols may not render in the capture |
+| `SEMANTERO_SELFTEST=<json>` | See `make app-selftest`. Test modes take no hotkey or login item, so they run beside the installed app |
+| `semantero-bench` (`swift run -c release semantero-bench --vault …`; sign it with the JIT entitlement first, see `macos/scripts/bench.sh`) | default: load/keyword/hybrid timings for options A and B. `--heapprobe` (live heap, objects by type, footprint over idle time), `--notesprobe` (notes-only reload cost), `--parseprobe` (JSON.parse/string costs), `--dropprobe <debug bundle>` (heap owned by each engine part), `--memprobe`, `--jsprobe`, `--jsprobe2 <bundle>` |
+| `SEMANTERO_VAULT=<dir> SEMANTERO_NO_HOTKEY=1` | Run a build of the app against another vault (e.g. a copy of the indexes) without touching the installed app's hotkey or settings |
 | `footprint <pid>` / `vmmap -summary <pid>` | The real memory figure (`ps` RSS counts reclaimable pages) |
 | `planner notes stats`, `planner search stats`, `planner doctor --search` | Index contents, age, health |
 
@@ -162,9 +162,9 @@ the morning brief shows as `⚠ Setup:` lines.
   low: postings are flat typed arrays (CSR), chunk texts live packed in a `TextStore`, vocabulary strings are flat copies
   (a token slice pins its whole parent string). The app also turns off the DFG and FTL JIT tiers
   (`JSCRanker.configureProcess()`). Every JavaScriptCore call runs in an `autoreleasepool`, or replaced engines stay
-  alive. Measure with `daito-bench --heapprobe` (live heap, objects by type, footprint) and `--dropprobe` (which part
+  alive. Measure with `semantero-bench --heapprobe` (live heap, objects by type, footprint) and `--dropprobe` (which part
   holds what). Details: [DECISIONS_AND_GAPS.md](DECISIONS_AND_GAPS.md) (Spike S1, Review fixes, Memory pass).
-- **Notes-only reloads** swap the notes corpus inside the current engine (`daito.loadNotes`), so editing notes never
+- **Notes-only reloads** swap the notes corpus inside the current engine (`semantero.loadNotes`), so editing notes never
   rebuilds the paper index. Keep `Engine.withNotes` exactly equivalent to a full build (test R35).
 - **Reloads build off the query actor** on their own VM; the last load started wins. Don't move engine building back
   onto `JSCRanker`'s actor, or every keystroke waits for it.

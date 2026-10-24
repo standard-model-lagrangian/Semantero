@@ -16,17 +16,17 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-DAITO_SUPPORT = Path.home() / "Library" / "Application Support" / "daito"
+SEMANTERO_SUPPORT = Path.home() / "Library" / "Application Support" / "Semantero"
 
 
 def model_dir(model: str) -> Path:
-    return DAITO_SUPPORT / "models" / model
+    return SEMANTERO_SUPPORT / "models" / model
 
 
 def cache_dir(model: str, vault: Path) -> Path:
     """Token cache of one model for one vault (outside the vault: it is large and Documents may sync to iCloud)."""
     tag = hashlib.sha256(str(Path(vault).expanduser().resolve()).encode()).hexdigest()[:12]
-    return DAITO_SUPPORT / "cache" / model / tag
+    return SEMANTERO_SUPPORT / "cache" / model / tag
 
 
 def row_key(vec_f32: bytes) -> bytes:

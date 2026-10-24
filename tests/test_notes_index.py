@@ -645,8 +645,8 @@ class TestTickAndDoctor(NotesCase):
         with patch.object(health, "APP_PATHS", [self.root / "Missing.app"]):
             r = health.check_launcher_app(self.cfg)
         self.assertTrue(r.ok)
-        self.assertIn("Daito Search", r.message)
-        app = self.root / "Daito Search.app"
+        self.assertIn("Semantero", r.message)
+        app = self.root / "Semantero.app"
         app.mkdir()
         with patch.object(health, "APP_PATHS", [app]):
             r = health.check_launcher_app(self.cfg)

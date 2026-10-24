@@ -1,14 +1,14 @@
 #!/bin/bash
-# Spike S1: runs daito-bench ad hoc signed (no hardened runtime), hardened runtime without the JIT entitlement, and
+# Spike S1: runs semantero-bench ad hoc signed (no hardened runtime), hardened runtime without the JIT entitlement, and
 # hardened with allow-jit (M6). Apple Silicon will not run an unsigned binary, so the baseline is ad hoc signed.
 #   macos/scripts/bench.sh <vault> [ranker.js]
 set -euo pipefail
 cd "$(dirname "$0")/.."
 VAULT="${1:?usage: bench.sh <vault> [ranker.js]}"
 RANKER="${2:-../launcher-core/dist/ranker.js}"
-swift build -c release --product daito-bench >/dev/null
-BIN="$(swift build -c release --show-bin-path)/daito-bench"
-ENT="$(mktemp -t daito-jit).plist"
+swift build -c release --product semantero-bench >/dev/null
+BIN="$(swift build -c release --show-bin-path)/semantero-bench"
+ENT="$(mktemp -t semantero-jit).plist"
 cat > "$ENT" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

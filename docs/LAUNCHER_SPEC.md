@@ -122,7 +122,7 @@ Default hotkey `⌥Space`, configurable in settings:
 4. After a 60 ms settle, post ⌘V with `CGEvent` to the HID event tap.
 
 **Paste fallbacks** (each one is copy only, plus a message in a small toast near the menu bar):
-- **No Accessibility permission:** "Copied, press ⌘V. Allow Daito Search in Privacy & Security → Accessibility to paste automatically." The toast has a button that opens that pane.
+- **No Accessibility permission:** "Copied, press ⌘V. Allow Semantero in Privacy & Security → Accessibility to paste automatically." The toast has a button that opens that pane.
 - **Secure input on** (a password field is focused; `IsSecureEventInputEnabled()`): "Copied, paste manually."
 - **Setting "Restore clipboard after paste"** (default off): if on, the previous clipboard contents are put back after 750 ms.
 
@@ -153,7 +153,7 @@ Default hotkey `⌥Space`, configurable in settings:
 ## Architecture
 
 ```
- Zotero (read-only)          daito (Python, offline)                     Daito Search.app (Swift, resident)
+ Zotero (read-only)          Semantero (Python, offline)                     Semantero.app (Swift, resident)
  ──────────────────          ───────────────────────                     ──────────────────────────────────
  zotero.sqlite ─► zotlib ─┐                                              IndexWatcher (FSEvents on .planner/)
                           ├─► searchindex ─► .planner/search/ ─┐                   │ content_hash changed
@@ -349,7 +349,7 @@ Changing `model` or `dims` in `[search]`, or the `chunker` name, forces a full n
   - `model` and `dims` match `[search]`;
   - not degraded for more than 1 day;
   - the `exclude` globs are valid;
-  - `Daito Search.app` is in `/Applications` and registered as a login item (a warning, not a failure).
+  - `Semantero.app` is in `/Applications` and registered as a login item (a warning, not a failure).
 
 ## Ranking (TypeScript, `launcher-core/`)
 
@@ -392,7 +392,7 @@ Split `semantic()` in `engine.ts` into two steps:
 | `src/urls.ts` | Obsidian URLs; re-exports the Zotero URLs from the plugin's `zotero.ts` |
 | `src/cite.ts` | Author formatting, passage citations, wikilinks |
 | `src/vm.ts` | Hit → `ResultVM` (subtitle, accessory, bold ranges, detail rows, action list) |
-| `src/api.ts` | The JavaScriptCore entry point: `globalThis.daito = { load, keyword, hybrid, hybridFromRowScores, recent, version }`. All arguments and results are JSON strings except `ArrayBuffer`s |
+| `src/api.ts` | The JavaScriptCore entry point: `globalThis.semantero = { load, keyword, hybrid, hybridFromRowScores, recent, version }`. All arguments and results are JSON strings except `ArrayBuffer`s |
 | `shortcuts.json` | Action IDs, titles, key equivalents, and which kinds each applies to |
 | `node/fsload.ts` | Node only: read a vault's indexes from disk for tests and `eval.ts` |
 | `scripts/eval.ts` | Evaluation CLI |
@@ -411,7 +411,7 @@ Split `semantic()` in `engine.ts` into two steps:
 macos/
   Package.swift                 swift-tools-version 6.2, platforms [.macOS(.v26)], no dependencies
   Sources/
-    DaitoSearchKit/             library: everything testable, no SwiftUI views
+    SemanteroKit/             library: everything testable, no SwiftUI views
       IndexFiles.swift          locate + read/mmap both corpora, content_hash, validation
       IndexWatcher.swift        FSEvents on <vault>/.planner, 500 ms debounce, reload on hash change
       Ranker.swift              protocol Ranker + RankerActor (serialises access, owns the engine)
@@ -425,7 +425,7 @@ macos/
       Hotkey.swift              "⌥Space" ⇄ Carbon key code + modifiers; RegisterEventHotKey wrapper
       SpotlightDonor.swift      Core Spotlight diff + donate (injected index for tests)
       Settings.swift            typed UserDefaults
-    DaitoSearch/                executable: the app
+    Semantero/                executable: the app
       App.swift                 @main, MenuBarExtra, Settings scene, login item
       Panel.swift               NSPanel subclass (non-activating, floating, all Spaces) + positioning
       SearchView.swift          SwiftUI: field, list, detail, footer, glass
@@ -433,12 +433,12 @@ macos/
       QuickLook.swift           QLPreviewPanel data source
       Intents.swift             SearchEntity, EntityStringQuery, OpenResultIntent, AppShortcuts (gated by S3)
       SpotlightOpen.swift       NSUserActivity (CSSearchableItemActionType) → open
-  Tests/DaitoSearchKitTests/    Swift Testing
-  Resources/Info.plist          LSUIElement, bundle id dev.daito.search, usage strings
-  scripts/bundle.sh             swift build -c release → Daito Search.app, copy ranker.js + shortcuts.json, codesign
+  Tests/SemanteroKitTests/    Swift Testing
+  Resources/Info.plist          LSUIElement, bundle id dev.semantero.app, usage strings
+  scripts/bundle.sh             swift build -c release → Semantero.app, copy ranker.js + shortcuts.json, codesign
 ```
 
-- **Build:** `make app` runs `launcher-core` build → `swift build` → `scripts/bundle.sh`, which assembles `build/Daito Search.app`.
+- **Build:** `make app` runs `launcher-core` build → `swift build` → `scripts/bundle.sh`, which assembles `build/Semantero.app`.
 - **Install:** `make install-app` copies it to `/Applications`, so Launch Services, Spotlight and App Intents see it.
 - **Signing:** with the free Apple ID "Personal Team" development certificate, so the Accessibility and other privacy permissions survive rebuilds. Ad-hoc signing works but forces you to grant the permission again after each build.
 - **App Intents metadata:** a plain SwiftPM build doesn't produce it. If spike S3 passes, `bundle.sh` runs `xcrun appintentsmetadataprocessor` explicitly. If that turns out impractical, the S3 decision entry says so, and an `xcodebuild` scheme over the same package is added for this one step.
@@ -519,7 +519,7 @@ This is decided **by measurement in spike S1**, recorded in `DECISIONS_AND_GAPS.
   - the JSON files are passed as `ArrayBuffer`s and decoded in JS.
 - **Reloading:** a new `JSContext` is built off to the side and swapped in only after `load` succeeds. A failed load keeps the old one.
 - **Errors:** a JS exception (via `context.exceptionHandler`) becomes a Swift `RankerError` carrying the message and stack. It is never a crash.
-- **Version check:** `daito.version` must match the app's expected `ranker.js` version; on a mismatch the app shows an error and stays keyword-off.
+- **Version check:** `semantero.version` must match the app's expected `ranker.js` version; on a mismatch the app shows an error and stays keyword-off.
 
 ### Spotlight action (App Intents): gated by S3
 
@@ -540,7 +540,7 @@ This is decided **by measurement in spike S1**, recorded in `DECISIONS_AND_GAPS.
 
 ### Spotlight index entries (Core Spotlight): gated by S4
 
-- **`SpotlightDonor`** keeps `CSSearchableIndex(name: "daito")` in sync whenever `content_hash` changes:
+- **`SpotlightDonor`** keeps `CSSearchableIndex(name: "semantero")` in sync whenever `content_hash` changes:
   - papers: domain `papers`; one item per paper (`uniqueIdentifier` = `P:<itemKey>`);
   - notes: domain `notes`; one per note.
 - **Paper attributes:**
@@ -556,7 +556,7 @@ This is decided **by measurement in spike S1**, recorded in `DECISIONS_AND_GAPS.
   - `keywords` = tags and aliases.
 
   Note text is donated **only** when the "add note text" setting is on (default off).
-- **Diffing:** a per-item hash of the donated attributes is stored in `Application Support/Daito Search/spotlight.json`. Only changed items are re-donated and only removed ones deleted. Turning a domain off deletes it.
+- **Diffing:** a per-item hash of the donated attributes is stored in `Application Support/Semantero/spotlight.json`. Only changed items are re-donated and only removed ones deleted. Turning a domain off deletes it.
 - **Opening:** a selected Spotlight item reaches the app as an `NSUserActivity` with `CSSearchableItemActionType`. The app resolves the ID and runs `↵`.
 
 ## Opening things
@@ -585,7 +585,7 @@ This is decided **by measurement in spike S1**, recorded in `DECISIONS_AND_GAPS.
 - **Frameworks:** Python uses `unittest`, TypeScript uses `node --test`, and Swift uses **Swift Testing** (`swift test`).
 - **No test calls a real model:** embeddings come from the existing fake embedder, and Ollama is faked over an injected `URLProtocol`.
 - **No test touches the real clipboard, keyboard, Spotlight index or Launch Services:** each sits behind an injected protocol with a fake.
-- **Live tests** (real Ollama, real index, real pasteboard) run only with `DAITO_LIVE=1`.
+- **Live tests** (real Ollama, real index, real pasteboard) run only with `SEMANTERO_LIVE=1`.
 
 ### Fixtures
 
@@ -704,7 +704,7 @@ R26. `action list per kind: paper-with-pdf, paper-no-attachment, snapshot-only, 
 R27. `shortcuts.json: unique ids, unique key equivalents, every action id used by vm.ts exists`
 
 **api / bundle**
-R28. `dist/ranker.js evaluates in a bare V8 context with no Node globals` (`node:vm` with an empty context) and `daito.version` matches `package.json`
+R28. `dist/ranker.js evaluates in a bare V8 context with no Node globals` (`node:vm` with an empty context) and `semantero.version` matches `package.json`
 R29. `api round trip: load → keyword → hybrid returns JSON that parses to ResultVM[]`
 R30. `conformance: TypeScript reproduces conformance/cases.json exactly` (guards against an unintended change; re-recording is a deliberate commit)
 
@@ -712,7 +712,7 @@ R30. `conformance: TypeScript reproduces conformance/cases.json exactly` (guards
 R31. `keyword over both corpora p95 ≤ 20 ms`
 R32. `hybrid scoring over both corpora (no Ollama) p95 ≤ 35 ms`
 
-### Swift: `macos/Tests/DaitoSearchKitTests/`
+### Swift: `macos/Tests/SemanteroKitTests/`
 
 **IndexFiles / IndexWatcher**
 S1. `reads both fixture corpora; vectors are memory-mapped, not copied` (the `Data` is backed by a mapping; the footprint grows less than the file size)
@@ -866,7 +866,7 @@ Each phase ends with its tests green, `make check` passing, and a commit.
 | 2 | Paper `file` paths and `zotero_storage` | Py 1–5 | Real index rebuilt with paths, no re-embed |
 | 3 | `mdtext`, `notesindex`, CLI, tick, doctor | Py 6–36 | Notes index fresh for a day unattended; `notes stats` looks right |
 | 4 | Engine refactor; `launcher-core` (corpora, merge, query, paths, urls, cite, vm, api, shortcuts); conformance recorder; `eval.ts` | T1–T2, R1–R32 | Eval acceptance met (or misses analysed and decided); conformance recorded |
-| 5 | `DaitoSearchKit`: IndexFiles, watcher, the chosen Ranker, OllamaClient, QueryController, ActionExecutor, Hotkey, Shortcuts, Settings | S1–S32 (S6/S7 per decision) | `swift test` green with Thread Sanitizer |
+| 5 | `SemanteroKit`: IndexFiles, watcher, the chosen Ranker, OllamaClient, QueryController, ActionExecutor, Hotkey, Shortcuts, Settings | S1–S32 (S6/S7 per decision) | `swift test` green with Thread Sanitizer |
 | 6 | App: panel, SearchView with glass, action menu, Quick Look, drag, menu bar, settings, login item; `bundle.sh`, `make app`, `make install-app` | N-M1…N-M12, N-M15, N-M16 | L1, L2, L8 measured and within budget |
 | 7 | Spotlight: donor (if S4 passed) and intents (if S3 passed) | S33–S42, N-M13, N-M14 | Works after a fresh login |
 | 8 | A week of daily use; log decisions; update `AGENTS.md` | — | Status → implemented |

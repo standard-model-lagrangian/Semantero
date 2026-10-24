@@ -62,7 +62,7 @@ flowchart LR
     N --> E
     E --> I[("Hybrid index<br/><sub>BM25 + vectors<br/>in your vault</sub>")]
     I --> P["Obsidian plugin<br/><sub>⌘⇧0 · @@ · related</sub>"]
-    I --> L["Daito Search.app<br/><sub>⌥Space · Spotlight</sub>"]
+    I --> L["Semantero.app<br/><sub>⌥Space · Spotlight</sub>"]
 ```
 
 1. **Watch.** A tiny `launchd` job notices when Zotero's database changes, waits for it to go quiet, and compares a
@@ -111,7 +111,7 @@ cd Semantero
 ./setup-search.sh            # add --vault "/path/to/Vault" --zotero "/path/to/Zotero" if they're not in the default places
 ```
 
-Then in Obsidian: **Settings → Community plugins → reload → enable "Daito Paper Search"**, and press `⌘⇧0`.
+Then in Obsidian: **Settings → Community plugins → reload → enable "Semantero"**, and press `⌘⇧0`.
 
 The script sets up Python, poppler and the embedding model, installs the plugin, builds your first index and starts the
 background watcher. Custom paths go to a git-ignored `config.local.toml`, so `git pull` never conflicts.
@@ -161,12 +161,10 @@ setup-search.sh       one-command installer and watcher manager
 planner/              Python: Zotero extraction, PDF/snapshot chunking, embeddings, BM25, watcher, notes index, planner
 obsidian/paper-search Obsidian plugin (TypeScript); its src/ holds the shared ranking core
 launcher-core/        ranking + view models for the app, bundled to dist/ranker.js and run in JavaScriptCore
-macos/                Daito Search.app (SwiftPM, no dependencies)
+macos/                Semantero.app (SwiftPM, no dependencies)
 launchd/              the background jobs
 docs/                 install guide, development guide, design specs, decisions log
 ```
-
-The app and plugin still carry the project's old name, **Daito**; the repository was renamed to Semantero.
 
 ## Contributing
 

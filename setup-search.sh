@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Daito Paper Search & Background Indexer Setup
+# Semantero & Background Indexer Setup
 #
 # Sets up the local hybrid paper search engine (BM25 + Ollama embeddings),
 # installs the Obsidian plugin into your vault, builds your initial index from
@@ -32,7 +32,7 @@ die()     { error "$*"; exit 1; }
 # Usage message
 usage() {
     cat <<EOF
-${BOLD}Daito Paper Search Setup & Management${NC}
+${BOLD}Semantero Setup & Management${NC}
 
 Usage:
   ./setup-search.sh [command] [options]
@@ -206,7 +206,7 @@ if is_custom_vault or is_custom_zotero:
 # ------------------------------------------------------------------------------
 
 cmd_status() {
-    info "Checking Daito Paper Search status..."
+    info "Checking Semantero status..."
 
     # 1. Python environment
     if [[ -x "$SCRIPT_DIR/.venv/bin/python" ]]; then
@@ -282,8 +282,8 @@ except Exception:
             warn "Search Index: No index found in $vault_dir/.planner/search"
         fi
 
-        if [[ -f "$vault_dir/.obsidian/plugins/daito-paper-search/main.js" ]]; then
-            success "Obsidian Plugin: Installed at .obsidian/plugins/daito-paper-search"
+        if [[ -f "$vault_dir/.obsidian/plugins/semantero/main.js" ]]; then
+            success "Obsidian Plugin: Installed at .obsidian/plugins/semantero"
         else
             warn "Obsidian Plugin: Not installed in vault"
         fi
@@ -387,7 +387,7 @@ cmd_setup() {
     done
 
     echo -e "${BOLD}======================================================${NC}"
-    echo -e "${BOLD}       Daito Paper Search & Background Watcher Setup   ${NC}"
+    echo -e "${BOLD}       Semantero & Background Watcher Setup   ${NC}"
     echo -e "${BOLD}======================================================${NC}\n"
 
     # 1. OS Check
@@ -586,7 +586,7 @@ except Exception:
     # 6. Install Obsidian Plugin
     info "Step 5/6: Installing Obsidian plugin into vault..."
     local plugin_source="$SCRIPT_DIR/obsidian/paper-search"
-    local plugin_dest="$vault_dir/.obsidian/plugins/daito-paper-search"
+    local plugin_dest="$vault_dir/.obsidian/plugins/semantero"
 
     # Check main.js
     if [[ ! -f "$plugin_source/main.js" ]]; then
@@ -686,7 +686,7 @@ EOF
     echo -e "Next steps in Obsidian:"
     echo -e "  1. Open Obsidian -> ${BOLD}Settings${NC} -> ${BOLD}Community plugins${NC}."
     echo -e "  2. Click the reload icon next to Installed plugins."
-    echo -e "  3. Toggle ${BOLD}Daito Paper Search${NC} to ${GREEN}ON${NC}."
+    echo -e "  3. Toggle ${BOLD}Semantero${NC} to ${GREEN}ON${NC}."
     echo -e "\nHow to use:"
     echo -e "  • ${BOLD}Cmd+Shift+0${NC} (or Mod+Shift+0): Open instant hybrid paper search modal."
     echo -e "    - ${BOLD}Enter${NC}: Open PDF in Zotero directly at the matching page."
@@ -694,7 +694,7 @@ EOF
     echo -e "    - ${BOLD}Alt+Enter${NC}: Open/create literature note."
     echo -e "    - ${BOLD}Shift+Enter${NC}: Select paper in Zotero."
     echo -e "  • ${BOLD}@@${NC}: Type anywhere in notes for inline citation autocomplete."
-    echo -e "  • ${BOLD}Command Palette${NC} -> 'Daito: Open related papers panel' for contextual literature suggestions."
+    echo -e "  • ${BOLD}Command Palette${NC} -> 'Semantero: Open related papers panel' for contextual literature suggestions."
     echo -e "\n${BOLD}Background Indexing:${NC}"
     echo -e "  • The watcher automatically updates your index whenever you add or edit papers in Zotero."
     echo -e "  • Check status anytime with: ${BOLD}./setup-search.sh status${NC}"

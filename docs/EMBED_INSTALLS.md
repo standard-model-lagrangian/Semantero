@@ -1,7 +1,7 @@
 # Embedding installs: two models in the real plugin and app
 
 Two embedding models, each with its own paper + notes index, that you switch between and judge by using them: the
-search pop-up (`⌘⇧0`), `@@` citations, the Related panel and Daito Search. One is live at a time; switching swaps
+search pop-up (`⌘⇧0`), `@@` citations, the Related panel and Semantero. One is live at a time; switching swaps
 folders, so it takes a second and re-embeds nothing. Background: [EMBED_BENCH_PLAN.md](EMBED_BENCH_PLAN.md) (the
 original lineup, why pplx runs frozen), [../pplx/README.md](../pplx/README.md) (how pplx runs).
 
@@ -22,7 +22,7 @@ query models of 4.4–5 GB, too slow to embed new papers and notes as they arriv
 ```
 
 After `use`:
-- **Daito Search** reloads by itself within a few seconds (it watches `.planner/`).
+- **Semantero** reloads by itself within a few seconds (it watches `.planner/`).
 - **Obsidian** picks up the new index the next time you open the search pop-up or the Related panel refreshes; if a
   view looks stale, run "Reload app without saving" once.
 - The Zotero watcher, the 5-minute notes tick and the morning run keep the **live** profile up to date with its own
@@ -38,7 +38,7 @@ embedding alone. Things that tend to separate models:
   reason semantic search exists here;
 - **paraphrase with no shared words** with the paper (a keyword match can't rescue those);
 - **methods and concepts across papers** ("microrheology of soft gels") and how sensible ranks 2–10 are;
-- **notes**: Daito Search's Notes scope, and the Related panel on a few notes you know well;
+- **notes**: Semantero's Notes scope, and the Related panel on a few notes you know well;
 - **speed**: the delay before semantic results merge in, and the first query after a while (model load).
 
 Pick the queries before switching, run the same list in each install, and note which one put the paper you meant
@@ -70,7 +70,7 @@ lets `scripts/eval.ts` score them later.
 | | Build from scratch (M4, ~9,100 paper texts; estimates) | Disk |
 |---|---|---|
 | `qwen3-0.6b` | under an hour | ~55 MB |
-| `pplx-v2-late` | ~1–1.5 h | ~20 MB index + ~1 GB token cache in `~/Library/Application Support/daito/cache/` |
+| `pplx-v2-late` | ~1–1.5 h | ~20 MB index + ~1 GB token cache in `~/Library/Application Support/Semantero/cache/` |
 
 pplx's token cache lives outside the
 vault on purpose: the vault is in Documents, which may sync to iCloud.
@@ -79,5 +79,6 @@ vault on purpose: the vault is in Documents, which may sync to iCloud.
 
 - One profile: `rm -rf "<vault>/.planner/profiles/<name>"` (not the live one; switch first), and `ollama rm <model>`.
 - pplx entirely: `launchctl bootout gui/$(id -u)/com.planner.pplxd`, `rm ~/Library/LaunchAgents/com.planner.pplxd.plist`,
-  `rm -rf ~/Library/Application\ Support/daito`.
+  then delete everything in `~/Library/Application\ Support/Semantero` except `spotlight.json` (the launcher's state
+  shares that folder).
 - The profile machinery itself stays harmless: with no `<vault>/.planner/profile.json`, `config.toml` decides as before.

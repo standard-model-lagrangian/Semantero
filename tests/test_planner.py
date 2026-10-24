@@ -10,7 +10,7 @@ from planner.config import Config
 from planner.extract import PROMPT_VERSION
 
 
-class TestDaitoR1(unittest.TestCase):
+class TestSemanteroR1(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.vault_dir = Path(self.tmp.name) / "vault"
@@ -333,8 +333,8 @@ class TestDaitoR1(unittest.TestCase):
 class TestR1Fixes(unittest.TestCase):
     """Fixes from the 19 Oct review of R1."""
 
-    setUp = TestDaitoR1.setUp
-    tearDown = TestDaitoR1.tearDown
+    setUp = TestSemanteroR1.setUp
+    tearDown = TestSemanteroR1.tearDown
 
     def test_blank_template_note_stays_blank_through_note_text(self):
         note = self.daily_dir / "2026-10-19.md"

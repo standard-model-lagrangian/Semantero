@@ -20,7 +20,7 @@ llama.cpp (build `b11829`) runs the text tower and returns every token's final h
 
 `convert/convert.sh`:
 1. downloads llama.cpp `b11829` (macOS arm64 binary + source for the converter) and the model at revision
-   `7bba8e7cf2075dec747fa8557f41eb90e70361ed`, into `~/Library/Application Support/daito/`;
+   `7bba8e7cf2075dec747fa8557f41eb90e70361ed`, into `~/Library/Application Support/Semantero/`;
 2. a Python 3.12 env from `convert/requirements.lock` (exact versions);
 3. `stage.py`: the checkpoint is a `Qwen3_5Model` (text + vision) that the converter doesn't register, so it writes a
    text-only copy (`language_model.*` → `model.*`, `text_config` as `Qwen3_5TextModel`);
@@ -59,7 +59,7 @@ The first run showed 59 "token mismatches": those were the reference batch's rig
   on one thread;
 - `POST /warm`, `GET /health`.
 
-**Token cache** (`~/Library/Application Support/daito/cache/<model>/<vault hash>/`): `tokens.f16` (append-only, 256
+**Token cache** (`~/Library/Application Support/Semantero/cache/<model>/<vault hash>/`): `tokens.f16` (append-only, 256
 bytes a token) and `keys.bin` (one 48-byte record per text: SHA-256 of its mean vector, first token, count). Tokens are
 written and synced before their key, so a crash leaves only unreferenced tokens, trimmed on the next start. Texts that
 change leave their old tokens behind; to reclaim the space, delete the cache folder and run

@@ -20,7 +20,7 @@ from .vault import future_notes, logical_today
 
 REBUILD = 'cd "{root}" && rm -rf .venv && python3 -m venv .venv && .venv/bin/pip install anthropic'
 JOBS = ["com.planner.morning", "com.planner.weekly"]
-APP_PATHS = [Path("/Applications/Daito Search.app"), Path.home() / "Applications" / "Daito Search.app"]
+APP_PATHS = [Path("/Applications/Semantero.app"), Path.home() / "Applications" / "Semantero.app"]
 
 
 @dataclass
@@ -275,7 +275,7 @@ def check_launcher_app(cfg) -> Result | None:
         return None
     if any(p.exists() for p in APP_PATHS):
         return Result("launcher app", True)
-    return Result("launcher app", True, "Daito Search.app is not installed (optional). Build it with: make install-app")
+    return Result("launcher app", True, "Semantero.app is not installed (optional). Build it with: make install-app")
 
 
 def check_search_tools(cfg) -> Result | None:

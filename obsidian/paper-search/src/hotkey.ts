@@ -7,7 +7,7 @@ export function checkHotkeyConflict(
   customHotkeys: Record<string, HotkeyBinding[]>,
   targetModifiers: string[] = ["Mod", "Shift"],
   targetKey: string = "0",
-  ourCommandId: string = "daito-paper-search:open-paper-search"
+  ourCommandId: string = "semantero:open-paper-search"
 ): string | null {
   for (const [cmdId, bindings] of Object.entries(customHotkeys)) {
     if (cmdId === ourCommandId) continue;

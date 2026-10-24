@@ -1,6 +1,6 @@
 """Embedding profiles: one search + notes index per embedding model, so models can be tried in the real plugin and app.
 
-The live index is always `<data_dir>/search` and `<data_dir>/notes`; that is what Obsidian, Daito Search, the watcher
+The live index is always `<data_dir>/search` and `<data_dir>/notes`; that is what Obsidian, Semantero, the watcher
 and the 5-minute tick read and update. Other profiles wait in `<data_dir>/profiles/<name>/{search,notes}`.
 `use` swaps folders (two renames per corpus, under both index locks) and records the name in `<data_dir>/profile.json`,
 which `config.load` turns into [search] overrides from profiles.toml. Nothing is re-embedded by a switch.

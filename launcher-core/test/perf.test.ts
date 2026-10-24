@@ -1,5 +1,5 @@
 // Performance budgets on the 3x synthetic papers index (500 papers, 25,000 chunks, 1024 dims) plus a
-// synthetic 2,000-note corpus. Run with DAITO_PERF=1. The real cold-load budget (L1) is measured in the app.
+// synthetic 2,000-note corpus. Run with SEMANTERO_PERF=1. The real cold-load budget (L1) is measured in the app.
 import test from "node:test";
 import assert from "node:assert";
 import fs from "node:fs";
@@ -11,7 +11,7 @@ import { Engine } from "../src/query.ts";
 import { readCorpus } from "../node/fsload.ts";
 
 const DIR = path.resolve(import.meta.dirname, "fixtures");
-const run = !!process.env.DAITO_PERF;
+const run = !!process.env.SEMANTERO_PERF;
 
 function corpusAt(name: string, opts: { numPapers: number; chunksPerPaper: number; seed: number }): RawCorpus {
   const dir = path.join(DIR, name);

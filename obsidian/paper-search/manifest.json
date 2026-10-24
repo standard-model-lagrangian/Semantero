@@ -1,6 +1,6 @@
 {
-  "id": "daito-paper-search",
-  "name": "Daito Paper Search",
+  "id": "semantero",
+  "name": "Semantero",
   "version": "1.0.0",
   "minAppVersion": "1.0.0",
   "description": "Find papers in your Zotero library from inside Obsidian with keyword and semantic search.",

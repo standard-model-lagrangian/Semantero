@@ -1689,9 +1689,9 @@
 
   // package.json
   var package_default = {
-    name: "daito-launcher-core",
+    name: "semantero-launcher-core",
     version: "1.0.0",
-    description: "Ranking and view-model core for the Daito Search launcher (runs in Node for tests, in JavaScriptCore in the app)",
+    description: "Ranking and view-model core for the Semantero launcher (runs in Node for tests, in JavaScriptCore in the app)",
     private: true,
     type: "module",
     scripts: {
@@ -1721,7 +1721,7 @@
     };
   }
   function need() {
-    if (!engine) throw new Error("daito: no index loaded");
+    if (!engine) throw new Error("semantero: no index loaded");
     return engine;
   }
   function f32(v) {
@@ -1770,6 +1770,6 @@
       return JSON.stringify(need().recent(limit));
     }
   };
-  globalThis.daito = api;
+  globalThis.semantero = api;
   var api_default = api;
 })();

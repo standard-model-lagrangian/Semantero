@@ -2,7 +2,7 @@
 
 Status: **implemented as switchable installs instead of a separate bench app** (owner's request, 23 Oct 2026):
 see [EMBED_INSTALLS.md](EMBED_INSTALLS.md), [../pplx/README.md](../pplx/README.md) and the decisions log. The rest of
-this page is the plan as written; the bench app, blind voting and token-pruning columns were not built. Goal: choose the one embedding model the paper index, the notes index, the Obsidian plugin and Daito Search all use, by comparing contenders side by side in one local app on the owner's real library, then migrate to the winner.
+this page is the plan as written; the bench app, blind voting and token-pruning columns were not built. Goal: choose the one embedding model the paper index, the notes index, the Obsidian plugin and Semantero all use, by comparing contenders side by side in one local app on the owner's real library, then migrate to the winner.
 
 SEARCH_SPEC.md already fixes the rule that there is **one embedding model, recorded in the manifest, and changing it is a full rebuild**. This bench never touches the live index; it builds shadow indexes next to it and the live setup keeps running on `qwen3-embedding:0.6b` until the decision is made.
 
@@ -24,7 +24,7 @@ Why C is the 0.6B late-interaction model and not another v2 variant:
 - **C is not a drop-in replacement.** It is ColBERT-style: each chunk becomes ~300–500 vectors of 128 dims, and a query is scored by summing, for each query token, its best match among the chunk's token vectors (MaxSim). The current index format (`vectors.f32`, one row per abstract/chunk), the TypeScript dot-product pass and the Accelerate pass in the app all assume one vector per row. Section 7 spells out what adopting it would cost.
 - **How C runs (the frozen route):** Ollama runs on llama.cpp, but its `/api/embed` only returns one pooled vector per input. llama.cpp's own `llama-server` can return every token's hidden state (`--pooling none`), and llama.cpp supports the Qwen3.5 architecture. The model's last step, a linear projection from the hidden size to 128 dims (the sentence-transformers `Dense` module), is one small matrix. We extract it once and apply it ourselves, then L2-normalise. So C is:
   - **converted once**: HF checkpoint → GGUF (text tower only, Q8_0) with llama.cpp's `convert_hf_to_gguf.py`, plus `proj.f32` (the projection matrix) and `markers.json` (the query/document marker tokens);
-  - **served by a pinned binary**: one llama.cpp release build kept in `~/Library/Application Support/daito/llama/<build>/`, never installed or upgraded through Homebrew, and started on demand by whoever needs it;
+  - **served by a pinned binary**: one llama.cpp release build kept in `~/Library/Application Support/Semantero/llama/<build>/`, never installed or upgraded through Homebrew, and started on demand by whoever needs it;
   - **called over HTTP** by every client, just like Ollama today. There is no Python, torch, transformers or sentence-transformers at runtime. The Python environment is used **once**, for the conversion and the reference output, and is then not needed.
   - Documents and queries go through the same frozen file and binary, so the two sides can't drift apart after an update, and a version bump is always a deliberate re-conversion followed by the parity check in Phase 0.
 - Optional control: `pplx-embed-v1-0.6b` (single vector, MIT) can be added as slot D. That would show whether a win for C comes from Perplexity's training or from multi-vector scoring. The column costs one more index build.
@@ -65,7 +65,7 @@ bench/                                   new, self-contained; nothing else impor
 Makefile                                 bench-convert, bench-index, bench
 ```
 
-**Data location:** personal data stays out of the repo, so everything the bench writes goes to `~/Library/Caches/daito-bench/`:
+**Data location:** personal data stays out of the repo, so everything the bench writes goes to `~/Library/Caches/semantero-bench/`:
 
 ```
 snapshot/{search,notes}/                 read-only copy of the live index (papers.json, chunks.json, manifest)
@@ -81,8 +81,8 @@ runs/<timestamp>.json                    each eval run's full results
 The model files live apart from the data, because they are part of the frozen runtime:
 
 ```
-~/Library/Application Support/daito/llama/<llama.cpp build>/llama-server        pinned release binary (+ its dylibs)
-~/Library/Application Support/daito/models/pplx-embed-v2-late-0.6b@<hf revision>/
+~/Library/Application Support/Semantero/llama/<llama.cpp build>/llama-server        pinned release binary (+ its dylibs)
+~/Library/Application Support/Semantero/models/pplx-embed-v2-late-0.6b@<hf revision>/
     model.q8_0.gguf, proj.f32, markers.json, SHA256SUMS, PARITY.md (the Phase 0 result for this exact pair)
 ```
 
@@ -97,7 +97,7 @@ browser ── http://127.0.0.1:8765 ──► server.ts (Node 26, runs .ts nati
 
 `maxsim.ts` returns a `Float32Array` of per-row scores, which is the same thing `rowScores()` returns for the dense models. From there every column goes through identical code. The token store is mmapped, so the OS can drop its pages under memory pressure and it is not held as private memory.
 
-**llama-server lifecycle:** started by whichever client first needs it (bench server, indexer), bound to 127.0.0.1 only, with a pidfile in `~/Library/Caches/daito-bench/`. An idle timer stops it after 5 minutes without a request, mirroring Ollama's `keep_alive`. A launchd job is not needed for the bench.
+**llama-server lifecycle:** started by whichever client first needs it (bench server, indexer), bound to 127.0.0.1 only, with a pidfile in `~/Library/Caches/semantero-bench/`. An idle timer stops it after 5 minutes without a request, mirroring Ollama's `keep_alive`. A launchd job is not needed for the bench.
 
 **Isolation from the two setups:** the runtime path (`llamaserver.py`, `build_index.py`, `server.ts`, `maxsim.ts`) uses only the standard library and Node. Torch lives only in `bench/convert/.venv`, used once for the conversion and the parity check, and never enters the main venv, whose only dependency stays `anthropic`. `make check` runs the bench's Node unit tests, which need no models, and nothing else. The Obsidian-only setup is unaffected.
 
@@ -276,7 +276,7 @@ make bench           # start server (llama-server starts on demand), open http:/
 |---|---|---|
 | A, stay on 0.6b | Record the result in DECISIONS_AND_GAPS.md. Keep the expanded eval set. | Hours |
 | B, Qwen3 4b | `config.toml` `[search] model/dims` → full rebuild of both indexes. Re-run `eval-related.ts` to recalibrate `relatedMinScore`. Update the RAM figures (~400 MB → ~3 GB while loaded) and the `keep_alive` comment. Re-run perf budgets B1–B14 and the launcher memory checks. Doctor's model check follows config automatically. Plugin, launcher-core, Swift: no code change (same Ollama API, same vector format). | ~1 day |
-| C, pplx-embed-v2-late (frozen GGUF route, Phase 0 passed) | 1. A new index format (int8 token store + scales + offsets, the winning pruning variant, manifest `format: 2`, `scoring: "maxsim"`, plus the model file's hash). 2. `planner/embed.py` gains a llama-server backend (stdlib HTTP, same as Ollama), and the plugin and the app gain a matching client. 3. The pinned llama-server and the model files are installed by `make install-global` / `setup-search.sh` into `~/Library/Application Support/daito/`, started on demand with an idle stop, and checked by `doctor` (binary and model hashes, parity file present). 4. MaxSim in the shared TS core (from `maxsim.ts`) and in the Accelerate path in Swift, plus conformance cases. 5. The launcher mmaps the token store instead of loading it, so its own memory budget barely moves (the pages belong to the OS cache). 6. The Related panel uses stored note vectors when they are fresh (if C-stored matched C in the bench). No Python or torch at runtime; the Obsidian-only setup gets one downloaded binary and one model file instead of an Ollama model. | **Several days**; gets its own spec before starting |
+| C, pplx-embed-v2-late (frozen GGUF route, Phase 0 passed) | 1. A new index format (int8 token store + scales + offsets, the winning pruning variant, manifest `format: 2`, `scoring: "maxsim"`, plus the model file's hash). 2. `planner/embed.py` gains a llama-server backend (stdlib HTTP, same as Ollama), and the plugin and the app gain a matching client. 3. The pinned llama-server and the model files are installed by `make install-global` / `setup-search.sh` into `~/Library/Application Support/Semantero/`, started on demand with an idle stop, and checked by `doctor` (binary and model hashes, parity file present). 4. MaxSim in the shared TS core (from `maxsim.ts`) and in the Accelerate path in Swift, plus conformance cases. 5. The launcher mmaps the token store instead of loading it, so its own memory budget barely moves (the pages belong to the OS cache). 6. The Related panel uses stored note vectors when they are fresh (if C-stored matched C in the bench). No Python or torch at runtime; the Obsidian-only setup gets one downloaded binary and one model file instead of an Ollama model. | **Several days**; gets its own spec before starting |
 | C, fallback route (Phase 0 failed) | Same as above, but item 2 becomes a permanent, hash-locked Python service with torch (~1.5–2 GB while loaded) that the plugin, the app and the indexer call, and the Obsidian-only setup gains Python + torch. | Several days to build, plus ongoing upkeep; not recommended unless C's lead is large |
 
 **Upkeep after the switch:**
@@ -300,7 +300,7 @@ The difference in migration cost is why the scorecard reports C's margin with co
 - **Score scales differ** (cosine vs MaxSim sum), so the bench never compares raw scores across columns: RRF only uses ranks, and related-panel thresholds are calibrated per model.
 - **Small eval set:** mitigated by section 5, bootstrap CIs and pairwise hit counts.
 - **Live index changes during the bench:** the bench uses its snapshot. A **Re-snapshot** button rebuilds the shadow indexes from the current live index.
-- **Privacy:** queries, titles, judgments and runs live in `~/Library/Caches/daito-bench/`. Only aggregate numbers ever go into the repo.
+- **Privacy:** queries, titles, judgments and runs live in `~/Library/Caches/semantero-bench/`. Only aggregate numbers ever go into the repo.
 
 ---
 

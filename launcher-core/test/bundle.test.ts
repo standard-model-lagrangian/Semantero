@@ -18,19 +18,19 @@ function bareContext(): any {
 
 test("R28 dist/ranker.js evaluates in a bare context with no Node globals; version matches package.json", () => {
   const ctx = bareContext();
-  assert.strictEqual(typeof (ctx as any).daito, "object");
-  assert.strictEqual(ctx.daito.version, pkg.version);
+  assert.strictEqual(typeof (ctx as any).semantero, "object");
+  assert.strictEqual(ctx.semantero.version, pkg.version);
   // (V8 vm contexts always have a `console`; the build step already forbids `console.` in the bundle)
   for (const g of ["process", "require", "Buffer", "TextDecoder", "setTimeout"]) {
     assert.strictEqual(vm.runInContext(`typeof ${g}`, ctx), "undefined", g);
   }
-  for (const fn of ["load", "status", "keyword", "hybrid", "hybridFromRowScores", "recent", "shouldRunSemantic", "lookup"]) assert.strictEqual(typeof ctx.daito[fn], "function", fn);
+  for (const fn of ["load", "status", "keyword", "hybrid", "hybridFromRowScores", "recent", "shouldRunSemantic", "lookup"]) assert.strictEqual(typeof ctx.semantero[fn], "function", fn);
 });
 
 test("R29 api round trip: load (JSON as UTF-8 bytes) → keyword → hybrid returns JSON that parses to ResultVM[]", () => {
   const ctx = bareContext();
   const { papers, notes } = fixtureParts();
-  const status = JSON.parse(ctx.daito.load(papers, notes));
+  const status = JSON.parse(ctx.semantero.load(papers, notes));
   assert.strictEqual(status.papers.count, 4);
   assert.strictEqual(status.notes.count, 7);
   assert.strictEqual(status.dims, 8);
@@ -38,29 +38,29 @@ test("R29 api round trip: load (JSON as UTF-8 bytes) → keyword → hybrid retu
   assert.match(status.queryInstruction, /retrieve that paper/);
 
   const e = fixtureEngine();
-  const kw = JSON.parse(ctx.daito.keyword("stress relaxation", "all", 5));
+  const kw = JSON.parse(ctx.semantero.keyword("stress relaxation", "all", 5));
   assert.deepStrictEqual(kw, JSON.parse(JSON.stringify(e.keyword("stress relaxation", "all", 5))));
   for (const r of kw) for (const f of ["id", "kind", "title", "subtitle", "accessory", "snippet", "snippetBold", "hasNote", "filePath", "openUrl", "openLabel", "noteUrl", "selectUrl", "citation", "wikilink", "actions", "detail", "source"]) assert.ok(f in r, f);
 
   const v = fakeVec("stress relaxation neurons");
-  const hy = JSON.parse(ctx.daito.hybrid("stress relaxation neurons", v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength), "all", 6));
+  const hy = JSON.parse(ctx.semantero.hybrid("stress relaxation neurons", v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength), "all", 6));
   assert.deepStrictEqual(hy, JSON.parse(JSON.stringify(e.hybrid("stress relaxation neurons", v, "all", 6))));
-  assert.strictEqual(JSON.parse(ctx.daito.recent(3)).length, 3);
+  assert.strictEqual(JSON.parse(ctx.semantero.recent(3)).length, 3);
 });
 
 test("R29b a failed load throws and keeps the previous engine; strings work as parts too", () => {
   const ctx = bareContext();
   const { papers, notes } = fixtureParts();
-  ctx.daito.load(papers, notes);
-  const before = ctx.daito.keyword("matrigel", "all", 3);
-  assert.throws(() => ctx.daito.load({ ...papers!, manifest: "{not json" }, null));
-  assert.strictEqual(ctx.daito.keyword("matrigel", "all", 3), before);
+  ctx.semantero.load(papers, notes);
+  const before = ctx.semantero.keyword("matrigel", "all", 3);
+  assert.throws(() => ctx.semantero.load({ ...papers!, manifest: "{not json" }, null));
+  assert.strictEqual(ctx.semantero.keyword("matrigel", "all", 3), before);
   const asText = (b: ArrayBuffer) => new TextDecoder().decode(b);
-  ctx.daito.load({ manifest: asText(papers!.manifest as ArrayBuffer), papers: asText(papers!.papers as ArrayBuffer), chunks: asText(papers!.chunks as ArrayBuffer), vectors: papers!.vectors }, null);
-  assert.ok(JSON.parse(ctx.daito.keyword("viscoelasticity", "all", 3)).length > 0);
+  ctx.semantero.load({ manifest: asText(papers!.manifest as ArrayBuffer), papers: asText(papers!.papers as ArrayBuffer), chunks: asText(papers!.chunks as ArrayBuffer), vectors: papers!.vectors }, null);
+  assert.ok(JSON.parse(ctx.semantero.keyword("viscoelasticity", "all", 3)).length > 0);
   const fresh = vm.createContext({});
   vm.runInContext(fs.readFileSync(BUNDLE, "utf8"), fresh);
-  assert.throws(() => (fresh as any).daito.keyword("x", "all", 1), /no index loaded/);
+  assert.throws(() => (fresh as any).semantero.keyword("x", "all", 1), /no index loaded/);
 });
 
 test("R29c utf-8 decoding handles multi-byte text, a BOM and invalid bytes (JSC has no TextDecoder)", async () => {
@@ -92,20 +92,20 @@ test("R30b the bundle reproduces the conformance cases too (what the app will ru
   const file = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, "../conformance/cases.json"), "utf8"));
   const ctx = bareContext();
   const { papers, notes } = fixtureParts();
-  ctx.daito.load(papers, notes);
+  ctx.semantero.load(papers, notes);
   for (const c of file.cases) {
     const v = c.qVec ? new Float32Array(c.qVec) : null;
     const json =
-      c.mode === "recent" ? ctx.daito.recent(c.limit)
-      : c.mode === "hybrid" ? ctx.daito.hybrid(c.query, v!.buffer, c.scope, c.limit)
-      : ctx.daito.keyword(c.query, c.scope, c.limit);
+      c.mode === "recent" ? ctx.semantero.recent(c.limit)
+      : c.mode === "hybrid" ? ctx.semantero.hybrid(c.query, v!.buffer, c.scope, c.limit)
+      : ctx.semantero.keyword(c.query, c.scope, c.limit);
     assert.deepStrictEqual(JSON.parse(json), c.expect, c.name);
   }
 });
 
 test("R29d shouldRunSemantic is exposed (≥2 complete tokens or ≥12 chars)", () => {
   const ctx = bareContext();
-  assert.strictEqual(ctx.daito.shouldRunSemantic("vis"), false);
-  assert.strictEqual(ctx.daito.shouldRunSemantic("stiff gels "), true);
-  assert.strictEqual(ctx.daito.shouldRunSemantic("viscoelasticit"), true);
+  assert.strictEqual(ctx.semantero.shouldRunSemantic("vis"), false);
+  assert.strictEqual(ctx.semantero.shouldRunSemantic("stiff gels "), true);
+  assert.strictEqual(ctx.semantero.shouldRunSemantic("viscoelasticit"), true);
 });

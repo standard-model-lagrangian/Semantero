@@ -84,7 +84,7 @@ export const BENCHMARK_QUERIES_40 = [
   ...WORDS_8,
 ];
 
-test("PF1 B1: Keyword search latency across every prefix on 3x synthetic index", { skip: !process.env.DAITO_PERF }, () => {
+test("PF1 B1: Keyword search latency across every prefix on 3x synthetic index", { skip: !process.env.SEMANTERO_PERF }, () => {
   const { papers, chunks } = ensureSyntheticIndex();
   const index = new BM25Index(papers, chunks);
 
@@ -120,7 +120,7 @@ test("PF1 B1: Keyword search latency across every prefix on 3x synthetic index",
   assert.ok(max <= 16.0, `B1 breach: max was ${max.toFixed(2)} ms (budget <= 16.0 ms)`);
 });
 
-test("PF2 B2: findTrigger + context check latency on lines up to 10k chars", { skip: !process.env.DAITO_PERF }, () => {
+test("PF2 B2: findTrigger + context check latency on lines up to 10k chars", { skip: !process.env.SEMANTERO_PERF }, () => {
   const lineLengths = [10, 1000, 10000];
   const timesMs: number[] = [];
 
@@ -165,7 +165,7 @@ test("PF2 B2: findTrigger + context check latency on lines up to 10k chars", { s
   assert.ok(p99 <= 0.1, `B2 breach: p99 was ${p99.toFixed(4)} ms (budget <= 0.1 ms)`);
 });
 
-test("PF3 B3 & B4: Semantic scoring and hybrid merge latency on 3x synthetic index", { skip: !process.env.DAITO_PERF }, () => {
+test("PF3 B3 & B4: Semantic scoring and hybrid merge latency on 3x synthetic index", { skip: !process.env.SEMANTERO_PERF }, () => {
   const { papers, chunks, dir } = ensureSyntheticIndex();
   const manifest = JSON.parse(fs.readFileSync(path.join(dir, "manifest.json"), "utf8"));
   const vecBuf = fs.readFileSync(path.join(dir, "vectors.f32"));
@@ -231,7 +231,7 @@ test("PF3 B3 & B4: Semantic scoring and hybrid merge latency on 3x synthetic ind
   assert.ok(hyb_p95 <= 3.0, `B4 breach: hybrid p95 was ${hyb_p95.toFixed(2)} ms (budget <= 3.0 ms)`);
 });
 
-test("PF4 B6 & B8: Background index load and heap budget", { skip: !process.env.DAITO_PERF }, async () => {
+test("PF4 B6 & B8: Background index load and heap budget", { skip: !process.env.SEMANTERO_PERF }, async () => {
   const { dir } = ensureSyntheticIndex();
 
   class NodeFsAdapter {
@@ -262,7 +262,7 @@ test("PF4 B6 & B8: Background index load and heap budget", { skip: !process.env.
   assert.strictEqual(store3x.isReady(), true);
 });
 
-test("PF5 B7: ensureFresh throttled read latency", { skip: !process.env.DAITO_PERF }, async () => {
+test("PF5 B7: ensureFresh throttled read latency", { skip: !process.env.SEMANTERO_PERF }, async () => {
   const { dir } = ensureSyntheticIndex();
   let fakeClock = 1000;
   let readCount = 0;
@@ -311,7 +311,7 @@ test("PF5 B7: ensureFresh throttled read latency", { skip: !process.env.DAITO_PE
   assert.ok(p99 <= 2.0, `B7 breach: ensureFresh p99 was ${p99.toFixed(2)} ms (budget <= 2.0 ms)`);
 });
 
-test("PF_B11: ensureLiteratureNote (find + render + create) latency", { skip: !process.env.DAITO_PERF }, async () => {
+test("PF_B11: ensureLiteratureNote (find + render + create) latency", { skip: !process.env.SEMANTERO_PERF }, async () => {
   const { FakeVault, FakeMetadataCache } = await import("./fakes.ts");
   const { ensureLiteratureNote, BUILTIN_TEMPLATE } = await import("../src/litnote.ts");
 
@@ -352,7 +352,7 @@ test("PF_B11: ensureLiteratureNote (find + render + create) latency", { skip: !p
   assert.ok(max <= 30.0, `B11 breach: max was ${max.toFixed(2)} ms (budget <= 30 ms)`);
 });
 
-test("PF7 B14: Selection stability across 1,000 randomised re-rank sequences", { skip: !process.env.DAITO_PERF }, () => {
+test("PF7 B14: Selection stability across 1,000 randomised re-rank sequences", { skip: !process.env.SEMANTERO_PERF }, () => {
   const { papers } = ensureSyntheticIndex();
   let violations = 0;
 
@@ -418,7 +418,7 @@ test("PF7 B14: Selection stability across 1,000 randomised re-rank sequences", {
   assert.strictEqual(violations, 0, `B14 breach: expected 0 selection violations, got ${violations}`);
 });
 
-test("PF6 B10: extractPassage on a 200 kB note latency", { skip: !process.env.DAITO_PERF }, () => {
+test("PF6 B10: extractPassage on a 200 kB note latency", { skip: !process.env.SEMANTERO_PERF }, () => {
   // Generate a realistic 200 kB note
   const sections: string[] = [];
   sections.push("---\ntitle: Very Long Research Note\ncitekey: test2024\n---\n");
@@ -469,7 +469,7 @@ test("PF6 B10: extractPassage on a 200 kB note latency", { skip: !process.env.DA
   assert.ok(max <= 5.0, `B10 breach: max was ${max.toFixed(2)} ms (budget <= 5.0 ms)`);
 });
 
-test("PF8 B9: Panel refresh end-to-end latency with warm Ollama", { skip: !process.env.DAITO_PERF || !process.env.DAITO_LIVE }, async () => {
+test("PF8 B9: Panel refresh end-to-end latency with warm Ollama", { skip: !process.env.SEMANTERO_PERF || !process.env.SEMANTERO_LIVE }, async () => {
   const { papers, chunks, dir } = ensureSyntheticIndex();
   const manifest = JSON.parse(fs.readFileSync(path.join(dir, "manifest.json"), "utf8"));
   const vecBuf = fs.readFileSync(path.join(dir, "vectors.f32"));

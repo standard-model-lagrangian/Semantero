@@ -6,7 +6,7 @@ Design records (implemented; read for rationale, not as a to-do list): [docs/SPE
 Launcher (implemented; manual checks and the Spotlight spikes outstanding, see the log in DECISIONS_AND_GAPS.md): [docs/LAUNCHER_SPEC.md](docs/LAUNCHER_SPEC.md), a native macOS app (glass panel + Spotlight) over papers and vault notes; manual checklist [macos/CHECK.md](macos/CHECK.md).
 Embedding installs (implemented; owner is judging them): [docs/EMBED_INSTALLS.md](docs/EMBED_INSTALLS.md), one index per embedding model in `profiles.toml`, switched with `planner profile use`; the pplx-embed-v2-late profile runs frozen on a pinned llama.cpp through `planner/pplxd.py` ([pplx/README.md](pplx/README.md)).
 Decisions log: [docs/DECISIONS_AND_GAPS.md](docs/DECISIONS_AND_GAPS.md). Manual checklist: [docs/MANUAL_CHECKS.md](docs/MANUAL_CHECKS.md).
-**Two setups share this repo: Obsidian only (plugin + watcher; `config.toml` ships with `[notes] enabled = false`) and Global (+ notes index + Daito Search.app; `enabled = true` in `config.local.toml`, `make install-global`). Anything you add must keep the Obsidian-only setup working without Xcode, Node or a notes index. Install tiers and tools: [docs/INSTALL.md](docs/INSTALL.md). Architecture, commands, workflows and gotchas: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).** Index of all docs: [docs/README.md](docs/README.md).
+**Two setups share this repo: Obsidian only (plugin + watcher; `config.toml` ships with `[notes] enabled = false`) and Global (+ notes index + Semantero.app; `enabled = true` in `config.local.toml`, `make install-global`). Anything you add must keep the Obsidian-only setup working without Xcode, Node or a notes index. Install tiers and tools: [docs/INSTALL.md](docs/INSTALL.md). Architecture, commands, workflows and gotchas: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).** Index of all docs: [docs/README.md](docs/README.md).
 
 **Before committing: `make check`** (ruff, tsc ×2, the Python, plugin, launcher-core and Swift suites, and a check that the committed `main.js` and `launcher-core/dist/ranker.js` match their sources). GitHub Actions runs the same minus Swift (`make ci`) on every PR and push to `main`. Fresh clone: `make dev-setup` first.
 
@@ -32,7 +32,7 @@ Decisions log: [docs/DECISIONS_AND_GAPS.md](docs/DECISIONS_AND_GAPS.md). Manual 
 ### 3. Launcher (one hotkey, papers + notes, any app)
 - **Notes index** (`planner/mdtext.py`, `planner/notesindex.py`): every Markdown note in the vault (minus `[notes].exclude` globs, dot-folders, `Templates/**` by default) becomes a `papers.json` entry in `.planner/notes/`, with heading sections as chunks, in the same format as the paper index so the same engine ranks both. Kept fresh on every 5-minute launchd tick (`_notes_tick` in `__main__.py`, non-blocking lock). Personal exclusions go in git-ignored `config.local.toml`.
 - **`launcher-core/`** (TypeScript, no Node/DOM in `src/`): merges the two corpora (keyword lists interleave by rank, semantic lists by raw cosine, RRF), collapses a paper with its literature note into one row, and returns `ResultVM`s (paths, URLs, citations, action ids). Bundled to `dist/ranker.js` (committed) and run by the app in JavaScriptCore. `conformance/cases.json` is the contract every ranker must meet.
-- **`macos/`** (SwiftPM, no dependencies): `DaitoSearchKit` (testable: `JSCRanker`, `AcceleratedRanker`, query controller, action executor, index reloader, Spotlight donor) and `DaitoSearch` (menu bar app: non-activating glass panel, settings, App Intents). `make install-app` builds and installs it. Debug aids: `DAITO_SELFTEST=<json>` (see `make app-selftest`), `DAITO_DEBUG=1` (reloads, compactions, watchdog), `DAITO_SHOW_PANEL="<query>"`, `DAITO_SNAPSHOT=<png>` (saves the panel view; needs no screen permission). The ranker choice (JavaScriptCore + Accelerate vector pass) is recorded in `docs/DECISIONS_AND_GAPS.md`.
+- **`macos/`** (SwiftPM, no dependencies): `SemanteroKit` (testable: `JSCRanker`, `AcceleratedRanker`, query controller, action executor, index reloader, Spotlight donor) and `Semantero` (menu bar app: non-activating glass panel, settings, App Intents). `make install-app` builds and installs it. Debug aids: `SEMANTERO_SELFTEST=<json>` (see `make app-selftest`), `SEMANTERO_DEBUG=1` (reloads, compactions, watchdog), `SEMANTERO_SHOW_PANEL="<query>"`, `SEMANTERO_SNAPSHOT=<png>` (saves the panel view; needs no screen permission). The ranker choice (JavaScriptCore + Accelerate vector pass) is recorded in `docs/DECISIONS_AND_GAPS.md`.
 
 ### 2. Paper Search & Literature Discovery Layer
 - **Local Hybrid Search Engine**: Precomputed inverted-index BM25 with prefix expansion (top-64 candidate selection via dual binary search) and dense vector search (`qwen3-embedding:0.6b` via local Ollama). Scoring combines signals via Reciprocal Rank Fusion ($k=60$).
@@ -77,7 +77,7 @@ obsidian/paper-search/  Obsidian plugin: src/ (engine, indexstore, bm25, modal, 
                         test/ (unit & perf benchmarks), scripts/ (make-synthetic-index, eval-related)
 launcher-core/          launcher ranking core: src/ (corpora, merge, query, vm, paths, urls, cite, actions, api), shortcuts.json,
                         conformance/, dist/ranker.js (committed), scripts/ (eval, record-conformance, make-bench-vault)
-macos/                  Swift package: Sources/DaitoSearchKit, Sources/DaitoSearch (app), Sources/DaitoBench (spike S1), Tests/, scripts/, CHECK.md
+macos/                  Swift package: Sources/SemanteroKit, Sources/Semantero (app), Sources/SemanteroBench (spike S1), Tests/, scripts/, CHECK.md
 prompts/                extract.md (per-note extraction), weekly.md (review)
 bin/                    planner-run.sh: launchd entrypoint; falls back to any Python 3.11+ if .venv is broken
 launchd/                com.planner.morning.plist, com.planner.weekly.plist, com.planner.zotero-watch.plist
@@ -126,7 +126,7 @@ Run from the project folder with `.venv/bin/python -m planner …`:
 | `make record-conformance` | re-record `conformance/cases.json` (a deliberate commit) |
 | `make fixtures` | rebuild `launcher-core/test/fixtures/notes_small` from `tests/fixtures/notes/vault_small` |
 | `node launcher-core/scripts/eval.ts --vault <dir> [--scope all\|papers\|notes\|compare] [--keyword-only]` | evaluate against `eval/queries.toml` (`expect_note` for notes) |
-| `make app` / `make install-app` | build / install `Daito Search.app` (Command Line Tools suffice; full Xcode adds the Spotlight action's App Intents metadata) |
+| `make app` / `make install-app` | build / install `Semantero.app` (Command Line Tools suffice; full Xcode adds the Spotlight action's App Intents metadata) |
 | `make bench-app` | spike S1: JavaScriptCore vs Accelerate on your vault |
 | `make app-selftest` | builds the app and drives its real panel with synthetic keys (typing, arrows, ↵/⌘↵/⌘⇧↵, ⌘K, Esc, ⌘L, scopes); prints pass/fail |
 
@@ -138,14 +138,14 @@ Run from `obsidian/paper-search`:
 | `npm test` | Run all unit tests in `test/*.test.ts` via Node native test runner |
 | `npm run typecheck` | `tsc --noEmit` over `src/` (esbuild does not typecheck) |
 | `npm run build` | Build production `main.js` via esbuild |
-| `DAITO_LIVE=1 DAITO_PERF=1 node --test test/perf.test.ts` | Benchmark budgets B1–B14 with live Ollama & synthetic index |
+| `SEMANTERO_LIVE=1 SEMANTERO_PERF=1 node --test test/perf.test.ts` | Benchmark budgets B1–B14 with live Ollama & synthetic index |
 | `node scripts/eval-related.ts --index <dir> --vault <copy> --toml eval/related.toml` | Evaluate Hit@5 and calibrate `relatedMinScore` |
 
 ---
 
 ## Rules for changes and testing
 
-- **Test first.** New behaviour or a bug fix starts with a failing test (`tests/` for Python, `obsidian/paper-search/test/` for the plugin), then the code. Tests use temp dirs, fixtures and fakes only — no network, no live Ollama unless gated by `DAITO_LIVE=1`.
+- **Test first.** New behaviour or a bug fix starts with a failing test (`tests/` for Python, `obsidian/paper-search/test/` for the plugin), then the code. Tests use temp dirs, fixtures and fakes only — no network, no live Ollama unless gated by `SEMANTERO_LIVE=1`.
 - **Rebuild `main.js` after changing `src/`** and commit it with the change; `make check` fails if it is stale.
 - **Never test against the real vault or real Zotero.** Performance tests use the synthetic index generator (`make-synthetic-index.ts`) or in-memory fakes (`test/fakes.ts`). Evaluation of related papers uses a temporary scratch copy in `/tmp/`.
 - **The brief is delimited by `%% planner:start %%` / `%% planner:end %%`.** Only text between the markers is ever replaced. The block is stripped before extraction and hashing. A brief deleted by the owner stays deleted (`state.json` → `brief_inserted`).

@@ -15,7 +15,7 @@ function ensure(name: string, opts: { numPapers: number; chunksPerPaper: number;
 const papers = ensure("synthetic_papers_3x", { numPapers: 500, chunksPerPaper: 50, seed: 42 });
 const notes = ensure("synthetic_notes_2000", { numPapers: 2000, chunksPerPaper: 3, seed: 7 });
 
-const out = process.argv[2] ?? fs.mkdtempSync(path.join(os.tmpdir(), "daito-bench-vault-"));
+const out = process.argv[2] ?? fs.mkdtempSync(path.join(os.tmpdir(), "semantero-bench-vault-"));
 const planner = path.join(out, ".planner");
 fs.rmSync(planner, { recursive: true, force: true });
 fs.mkdirSync(planner, { recursive: true });

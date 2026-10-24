@@ -44,7 +44,7 @@ class TestClient(unittest.TestCase):
         self.assertNotEqual(a, pplx.cache_dir("m@1", Path("/tmp/vault-b")))
         self.assertNotEqual(a, pplx.cache_dir("m@2", Path("/tmp/vault-a")))
         self.assertNotIn("vault-a", str(a))
-        self.assertTrue(str(a).startswith(str(pplx.DAITO_SUPPORT)))
+        self.assertTrue(str(a).startswith(str(pplx.SEMANTERO_SUPPORT)))
 
     def test_embed_documents_batches_and_checks_dims(self):
         seen = []

@@ -1,4 +1,4 @@
-// Memory probe entry: staged BM25 work with the real code, driven from Swift (`daito-bench --jsprobe2 <probe.js>`).
+// Memory probe entry: staged BM25 work with the real code, driven from Swift (`semantero-bench --jsprobe2 <probe.js>`).
 import { BM25Index } from "../../obsidian/paper-search/src/bm25.ts";
 import { tokenize } from "../../obsidian/paper-search/src/text.ts";
 

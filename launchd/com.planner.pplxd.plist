@@ -8,7 +8,7 @@
     <string>com.planner.pplxd</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/frederick/Library/Application Support/daito/pplxd-venv/bin/python</string>
+        <string>/Users/frederick/Library/Application Support/Semantero/pplxd-venv/bin/python</string>
         <string>-m</string>
         <string>planner.pplxd</string>
     </array>
