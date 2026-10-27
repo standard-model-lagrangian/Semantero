@@ -10,15 +10,6 @@ class Chunk:
     page: int
     text: str
 
-    def to_dict(self, paper_idx: int, attachment_key: str, row: int):
-        return {
-            "paper": paper_idx,
-            "attachmentKey": attachment_key,
-            "page": self.page,
-            "text": self.text,
-            "row": row,
-        }
-
 
 def clean_page_text(text: str) -> str:
     """Dehyphenate across lines and normalize whitespace."""

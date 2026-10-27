@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+from . import embed
 from .config import ROOT
 from .llm import OPENAI_COMPAT, SECRETS, LLMError, list_models
 
@@ -205,11 +206,12 @@ def check_search_index(cfg) -> Result | None:
 
     missing = manifest.get("missing_vectors", 0)
     if missing:
+        name, start = embed.service(cfg.search)
         return Result(
             "search index",
             False,
-            f"Semantic search is off for {missing} texts (Ollama was unavailable when they were indexed); "
-            "keyword search still works. Start Ollama: the watcher retries hourly, or run: planner search index",
+            f"Semantic search is off for {missing} texts ({name} was unavailable when they were indexed); "
+            f"keyword search still works. Start it ({start}): the watcher retries hourly, or run: planner search index",
         )
 
     # Check age (< 3 days old)
@@ -258,10 +260,11 @@ def check_notes_index(cfg) -> Result | None:
     except Exception:
         age = None
     if age is not None and age > timedelta(days=1) and manifest.get("degraded"):
+        name, start = embed.service(cfg.search)
         return Result(
             "notes index", False,
             f"Notes index has been degraded for over a day: semantic search is off for "
-            f"{manifest.get('missing_vectors', 0)} texts. Start Ollama (brew services start ollama); the next tick embeds them")
+            f"{manifest.get('missing_vectors', 0)} texts. Start {name} ({start}); the next tick embeds them")
     if age is not None and age > timedelta(days=1):
         return Result("notes index", False, f"Notes index is {age.days} days old (> 1 day). Run: planner notes index")
     return None

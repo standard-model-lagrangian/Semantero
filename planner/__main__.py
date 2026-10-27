@@ -8,7 +8,7 @@ import urllib.parse
 from collections import Counter
 from datetime import date, datetime, timedelta
 
-from . import brief, config, fixes, health, notesindex, profiles, searchindex, stats, threads, vault, weekly
+from . import brief, config, embed, fixes, health, notesindex, profiles, searchindex, stats, threads, vault, weekly
 from .extract import PROMPT, PROMPT_VERSION, extract, user_message
 from .llm import OPENAI_COMPAT, LLMError, chat_json, list_models
 
@@ -525,12 +525,13 @@ def cmd_search(cfg, args):
             if res.get("changed", True):
                 print(f"Indexed {res['papers']} papers ({res['chunks']} chunks) in {res['elapsed']:.1f}s")
             if res.get("missing_vectors"):
-                print(f"Keyword-only for {res['missing_vectors']} texts: Ollama was unavailable. "
-                      "The watcher embeds them within the hour once Ollama is running.")
-                if res["no_text_pdfs"]:
-                    print(f"PDFs with no text ({len(res['no_text_pdfs'])}):")
-                    for item in res["no_text_pdfs"]:
-                        print(f"  - {item}")
+                name, _ = embed.service(cfg.search)
+                print(f"Keyword-only for {res['missing_vectors']} texts: {name} was unavailable. "
+                      "The watcher embeds them within the hour once it is running.")
+            if res["no_text_pdfs"]:
+                print(f"PDFs with no text ({len(res['no_text_pdfs'])}):")
+                for item in res["no_text_pdfs"]:
+                    print(f"  - {item}")
         except TimeoutError as e:
             print(f"search index: {e}", file=sys.stderr)
             sys.exit(1)
@@ -556,8 +557,9 @@ def cmd_notes(cfg, args):
         else:
             print(f"notes index: no changes ({res['elapsed']:.1f}s)")
         if res["missing_vectors"]:
-            print(f"Keyword-only for {res['missing_vectors']} texts: Ollama was unavailable. "
-                  "The next tick embeds them once Ollama is running.")
+            name, _ = embed.service(cfg.search)
+            print(f"Keyword-only for {res['missing_vectors']} texts: {name} was unavailable. "
+                  "The next tick embeds them once it is running.")
         for item in res["skipped"]:
             print(f"  skipped {item}")
 

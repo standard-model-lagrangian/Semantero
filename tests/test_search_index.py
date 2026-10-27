@@ -1042,6 +1042,20 @@ class TestCliAndDoctor(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
+    def test_search_index_lists_pdfs_without_text_when_every_text_is_embedded(self):
+        import argparse
+        import io
+        from planner import __main__ as main_mod
+
+        res = {"papers": 2, "chunks": 4, "elapsed": 0.1, "changed": True, "missing_vectors": 0,
+               "no_text_pdfs": ["scan2020:ATT9"]}
+        out = io.StringIO()
+        with patch("planner.searchindex.build_index", return_value=res), patch("sys.stdout", out):
+            main_mod.cmd_search(self.cfg, argparse.Namespace(search_cmd="index", full=False, limit=None))
+        self.assertIn("PDFs with no text (1)", out.getvalue())
+        self.assertIn("scan2020:ATT9", out.getvalue())
+        self.assertNotIn("Keyword-only", out.getvalue())
+
     # 29. Morning search failure is a warning, not a crash
     @patch("planner.searchindex.build_index", side_effect=RuntimeError("Search index builder failed"))
     @patch("planner.__main__.online", return_value=True)

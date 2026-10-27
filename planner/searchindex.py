@@ -238,7 +238,7 @@ def build_index(
 ) -> dict:
     """Build or incrementally update search index.
 
-    If Ollama is unreachable (and allow_fallback), texts without a cached vector are written with no
+    If the embedding service is unreachable (and allow_fallback), texts without a cached vector are written with no
     row: keyword search still finds them, and the index is marked degraded until a later build embeds them.
     keyword_only skips embedding on purpose and writes that same degraded index: the watcher publishes one first so a
     new paper is citable within seconds, then runs a normal build for its vectors.
@@ -543,7 +543,7 @@ def build_index(
             # Texts still without a vector: everything pending when embedding failed (cached ones are reused).
             missing_vectors = 0 if embed_succeeded else len(pending_texts)
 
-            # 0.2: Check if this is a no-op run (a failed retry that reproduces the same keyword-only index is one too)
+            # Check if this is a no-op run (a failed retry that reproduces the same keyword-only index is one too)
             old_content_hash = prev_manifest.get("content_hash") if prev_manifest else None
             nothing_new = len(pending_texts) == 0 or not embed_succeeded
             has_storage_field = bool(prev_manifest and prev_manifest.get("zotero_storage"))
@@ -597,7 +597,7 @@ def build_index(
                 state_data["fingerprint"] = fingerprint or watcher_fingerprint
             state_data["reconciled_at"] = datetime.now().isoformat(timespec="seconds")
             if missing_vectors:
-                # Tells the watcher to retry once Ollama is back, even if Zotero hasn't changed.
+                # Tells the watcher to retry once the embedding service is back, even if Zotero hasn't changed.
                 state_data["degraded"] = True
 
             # Write files to search.tmp

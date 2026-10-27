@@ -5,6 +5,13 @@ import urllib.error
 import urllib.request
 
 
+def service(search: dict) -> tuple[str, str]:
+    """(name, how to start it) for the embedding service the [search] settings use, for messages to the owner."""
+    if search.get("backend", "ollama") == "pplx":
+        return "the pplx service", "bash pplx/install-service.sh"
+    return "Ollama", "brew services start ollama"
+
+
 def embed(
     texts: list[str],
     model: str = "qwen3-embedding:0.6b",

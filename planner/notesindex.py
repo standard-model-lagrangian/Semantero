@@ -296,7 +296,7 @@ def build_index(
                 except Exception as e:
                     if not allow_fallback:
                         raise
-                    print(f"notes index: Ollama embedding unavailable ({e}); falling back to keyword-only", flush=True)
+                    print(f"notes index: embedding unavailable ({e}); falling back to keyword-only", flush=True)
                     embed_ok = False
 
             # Assign compact rows
@@ -422,4 +422,4 @@ def print_stats(cfg) -> None:
     print(f"  Model:                {st['model']} (dims: {st['dims']})")
     print(f"  Index age:            {st['age']}")
     if st["degraded"]:
-        print(f"  Degraded:             yes, keyword-only for {st['missing_vectors']} texts (Ollama was unavailable)")
+        print(f"  Degraded:             yes, keyword-only for {st['missing_vectors']} texts (the embedding service was unavailable)")
