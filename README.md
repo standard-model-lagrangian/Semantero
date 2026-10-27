@@ -182,4 +182,6 @@ make check       # ruff, tsc, Python + plugin + launcher-core + Swift tests, sta
 Changes are test-first, and tests never touch a real vault, Zotero library or Ollama. The full guide is
 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md); every doc is indexed in [docs/README.md](docs/README.md).
 
+MIT licensed: see [LICENSE](LICENSE).
+
 <p align="center"><sub>Built to stop digging through Finder for that one paper.</sub></p>
