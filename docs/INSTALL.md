@@ -264,14 +264,12 @@ cp secrets.example.toml secrets.toml && chmod 600 secrets.toml   # add GROQ_API_
 
 Daily notes are `YYYY-MM-DD.md` at the vault root, from `Templates/Daily.md` (see [SPEC.md](SPEC.md)).
 
-The launchd jobs in `launchd/` are the **owner's copies, with absolute paths to the owner's checkout**. Edit the paths
-in `com.planner.morning.plist` and `com.planner.weekly.plist` (`ProgramArguments`, `WorkingDirectory`, the log paths)
-to your checkout, then:
+The launchd jobs in `launchd/` are templates; `bin/install-launchd.sh` fills in your checkout's paths, writes the job
+to `~/Library/LaunchAgents/` and loads it:
 
 ```bash
-cp launchd/com.planner.morning.plist launchd/com.planner.weekly.plist ~/Library/LaunchAgents/
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.planner.morning.plist
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.planner.weekly.plist
+bin/install-launchd.sh com.planner.morning
+bin/install-launchd.sh com.planner.weekly
 ```
 
 The morning job runs every 5 minutes. It does the day's work once, on the first run after 04:00 while online, and

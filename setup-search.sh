@@ -17,12 +17,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 # Text formatting
-BOLD="\033[1m"
-GREEN="\033[0;32m"
-YELLOW="\033[1;33m"
-RED="\033[0;31m"
-BLUE="\033[0;34m"
-NC="\033[0m"
+BOLD=$'\033[1m'
+GREEN=$'\033[0;32m'
+YELLOW=$'\033[1;33m'
+RED=$'\033[0;31m'
+BLUE=$'\033[0;34m'
+NC=$'\033[0m'
 
 info()    { echo -e "${BLUE}==>${NC} ${BOLD}$*${NC}"; }
 success() { echo -e "${GREEN}✓${NC} $*"; }
@@ -205,6 +205,18 @@ if is_custom_vault or is_custom_zotero:
 ' "$v" "$z" 2>/dev/null || true
 }
 
+# Waits up to $2 seconds for URL $1 to answer with a body containing $3 (any answer if empty). Returns 1 on timeout.
+wait_for_url() {
+    local url="$1" seconds="$2" expect="${3:-}" _
+    for _ in $(seq "$seconds"); do
+        if curl -s -m 2 "$url" 2>/dev/null | grep -q -- "$expect"; then
+            return 0
+        fi
+        sleep 1
+    done
+    return 1
+}
+
 # A value from the planner's resolved config (config.toml, config.local.toml and the live profile), or "" if unreadable
 planner_value() {
     "$SCRIPT_DIR/.venv/bin/python" -c "from planner import config; c = config.load(); print($1)" 2>/dev/null || true
@@ -225,10 +237,9 @@ setup_ollama() {
         elif [[ -d "/Applications/Ollama.app" ]]; then
             open -a Ollama >/dev/null 2>&1 || true
         fi
-        sleep 3
     fi
 
-    if curl -s -m 2 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
+    if wait_for_url http://127.0.0.1:11434/api/tags 15; then
         success "Ollama service is reachable"
         local models
         models=$(ollama list 2>/dev/null || true)
@@ -270,14 +281,10 @@ setup_pplx() {
     fi
     info "Starting the pplx service (com.planner.pplxd)..."
     bash "$SCRIPT_DIR/pplx/install-service.sh" || return 1
-    local i
-    for i in 1 2 3 4 5 6 7 8 9 10; do
-        if curl -s -m 2 http://127.0.0.1:11435/health 2>/dev/null | grep -q '"ok": true'; then
-            success "pplx service is running at http://127.0.0.1:11435"
-            return 0
-        fi
-        sleep 1
-    done
+    if wait_for_url http://127.0.0.1:11435/health 10 '"ok": true'; then
+        success "pplx service is running at http://127.0.0.1:11435"
+        return 0
+    fi
     warn "The pplx service did not answer; see logs/pplxd.log."
     return 1
 }
@@ -422,7 +429,6 @@ cmd_logs() {
 }
 
 cmd_index() {
-    shift || true
     if [[ ! -x "$SCRIPT_DIR/.venv/bin/python" ]]; then
         die "Virtualenv not found at .venv. Run ./setup-search.sh first."
     fi
@@ -453,17 +459,8 @@ cmd_start() {
     if [[ "$(uname -s)" != "Darwin" ]]; then
         die "launchd start is only supported on macOS."
     fi
-    local plist="$HOME/Library/LaunchAgents/com.planner.zotero-watch.plist"
-    if [[ ! -f "$plist" ]]; then
-        warn "Plist not found at $plist. Running setup to generate it..."
-        cmd_setup
-        return
-    fi
-    local uid
-    uid=$(id -u)
     info "Registering watcher daemon in launchd..."
-    launchctl bootout "gui/$uid/com.planner.zotero-watch" 2>/dev/null || true
-    launchctl bootstrap "gui/$uid" "$plist"
+    bash "$SCRIPT_DIR/bin/install-launchd.sh" com.planner.zotero-watch "$(get_config_zotero)"
     success "Watcher daemon started and scheduled to watch Zotero."
 }
 
@@ -488,7 +485,8 @@ cmd_setup() {
                 shift 2
                 ;;
             *)
-                shift
+                usage
+                die "Unknown option: $1"
                 ;;
         esac
     done
@@ -540,7 +538,8 @@ cmd_setup() {
 
     # Ensure pip packages if requirements exist (optional SDK dependencies for weekly review)
     if [[ -f "$SCRIPT_DIR/requirements.txt" ]]; then
-        "$SCRIPT_DIR/.venv/bin/pip" install -q -r "$SCRIPT_DIR/requirements.txt" 2>/dev/null || true
+        "$SCRIPT_DIR/.venv/bin/pip" install -q -r "$SCRIPT_DIR/requirements.txt" \
+            || warn "Could not install requirements.txt (the weekly review needs it; search does not)"
     fi
 
     # 3. Poppler / pdftotext
@@ -586,22 +585,17 @@ cmd_setup() {
         success "Zotero database found at $zotero_dir/zotero.sqlite"
         # Check for Better BibTeX citekeys
         local citekey_count
-        citekey_count=$(python3 -c '
-import sqlite3, sys
-try:
-    conn = sqlite3.connect(f"file:{sys.argv[1]}?immutable=1", uri=True)
-    cur = conn.cursor()
-    cur.execute("""
+        citekey_count=$("$SCRIPT_DIR/.venv/bin/python" -c '
+import sys
+from planner import zotlib
+with zotlib.open_snapshot(sys.argv[1]) as conn:
+    print(conn.execute("""
         SELECT COUNT(*) FROM itemDataValues idv
         JOIN itemData id ON idv.valueID = id.valueID
         JOIN fields f ON id.fieldID = f.fieldID
         WHERE f.fieldName = "citationKey" AND idv.value IS NOT NULL AND idv.value != ""
-    """)
-    print(cur.fetchone()[0])
-    conn.close()
-except Exception:
-    print(-1)
-' "$zotero_dir/zotero.sqlite" 2>/dev/null || echo -1)
+    """).fetchone()[0])
+' "$zotero_dir" 2>/dev/null || echo -1)
         if [[ "$citekey_count" -eq 0 ]]; then
             warn "No citation keys (citekeys) found in your Zotero database."
             warn "Better BibTeX is required for Obsidian citations: https://retorque.re/zotero-better-bibtex/"
@@ -721,55 +715,8 @@ except Exception:
     if [[ "$os_name" == "Darwin" ]]; then
         info "Configuring macOS background watcher daemon..."
         mkdir -p "$HOME/Library/LaunchAgents" "$SCRIPT_DIR/logs" "$zotero_dir/storage"
-        local plist_target="$HOME/Library/LaunchAgents/com.planner.zotero-watch.plist"
-
-        cat <<EOF > "$plist_target"
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.planner.zotero-watch</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/bin/zsh</string>
-        <string>$SCRIPT_DIR/bin/planner-run.sh</string>
-        <string>search</string>
-        <string>watch-run</string>
-    </array>
-    <key>WorkingDirectory</key>
-    <string>$SCRIPT_DIR</string>
-    <key>WatchPaths</key>
-    <array>
-        <string>$zotero_dir/zotero.sqlite</string>
-        <string>$zotero_dir/zotero.sqlite-wal</string>
-        <string>$zotero_dir/storage</string>
-    </array>
-    <key>ThrottleInterval</key>
-    <integer>10</integer>
-    <!-- Hourly retry for a keyword-only index; exits after a fingerprint check otherwise. -->
-    <key>StartInterval</key>
-    <integer>3600</integer>
-    <key>RunAtLoad</key>
-    <false/>
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>PYTHONUNBUFFERED</key>
-        <string>1</string>
-    </dict>
-    <key>StandardOutPath</key>
-    <string>$SCRIPT_DIR/logs/zotero-watch.log</string>
-    <key>StandardErrorPath</key>
-    <string>$SCRIPT_DIR/logs/zotero-watch.log</string>
-</dict>
-</plist>
-EOF
-
-        local uid
-        uid=$(id -u)
-        launchctl bootout "gui/$uid/com.planner.zotero-watch" 2>/dev/null || true
-        launchctl bootstrap "gui/$uid" "$plist_target"
-        success "Registered and started background watcher in launchd ($plist_target)"
+        bash "$SCRIPT_DIR/bin/install-launchd.sh" com.planner.zotero-watch "$zotero_dir"
+        success "Registered and started background watcher in launchd (com.planner.zotero-watch)"
     fi
 
     echo -e "\n${GREEN}${BOLD}======================================================${NC}"

@@ -29,11 +29,6 @@ Decisions log: [docs/DECISIONS_AND_GAPS.md](docs/DECISIONS_AND_GAPS.md). Manual 
 - **Thread cleanup**: the review's merges and reassignments go into `.planner/thread_fixes.json`, applied over the raw sidecars whenever they're read.
 - **Health checks** (`planner doctor`, also every morning, no model calls): vault access, future-dated notes, `secrets.toml` mode, launchd jobs, venv/SDK, Groq model still listed, Anthropic model lifecycle, Ollama model present, search index, Zotero watch job status, notes that fell back to local.
 
-### 3. Launcher (one hotkey, papers + notes, any app)
-- **Notes index** (`planner/mdtext.py`, `planner/notesindex.py`): every Markdown note in the vault (minus `[notes].exclude` globs, dot-folders, `Templates/**` by default) becomes a `papers.json` entry in `.planner/notes/`, with heading sections as chunks, in the same format as the paper index so the same engine ranks both. Kept fresh on every 5-minute launchd tick (`_notes_tick` in `__main__.py`, non-blocking lock). Personal exclusions go in git-ignored `config.local.toml`.
-- **`launcher-core/`** (TypeScript, no Node/DOM in `src/`): merges the two corpora (keyword lists interleave by rank, semantic lists by raw cosine, RRF), collapses a paper with its literature note into one row, and returns `ResultVM`s (paths, URLs, citations, action ids). Bundled to `dist/ranker.js` (committed) and run by the app in JavaScriptCore. `conformance/cases.json` is the contract every ranker must meet.
-- **`macos/`** (SwiftPM, no dependencies): `SemanteroKit` (testable: `JSCRanker`, `AcceleratedRanker`, query controller, action executor, index reloader, Spotlight donor) and `Semantero` (menu bar app: non-activating glass panel, settings, App Intents). `make install-app` builds and installs it. Debug aids: `SEMANTERO_SELFTEST=<json>` (see `make app-selftest`), `SEMANTERO_DEBUG=1` (reloads, compactions, watchdog), `SEMANTERO_SHOW_PANEL="<query>"`, `SEMANTERO_SNAPSHOT=<png>` (saves the panel view; needs no screen permission). The ranker choice (JavaScriptCore + Accelerate vector pass) is recorded in `docs/DECISIONS_AND_GAPS.md`.
-
 ### 2. Paper Search & Literature Discovery Layer
 - **Local Hybrid Search Engine**: Precomputed inverted-index BM25 with prefix expansion (top-64 candidate selection via dual binary search) and dense vector search (new installs: pplx-embed-v2-late via `planner/pplxd.py`; `config.toml`'s `[search]` and `--model qwen`: `qwen3-embedding:0.6b` via local Ollama). Scoring combines signals via Reciprocal Rank Fusion ($k=60$).
 - **Obsidian Paper Search Plugin** (`obsidian/paper-search`):
@@ -50,6 +45,12 @@ Decisions log: [docs/DECISIONS_AND_GAPS.md](docs/DECISIONS_AND_GAPS.md). Manual 
   - Indexes child PDFs and web snapshots (`text/html`, text via stdlib `html.parser` in `planner/htmltext.py`, chunks with page 0); both are in the fingerprint.
   - Retries missing PDF/snapshot attachments on subsequent runs when files appear on disk.
   - Concurrency protected by the shared advisory lock `.planner/search.lock` (also taken by the morning job's `search index`).
+
+
+### 3. Launcher (one hotkey, papers + notes, any app)
+- **Notes index** (`planner/mdtext.py`, `planner/notesindex.py`): every Markdown note in the vault (minus `[notes].exclude` globs, dot-folders, `Templates/**` by default) becomes a `papers.json` entry in `.planner/notes/`, with heading sections as chunks, in the same format as the paper index so the same engine ranks both. Kept fresh on every 5-minute launchd tick (`_notes_tick` in `__main__.py`, non-blocking lock). Personal exclusions go in git-ignored `config.local.toml`.
+- **`launcher-core/`** (TypeScript, no Node/DOM in `src/`): merges the two corpora (keyword lists interleave by rank, semantic lists by raw cosine, RRF), collapses a paper with its literature note into one row, and returns `ResultVM`s (paths, URLs, citations, action ids). Bundled to `dist/ranker.js` (committed) and run by the app in JavaScriptCore. `conformance/cases.json` is the contract every ranker must meet.
+- **`macos/`** (SwiftPM, no dependencies): `SemanteroKit` (testable: `JSCRanker`, `AcceleratedRanker`, query controller, action executor, index reloader, Spotlight donor) and `Semantero` (menu bar app: non-activating glass panel, settings, App Intents). `make install-app` builds and installs it. Debug aids: `SEMANTERO_SELFTEST=<json>` (see `make app-selftest`), `SEMANTERO_DEBUG=1` (reloads, compactions, watchdog), `SEMANTERO_SHOW_PANEL="<query>"`, `SEMANTERO_SNAPSHOT=<png>` (saves the panel view; needs no screen permission). The ranker choice (JavaScriptCore + Accelerate vector pass) is recorded in `docs/DECISIONS_AND_GAPS.md`.
 
 ---
 
@@ -82,7 +83,8 @@ launcher-core/          launcher ranking core: src/ (corpora, merge, query, vm, 
 macos/                  Swift package: Sources/SemanteroKit, Sources/Semantero (app), Sources/SemanteroBench (spike S1), Tests/, scripts/, CHECK.md
 prompts/                extract.md (per-note extraction), weekly.md (review)
 bin/                    planner-run.sh: launchd entrypoint; falls back to any Python 3.11+ if .venv is broken
-launchd/                com.planner.morning.plist, com.planner.weekly.plist, com.planner.zotero-watch.plist
+                        install-launchd.sh: renders a launchd/ template and (re)loads the job
+launchd/                templates for com.planner.{morning,weekly,zotero-watch,pplxd}; installed by bin/install-launchd.sh
 config.toml             vault paths, models, schedule, brief tuning, threads config, search config
 eval/                   queries.toml, related.toml (ground-truth evaluation datasets for search and related papers)
 tests/                  Python unit tests (unittest); fixtures/search/ holds a tiny fake Zotero library and index
@@ -162,7 +164,7 @@ Run from `obsidian/paper-search`:
 - **Index writers never leave a half-written index and never shrink it by accident.** Writes go to `<name>.tmp/` then swap. A vault scan that can't read a folder raises (`VaultUnreadable`) instead of writing a smaller index. Anything the 5-minute tick runs must not raise and must take a non-blocking lock.
 - **Personal data never enters the repo** (it is public). No real note titles, vault contents or paths in docs, tests or fixtures. Private exclusions live in `config.local.toml`, keys in `secrets.toml` (both git-ignored). Set `[notes].exclude` **before** the notes index first runs on a vault.
 - **The launcher app:** JavaScriptCore calls stay in `autoreleasepool`s and engines are built off the query actor; the JIT entitlement and `JSCRanker.configureProcess()` are required for its speed and memory budgets. Anything drawn over the panel's glass must be opaque and outside the `GlassEffectContainer`. Run `make app-selftest` after any change to the panel or key handling. Details: DEVELOPMENT.md → Gotchas.
-- **After changing a plist:** `launchctl bootout gui/$(id -u)/<label>`, copy it to `~/Library/LaunchAgents/`, then `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/<label>.plist`.
+- **launchd plists are templates** (`__REPO__`, `__HOME__`, `__ZOTERO__`; no personal paths, a test enforces it). After changing one: `bin/install-launchd.sh <label>` (re-renders, waits for the old job to unload, loads the new one).
 
 ---
 
@@ -171,11 +173,7 @@ Run from `obsidian/paper-search`:
 - **Broken venv** (Homebrew Python changed): `rm -rf .venv && python3 -m venv .venv && .venv/bin/pip install anthropic`. Until rebuilt, the wrapper runs on another Python and the brief warns.
 - **Model retired:** `doctor` names it. Pick a replacement with `models groq`, or a current Claude ID, and update `config.toml`.
 - **Rotate keys:** edit `secrets.toml`, then run `doctor`.
-- **Install Zotero Watcher:**
-  ```bash
-  cp launchd/com.planner.zotero-watch.plist ~/Library/LaunchAgents/
-  launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.planner.zotero-watch.plist
-  ```
+- **Install Zotero Watcher:** `./setup-search.sh start` (or `bin/install-launchd.sh com.planner.zotero-watch <zotero dir>`).
 - **Stop everything:**
   ```bash
   launchctl bootout gui/$(id -u)/com.planner.morning

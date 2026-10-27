@@ -18,7 +18,8 @@ override anything here. To install, see [INSTALL.md](INSTALL.md).
                                   ▲    (same format, one entry per note)        ├─► panel (⌥Space), actions, clipboard
        morning tick (launchd) ────┘                                             ├─► Core Spotlight entries
                                                                                 └─► App Intents ("Search Everything")
- embed.py ─► Ollama (127.0.0.1:11434, qwen3-embedding:0.6b) ◄── query embedding from the plugin and the app
+ embed.py ─► the live profile's embedder ◄── query embedding from the plugin and the app
+             pplxd (127.0.0.1:11435, pplx-embed-v2-late, the default) or Ollama (127.0.0.1:11434, qwen3-embedding:0.6b)
 ```
 
 **The index files are the interface.** Python writes them atomically (`<name>.tmp/` → rename, `<name>.old/` while
@@ -42,7 +43,7 @@ tests.
 | `launcher-core/` | TypeScript, no Node/DOM APIs in `src/` | Merges papers + notes, builds `ResultVM`s; JavaScriptCore API `globalThis.semantero` | `test/*.test.ts`, `conformance/cases.json` | `dist/ranker.js` |
 | `macos/` | Swift 6.2 package, no dependencies | `SemanteroKit` (all logic, testable), `Semantero` (the app), `SemanteroBench` (benchmarks) | `Tests/SemanteroKitTests` (Swift Testing); `make app-selftest` | `macos/build/` (git-ignored) |
 | `eval/` | TOML | Ground-truth queries (`expect` citekeys, `expect_note` note paths) | `scripts/eval.ts` in both TS packages | — |
-| `launchd/`, `bin/` | plist, zsh | The owner's launchd jobs; `planner-run.sh` adds Homebrew to launchd's PATH | — | — |
+| `launchd/`, `bin/` | plist, shell | launchd job templates and `install-launchd.sh`, which fills them in and loads them; `planner-run.sh` adds Homebrew to launchd's PATH | `tests/test_launchd.py` | — |
 | `docs/` | Markdown | Specs, decisions log, checklists, these guides | — | — |
 
 ## The two setups in the code

@@ -7,18 +7,18 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/zsh</string>
-        <string>/Users/frederick/Visual Studio /productivity work /bin/planner-run.sh</string>
+        <string>__REPO__/bin/planner-run.sh</string>
         <string>search</string>
         <string>watch-run</string>
     </array>
     <key>WorkingDirectory</key>
-    <string>/Users/frederick/Visual Studio /productivity work </string>
+    <string>__REPO__</string>
     <key>WatchPaths</key>
     <array>
-        <string>/Users/frederick/Zotero/zotero.sqlite</string>
+        <string>__ZOTERO__/zotero.sqlite</string>
         <!-- Zotero runs in WAL mode: a new item changes only zotero.sqlite-wal until a checkpoint. -->
-        <string>/Users/frederick/Zotero/zotero.sqlite-wal</string>
-        <string>/Users/frederick/Zotero/storage</string>
+        <string>__ZOTERO__/zotero.sqlite-wal</string>
+        <string>__ZOTERO__/storage</string>
     </array>
     <!-- launchd starts the job at most this often; a run that only fingerprints takes well under a second. -->
     <key>ThrottleInterval</key>
@@ -34,8 +34,8 @@
         <string>1</string>
     </dict>
     <key>StandardOutPath</key>
-    <string>/Users/frederick/Visual Studio /productivity work /logs/zotero-watch.log</string>
+    <string>__REPO__/logs/zotero-watch.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/frederick/Visual Studio /productivity work /logs/zotero-watch.log</string>
+    <string>__REPO__/logs/zotero-watch.log</string>
 </dict>
 </plist>

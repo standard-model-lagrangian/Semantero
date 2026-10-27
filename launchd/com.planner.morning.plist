@@ -7,11 +7,11 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/zsh</string>
-        <string>/Users/frederick/Visual Studio /productivity work /bin/planner-run.sh</string>
+        <string>__REPO__/bin/planner-run.sh</string>
         <string>morning</string>
     </array>
     <key>WorkingDirectory</key>
-    <string>/Users/frederick/Visual Studio /productivity work </string>
+    <string>__REPO__</string>
     <!-- Checks every 5 minutes and at login; does the day's work once, on the first check
          after 4am while online, then exits immediately on every later check. -->
     <key>RunAtLoad</key>
@@ -24,8 +24,8 @@
         <string>1</string>
     </dict>
     <key>StandardOutPath</key>
-    <string>/Users/frederick/Visual Studio /productivity work /logs/morning.log</string>
+    <string>__REPO__/logs/morning.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/frederick/Visual Studio /productivity work /logs/morning.log</string>
+    <string>__REPO__/logs/morning.log</string>
 </dict>
 </plist>

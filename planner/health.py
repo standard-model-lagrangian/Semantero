@@ -73,8 +73,7 @@ def check_jobs(cfg) -> Result | None:
                if subprocess.run(["launchctl", "print", f"gui/{os.getuid()}/{j}"], capture_output=True).returncode]
     if missing:
         return Result("launchd jobs", False,
-                      f"Not scheduled: {', '.join(missing)}. Reload with: launchctl bootstrap gui/$(id -u) "
-                      f"~/Library/LaunchAgents/<job>.plist")
+                      f"Not scheduled: {', '.join(missing)}. Install with: bin/install-launchd.sh <job>")
     return None
 
 
@@ -322,7 +321,7 @@ def check_zotero_watch(cfg) -> Result | None:
         return Result(
             "zotero watch",
             False,
-            "Not scheduled: com.planner.zotero-watch. Reload with: launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.planner.zotero-watch.plist"
+            "Not scheduled: com.planner.zotero-watch. Install with: ./setup-search.sh start"
         )
 
     # 2. Check 3 consecutive failed builds in logs/zotero-watch.log

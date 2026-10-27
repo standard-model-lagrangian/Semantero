@@ -340,7 +340,7 @@ class TestZotwatch(unittest.TestCase):
             res = health.check_zotero_watch(self.cfg)
             self.assertIsNotNone(res)
             self.assertFalse(res.ok)
-            self.assertIn("launchctl bootstrap", res.message)
+            self.assertIn("./setup-search.sh start", res.message)
 
         # 2. Watch log has 3 consecutive build failed -> warning. A log in a scratch root: the real
         # logs/zotero-watch.log belongs to the running watcher (this test used to overwrite and delete it).

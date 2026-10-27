@@ -7,11 +7,11 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/zsh</string>
-        <string>/Users/frederick/Visual Studio /productivity work /bin/planner-run.sh</string>
+        <string>__REPO__/bin/planner-run.sh</string>
         <string>weekly</string>
     </array>
     <key>WorkingDirectory</key>
-    <string>/Users/frederick/Visual Studio /productivity work </string>
+    <string>__REPO__</string>
     <!-- Sundays 21:00, after most done sections are written. If asleep, runs on wake; a Monday catch-up still reviews the week just gone. -->
     <key>StartCalendarInterval</key>
     <dict>
@@ -28,8 +28,8 @@
         <string>1</string>
     </dict>
     <key>StandardOutPath</key>
-    <string>/Users/frederick/Visual Studio /productivity work /logs/weekly.log</string>
+    <string>__REPO__/logs/weekly.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/frederick/Visual Studio /productivity work /logs/weekly.log</string>
+    <string>__REPO__/logs/weekly.log</string>
 </dict>
 </plist>
