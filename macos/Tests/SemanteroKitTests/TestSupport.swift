@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import Testing
 @testable import SemanteroKit
 
@@ -70,35 +71,97 @@ final class CallLog: @unchecked Sendable {
     func contains(prefix: String) -> Bool { all.contains { $0.hasPrefix(prefix) } }
 }
 
+/// Wakes waiters when the state they check may have changed. Owners call `changed()` after every mutation (never while
+/// holding their own lock); `wait` registers before its first check, so a change between the check and the wait can't
+/// be missed.
+final class ChangeSignal: Sendable {
+    private struct Waiter {
+        let check: @Sendable () -> Bool
+        let continuation: CheckedContinuation<Bool, Never>
+        var timer: Task<Void, Never>?
+    }
+    private let waiters = Mutex<[UUID: Waiter]>([:])
+
+    /// True once `check` holds; false if it still doesn't after `timeout`.
+    func wait(timeout: Duration, _ check: @escaping @Sendable () -> Bool) async -> Bool {
+        let id = UUID()
+        return await withCheckedContinuation { (c: CheckedContinuation<Bool, Never>) in
+            waiters.withLock { $0[id] = Waiter(check: check, continuation: c) }
+            let timer = Task { [weak self] in
+                try? await Task.sleep(for: timeout)
+                if !Task.isCancelled { self?.finish(id, false) }
+            }
+            waiters.withLock { $0[id]?.timer = timer }
+            changed()
+        }
+    }
+
+    func changed() {
+        let done = waiters.withLock { w -> [Waiter] in
+            let ids = w.filter { $0.value.check() }.map(\.key)
+            return ids.compactMap { w.removeValue(forKey: $0) }
+        }
+        for d in done { d.timer?.cancel(); d.continuation.resume(returning: true) }
+    }
+
+    private func finish(_ id: UUID, _ result: Bool) {
+        guard let d = waiters.withLock({ $0.removeValue(forKey: id) }) else { return }
+        d.timer?.cancel()
+        d.continuation.resume(returning: result)
+    }
+}
+
+/// Waits for `check` (re-evaluated on every `signal` change) and records a test failure at the caller if it times out.
+@discardableResult
+func expectEventually(_ signal: ChangeSignal, timeout: Duration = .seconds(3), _ what: String = "condition",
+                      sourceLocation: SourceLocation = #_sourceLocation, _ check: @escaping @Sendable () -> Bool) async -> Bool {
+    let ok = await signal.wait(timeout: timeout, check)
+    if !ok { Issue.record("timed out after \(timeout) waiting for \(what)", sourceLocation: sourceLocation) }
+    return ok
+}
+
 /// Sleeps until the test releases it (or returns at once when `immediate`). Cancellation ends a sleep, like the real one.
-final class FakeSleeper: Sleeper, @unchecked Sendable {
-    private let lock = NSLock()
-    private var waiters: [UUID: CheckedContinuation<Void, Error>] = [:]
-    private(set) var requested: [Double] = []
-    var immediate: Bool
+final class FakeSleeper: Sleeper, Sendable {
+    private struct State { var waiters: [UUID: CheckedContinuation<Void, Error>] = [:]; var requested: [Double] = [] }
+    private let state = Mutex(State())
+    private let signal = ChangeSignal()
+    let immediate: Bool
     init(immediate: Bool = false) { self.immediate = immediate }
 
+    var requested: [Double] { state.withLock { $0.requested } }
+    var pending: Int { state.withLock { $0.waiters.count } }
+
     func sleep(seconds: Double) async throws {
-        let now = lock.withLock { requested.append(seconds); return immediate }
-        if now { return }
+        state.withLock { $0.requested.append(seconds) }
+        signal.changed()
+        if immediate { return }
         let id = UUID()
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
-                lock.withLock { waiters[id] = c }
+                state.withLock { $0.waiters[id] = c }
+                signal.changed()
                 if Task.isCancelled { cancel(id) }
             }
         } onCancel: { cancel(id) }
     }
     private func cancel(_ id: UUID) {
-        let c = lock.withLock { waiters.removeValue(forKey: id) }
+        let c = state.withLock { $0.waiters.removeValue(forKey: id) }
+        signal.changed()
         c?.resume(throwing: CancellationError())
     }
-    var pending: Int { lock.withLock { waiters.count } }
     func releaseAll() {
-        let all = lock.withLock { () -> [CheckedContinuation<Void, Error>] in
-            let w = Array(waiters.values); waiters = [:]; return w
+        let all = state.withLock { s -> [CheckedContinuation<Void, Error>] in
+            let w = Array(s.waiters.values); s.waiters = [:]; return w
         }
+        signal.changed()
         all.forEach { $0.resume() }
+    }
+
+    /// Returns once exactly `count` sleeps are waiting to be released; records a failure on timeout.
+    func waitForPending(_ count: Int, timeout: Duration = .seconds(3), sourceLocation: SourceLocation = #_sourceLocation) async {
+        await expectEventually(signal, timeout: timeout, "\(count) pending sleep(s)", sourceLocation: sourceLocation) {
+            self.pending == count
+        }
     }
 }
 
@@ -127,25 +190,54 @@ final class ManualScheduler: Scheduler, @unchecked Sendable {
     }
 }
 
-/// A ranker whose answers the test controls.
-final class FakeRanker: Ranker, @unchecked Sendable {
-    private let lock = NSLock()
-    private var _keywordCalls: [String] = []
-    private var _hybridCalls: [String] = []
-    var scopes: [Scope] = []
-    var limits: [Int] = []
-    var keywordResults: @Sendable (String, Scope) -> [ResultVM] = { q, _ in [vm("K:\(q)")] }
-    var hybridResults: @Sendable (String, Scope) -> [ResultVM] = { q, _ in [vm("H:\(q)")] }
-    var recentResults: [ResultVM] = (0..<12).map { vm("R\($0)") }
-    var lookupResults: [String: ResultVM] = [:]
-    var notLoaded = false
-    var hybridDelay: (@Sendable (String) async -> Void)?
+/// A ranker whose answers the test controls. Everything it records or is told is behind one lock, since the code under
+/// test calls it from other tasks while the test reads and sets it.
+final class FakeRanker: Ranker, Sendable {
+    private struct State {
+        var keywordCalls: [String] = []
+        var hybridCalls: [String] = []
+        var rowScoreCalls: [(query: String, papers: Data?, notes: Data?)] = []
+        var scopes: [Scope] = []
+        var limits: [Int] = []
+        var loads = 0
+        var garbageCollections = 0
+        var keywordResults: @Sendable (String, Scope) -> [ResultVM] = { q, _ in [vm("K:\(q)")] }
+        var hybridResults: @Sendable (String, Scope) -> [ResultVM] = { q, _ in [vm("H:\(q)")] }
+        var recentResults: [ResultVM] = (0..<12).map { vm("R\($0)") }
+        var lookupResults: [String: ResultVM] = [:]
+        var notLoaded = false
+        var hybridDelay: (@Sendable (String) async -> Void)?
+        var loadStatus = RankerStatus()
+    }
+    private let state = Mutex(State())
+    /// Changes whenever a call is recorded.
+    let signal = ChangeSignal()
 
-    var keywordCalls: [String] { lock.lock(); defer { lock.unlock() }; return _keywordCalls }
-    var hybridCalls: [String] { lock.lock(); defer { lock.unlock() }; return _hybridCalls }
+    private func read<T: Sendable>(_ key: KeyPath<State, T> & Sendable) -> T { state.withLock { $0[keyPath: key] } }
+    private func write<T: Sendable>(_ key: WritableKeyPath<State, T> & Sendable, _ value: sending T) { state.withLock { $0[keyPath: key] = value } }
+    private func record(_ change: (inout State) -> Void) { state.withLock { change(&$0) }; signal.changed() }
 
-    func load(papers: CorpusFiles?, notes: CorpusFiles?) async throws -> RankerStatus { RankerStatus() }
-    func status() async throws -> RankerStatus { RankerStatus() }
+    var keywordCalls: [String] { read(\.keywordCalls) }
+    var hybridCalls: [String] { read(\.hybridCalls) }
+    var rowScoreCalls: [(query: String, papers: Data?, notes: Data?)] { read(\.rowScoreCalls) }
+    var scopes: [Scope] { read(\.scopes) }
+    var limits: [Int] { read(\.limits) }
+    var loads: Int { read(\.loads) }
+    var garbageCollections: Int { read(\.garbageCollections) }
+    var keywordResults: @Sendable (String, Scope) -> [ResultVM] { get { read(\.keywordResults) } set { write(\.keywordResults, newValue) } }
+    var hybridResults: @Sendable (String, Scope) -> [ResultVM] { get { read(\.hybridResults) } set { write(\.hybridResults, newValue) } }
+    var recentResults: [ResultVM] { get { read(\.recentResults) } set { write(\.recentResults, newValue) } }
+    var lookupResults: [String: ResultVM] { get { read(\.lookupResults) } set { write(\.lookupResults, newValue) } }
+    var notLoaded: Bool { get { read(\.notLoaded) } set { write(\.notLoaded, newValue) } }
+    var hybridDelay: (@Sendable (String) async -> Void)? { get { read(\.hybridDelay) } set { write(\.hybridDelay, newValue) } }
+    /// What `load` and `status` report.
+    var loadStatus: RankerStatus { get { read(\.loadStatus) } set { write(\.loadStatus, newValue) } }
+
+    func load(papers: CorpusFiles?, notes: CorpusFiles?) async throws -> RankerStatus {
+        record { $0.loads += 1 }
+        return loadStatus
+    }
+    func status() async throws -> RankerStatus { loadStatus }
     func shouldRunSemantic(_ query: String) async -> Bool {
         // rank.ts, without stopwords: 12+ characters, or two words with the last one 3+ characters or a digit
         if semanticText(query).count >= 12 { return true }
@@ -156,21 +248,19 @@ final class FakeRanker: Ranker, @unchecked Sendable {
     }
     func keyword(_ query: String, scope: Scope, limit: Int) async throws -> [ResultVM] {
         if notLoaded { throw RankerError("no index loaded") }
-        lock.withLock { _keywordCalls.append(query); scopes.append(scope); limits.append(limit) }
+        record { $0.keywordCalls.append(query); $0.scopes.append(scope); $0.limits.append(limit) }
         return keywordResults(query, scope)
     }
     func hybrid(_ query: String, queryVector: [Float], scope: Scope, limit: Int) async throws -> [ResultVM] {
         if notLoaded { throw RankerError("no index loaded") }
-        lock.withLock { _hybridCalls.append(query) }
+        record { $0.hybridCalls.append(query) }
         await hybridDelay?(query)
         return hybridResults(query, scope)
     }
-    private var _rowScoreCalls: [(query: String, papers: Data?, notes: Data?)] = []
-    var rowScoreCalls: [(query: String, papers: Data?, notes: Data?)] { lock.lock(); defer { lock.unlock() }; return _rowScoreCalls }
     func hybridFromRowScores(_ query: String, papersScores: Data?, notesScores: Data?, scope: Scope,
                              limit: Int) async throws -> [ResultVM] {
         if notLoaded { throw RankerError("no index loaded") }
-        lock.withLock { _rowScoreCalls.append((query, papersScores, notesScores)) }
+        record { $0.rowScoreCalls.append((query, papersScores, notesScores)) }
         return [vm("S:\(query)")]
     }
     func recent(limit: Int) async throws -> [ResultVM] {
@@ -181,23 +271,28 @@ final class FakeRanker: Ranker, @unchecked Sendable {
         if notLoaded { throw RankerError("no index loaded") }
         return ids.compactMap { lookupResults[$0] }
     }
+    func collectGarbage() async { record { $0.garbageCollections += 1 } }
+
+    func waitForHybrid(_ q: String, sourceLocation: SourceLocation = #_sourceLocation) async {
+        await expectEventually(signal, "a hybrid call for \"\(q)\"", sourceLocation: sourceLocation) { self.hybridCalls.contains(q) }
+    }
+    func waitForKeyword(count: Int, sourceLocation: SourceLocation = #_sourceLocation) async {
+        await expectEventually(signal, "\(count) keyword calls", sourceLocation: sourceLocation) { self.keywordCalls.count >= count }
+    }
 }
 
-/// Collects controller updates; `wait` polls until a condition holds.
-final class UpdateLog: @unchecked Sendable {
-    private let lock = NSLock()
-    private var items: [QueryUpdate] = []
-    func add(_ u: QueryUpdate) { lock.lock(); items.append(u); lock.unlock() }
-    var all: [QueryUpdate] { lock.lock(); defer { lock.unlock() }; return items }
+/// Collects controller updates; `wait` returns once a condition over them holds, and fails the test if it never does.
+final class UpdateLog: Sendable {
+    private let items = Mutex<[QueryUpdate]>([])
+    private let signal = ChangeSignal()
+    func add(_ u: QueryUpdate) { items.withLock { $0.append(u) }; signal.changed() }
+    var all: [QueryUpdate] { items.withLock { $0 } }
 
-    @discardableResult
-    func wait(timeout: Double = 3, _ condition: ([QueryUpdate]) -> Bool) async -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if condition(all) { return true }
-            try? await Task.sleep(nanoseconds: 3_000_000)
-        }
-        return condition(all)
+    func wait(timeout: Duration = .seconds(3), sourceLocation: SourceLocation = #_sourceLocation,
+              _ condition: @escaping @Sendable ([QueryUpdate]) -> Bool) async {
+        if await signal.wait(timeout: timeout, { condition(self.all) }) { return }
+        Issue.record("timed out after \(timeout) waiting for updates; got \(all.map { "\($0.query)/\($0.semantic)" })",
+                     sourceLocation: sourceLocation)
     }
 }
 

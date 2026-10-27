@@ -41,6 +41,8 @@ public actor QueryController {
     private var scope: Scope
     private var semanticTask: Task<Void, Never>?
     private var lastUpdate: QueryUpdate?
+    /// Every keyword and semantic phase still running, so `settle()` can wait for them. Each removes itself when done.
+    private var inFlight: [UUID: Task<Void, Never>] = [:]
 
     public init(ranker: Ranker, sleeper: Sleeper = SystemSleeper(), debounce: Double = 0.2, limit: Int = 15,
                 scope: Scope = .all, onUpdate: @escaping @Sendable (QueryUpdate) -> Void) {
@@ -98,7 +100,24 @@ public actor QueryController {
         let mySeq = seq, q = query, s = scope
         semanticTask?.cancel()
         semanticTask = nil
-        Task { await self.keywordPhase(seq: mySeq, query: q, scope: s, keepMerged: keepMerged) }
+        track { await $0.keywordPhase(seq: mySeq, query: q, scope: s, keepMerged: keepMerged) }
+    }
+
+    /// Starts `work` and keeps its handle until it finishes.
+    @discardableResult
+    private func track(_ work: @escaping @Sendable (QueryController) async -> Void) -> Task<Void, Never> {
+        let id = UUID()
+        let task = Task { await work(self); self.finished(id) }
+        inFlight[id] = task
+        return task
+    }
+    private func finished(_ id: UUID) { inFlight[id] = nil }
+
+    /// Tests: returns once every phase started so far (and any it starts) has finished, so "no further update arrives"
+    /// can be checked without a guessed sleep. A semantic phase waiting on its debounce counts as running: release or
+    /// cancel the sleeper first.
+    func settle() async {
+        while let task = inFlight.values.first { await task.value }
     }
 
     /// Updates carry the query as it is typed now: a whitespace-only edit since this request started kept its `seq`.
@@ -118,7 +137,7 @@ public actor QueryController {
             publish(QueryUpdate(seq: mySeq, query: query, scope: s, results: kw, semantic: state))
         }
         guard wantsSemantic, semanticAvailable else { return }
-        semanticTask = Task { await self.semanticPhase(seq: mySeq, query: q, scope: s, keyword: kw) }
+        semanticTask = track { await $0.semanticPhase(seq: mySeq, query: q, scope: s, keyword: kw) }
     }
 
     private func semanticPhase(seq mySeq: Int, query q: String, scope s: Scope, keyword kw: [ResultVM]) async {

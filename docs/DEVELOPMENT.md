@@ -156,6 +156,9 @@ the morning brief shows as `⚠ Setup:` lines.
 
 ## Gotchas (each one cost time)
 
+- **Launcher index orchestration lives in `IndexCoordinator` (SemanteroKit), not `AppModel`.** It takes the ranker, a `Sleeper` for the poll and the settle delay, and app hooks (panel visibility, query on screen, footprint, clock, log, load events), so it is tested with fakes. `manifest.json` is read only through `IndexManifest`.
+- **Swift tests never poll or sleep.** Wait with `UpdateLog.wait`, `FakeSleeper.waitForPending`, `FakeRanker.waitFor…` or `expectEventually`, which fail the test on timeout; check "no further update" with `await controller.settle()` (it waits for every running search, so release or cancel a `FakeSleeper` first).
+
 - **JavaScriptCore needs the JIT entitlement** (`com.apple.security.cs.allow-jit`). Without it, it runs interpreted:
   the semantic pass is 30× slower and loading 3× slower. `bundle.sh` always signs with it, so `swift run` builds are slow.
 - **JavaScriptCore memory.** `JSGarbageCollect` only schedules a collection; every build therefore ends with a

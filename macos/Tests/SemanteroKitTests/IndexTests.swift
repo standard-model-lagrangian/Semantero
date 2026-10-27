@@ -22,10 +22,15 @@ struct IndexTests {
         let size: UInt64 = 256 * 1024 * 1024
         try h.truncate(atOffset: size)
         try h.close()
-        let before = physFootprint()
-        let read = try #require(try IndexFiles.read(dir: dir))
-        let grew = physFootprint() &- before
-        #expect(UInt64(read.vectors?.count ?? 0) == size)
+        // The footprint is the whole process's, and other tests build engines in parallel: the smallest growth of three
+        // reads is this read's.
+        var grew = UInt64.max
+        for _ in 0..<3 {
+            let before = physFootprint()
+            let read = try #require(try IndexFiles.read(dir: dir))
+            grew = min(grew, physFootprint() &- before)
+            #expect(UInt64(read.vectors?.count ?? 0) == size)
+        }
         #expect(grew < size / 4, "reading grew the footprint by \(grew) bytes: the file was copied, not mapped")
     }
 

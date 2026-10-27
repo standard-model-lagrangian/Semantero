@@ -50,7 +50,7 @@ struct IntentTests {
         }
         let service = IntentSearchService(ranker: ranker, embedder: neverEmbeds, sleeper: sleeper)
         async let result = service.matching("stiff gels promoted")
-        for _ in 0..<500 { if sleeper.pending == 1 { break }; try? await Task.sleep(nanoseconds: 2_000_000) }
+        await sleeper.waitForPending(1)
         #expect(sleeper.requested == [0.4])
         sleeper.releaseAll()                             // the cap expires
         let out = await result

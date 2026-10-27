@@ -34,11 +34,7 @@ struct QueryControllerTests {
         await c.setQuery("stiff gels ")
         await log.wait { $0.last?.query == "stiff gels " }
         #expect(log.all.last?.semantic == .pending)
-        let waited = await Task { () -> Bool in
-            for _ in 0..<200 { if sleeper.pending == 1 { return true }; try? await Task.sleep(nanoseconds: 2_000_000) }
-            return false
-        }.value
-        #expect(waited, "semantic should be waiting on the debounce")
+        await sleeper.waitForPending(1)                     // semantic is waiting on the debounce
         #expect(ranker.hybridCalls.isEmpty)
         sleeper.releaseAll()
         await log.wait { $0.last?.semantic == .merged }
@@ -64,7 +60,7 @@ struct QueryControllerTests {
         await c.setQuery("stiff gels ")
         await c.setQuery("stiff gels")
         await log.wait { $0.count == before + 2 }
-        try? await Task.sleep(nanoseconds: 50_000_000)
+        await c.settle()
         // no keyword-only flash: each edit re-sends the merged list, under the text as typed now
         #expect(log.all.dropFirst(before).map(\.query) == ["stiff gels ", "stiff gels"])
         #expect(log.all.dropFirst(before).allSatisfy { $0.semantic == .merged && $0.results.map(\.id) == ["H:stiff gels"] })
@@ -105,12 +101,35 @@ struct QueryControllerTests {
         let before = log.all.count
         ranker.hybridResults = { q, _ in [vm("H2:\(q)")] }             // the reloaded index ranks differently
         await c.setQuery("stiff gels", force: true)
-        await ranker.waitForKeyword(count: 2)
-        try? await Task.sleep(nanoseconds: 30_000_000)
+        // The keyword phase publishes (or not) before its semantic phase starts waiting on the debounce.
+        await sleeper.waitForPending(1)
+        #expect(ranker.keywordCalls.count == 2)
         #expect(log.all.count == before, "no keyword-only list in between")
         sleeper.releaseAll()
         await log.wait { $0.last?.results.map(\.id) == ["H2:stiff gels"] }
         #expect(log.all.dropFirst(before).map(\.semantic) == [.merged])
+    }
+
+    @Test func waitersThatTimeOutFailTheTest() async {
+        let log = UpdateLog(), sleeper = FakeSleeper(), ranker = FakeRanker()
+        await withKnownIssue { await log.wait(timeout: .milliseconds(20)) { !$0.isEmpty } }
+        await withKnownIssue { await sleeper.waitForPending(1, timeout: .milliseconds(20)) }
+        await withKnownIssue {
+            await expectEventually(ranker.signal, timeout: .milliseconds(20)) { !ranker.keywordCalls.isEmpty }
+        }
+    }
+
+    @Test func settleWaitsForAPhaseThatIsStillRunning() async {
+        let ranker = FakeRanker(), sleeper = FakeSleeper(immediate: true), log = UpdateLog()
+        let gate = AsyncGate()
+        ranker.hybridDelay = { _ in await gate.wait() }
+        let c = await controller(ranker, sleeper: sleeper, log: log)
+        await c.setQuery("stiff gels")
+        await ranker.waitForHybrid("stiff gels")
+        let settled = Task { await c.settle() }
+        await gate.open()
+        await settled.value
+        #expect(log.all.last?.semantic == .merged, "settle returned only after the merge was published")
     }
 
     @Test func semanticTextMatchesTheTypeScriptRule() {
@@ -132,7 +151,7 @@ struct QueryControllerTests {
         await c.setQuery("second query here")
         await log.wait { $0.contains { $0.query == "second query here" && $0.semantic == .merged } }
         await gate.open()                                   // the first request now resolves, late
-        try? await Task.sleep(nanoseconds: 60_000_000)
+        await c.settle()
         #expect(!log.all.contains { $0.query == "first query here" && $0.semantic == .merged })
         #expect(log.all.last?.query == "second query here")
         #expect(log.all.map(\.seq) == log.all.map(\.seq).sorted(), "updates never go backwards")
@@ -238,13 +257,4 @@ actor AsyncGate {
     private var waiters: [CheckedContinuation<Void, Never>] = []
     func wait() async { if isOpen { return }; await withCheckedContinuation { waiters.append($0) } }
     func open() { isOpen = true; waiters.forEach { $0.resume() }; waiters = [] }
-}
-
-extension FakeRanker {
-    func waitForHybrid(_ q: String) async {
-        for _ in 0..<500 { if hybridCalls.contains(q) { return }; try? await Task.sleep(nanoseconds: 2_000_000) }
-    }
-    func waitForKeyword(count: Int) async {
-        for _ in 0..<500 { if keywordCalls.count >= count { return }; try? await Task.sleep(nanoseconds: 2_000_000) }
-    }
 }

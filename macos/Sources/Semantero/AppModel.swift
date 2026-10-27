@@ -27,24 +27,22 @@ final class AppModel {
 
     let settings = SettingsStore()
     let shortcuts: ShortcutTable
-    private(set) var executor: ActionExecutor!
-    private(set) var intentService: IntentSearchService?
-    private var ranker: Ranker?
+    @ObservationIgnored private(set) lazy var panel = PanelController(model: self)
+    @ObservationIgnored private(set) lazy var executor = ActionExecutor(
+        services: ActionServices(
+            pasteboard: SystemPasteboard(), events: CGEventPoster(), workspace: SystemWorkspace(), system: LiveSystemState(),
+            files: DiskFiles(), panel: panel, toast: ToastCenter.shared, quickLook: QuickLookService.shared),
+        restoreClipboard: { [settings] in settings.restoreClipboard })
+    /// Nil only when the ranker could not be built (`loadMessage` says why).
+    private var index: IndexCoordinator?
     private var controller: QueryController?
-    private var reloader: IndexReloader?
-    private var watcher: IndexWatcher?
-    private var donor: SpotlightDonor?
-    private var updates: AsyncStream<QueryUpdate>.Continuation?
+    var intentService: IntentSearchService? { index?.intentService }
     private var consumeTask: Task<Void, Never>?
     /// Typed queries, sent to the controller by one task so they arrive in order (a task per keystroke could arrive out
     /// of order, leave the controller on an older query and `apply` dropping every update for the one on screen).
     private var queryInput: AsyncStream<String>.Continuation?
     private var queryTask: Task<Void, Never>?
-    private var pollTask: Task<Void, Never>?
-    private var loadTask: Task<Void, Never>?
-    private var watchdog = MemoryWatchdog()
     let hotkey = HotkeyRegistrar()
-    var panel: PanelController!
     private var lastQueryAt = Date.distantPast
 
     private init() {
@@ -67,29 +65,20 @@ final class AppModel {
     // MARK: start-up
 
     func start() {
-        panel = PanelController(model: self)
-        executor = ActionExecutor(
-            services: ActionServices(
-                pasteboard: SystemPasteboard(), events: CGEventPoster(), workspace: SystemWorkspace(), system: LiveSystemState(),
-                files: DiskFiles(), panel: panel, toast: ToastCenter.shared, quickLook: QuickLookService.shared),
-            restoreClipboard: { [settings] in settings.restoreClipboard })
-        // The ranker (docs/DECISIONS_AND_GAPS.md, spike S1 and "Memory pass"): JavaScriptCore for keyword search, merging
-        // and view models; Accelerate for the vector pass (option B). With the JIT tiers the app needs for its memory
-        // budget, an all-JavaScriptCore vector pass measured 20–54 ms per query against Accelerate's 2–3 ms.
+        _ = panel
+        let ranker: Ranker
         do {
             let js = Bundle.main.url(forResource: "ranker", withExtension: "js")
                 ?? URL(fileURLWithPath: "../launcher-core/dist/ranker.js")
-            ranker = AcceleratedRanker(inner: try JSCRanker(rankerURL: js))
+            ranker = try IndexCoordinator.makeRanker(rankerJS: js)
         } catch {
             loadMessage = "Could not load the ranker: \(error)"
             return
         }
-        let ranker = ranker!
-        donor = SpotlightDonor(index: CoreSpotlightIndex(), stateURL: Self.supportDirectory.appendingPathComponent("spotlight.json"))
 
         let (stream, continuation) = AsyncStream<QueryUpdate>.makeStream()
-        updates = continuation
-        controller = QueryController(ranker: ranker, limit: settings.resultLimit, scope: scope) { continuation.yield($0) }
+        let controller = QueryController(ranker: ranker, limit: settings.resultLimit, scope: scope) { continuation.yield($0) }
+        self.controller = controller
         consumeTask = Task { [weak self] in
             for await update in stream { self?.apply(update) }
         }
@@ -98,7 +87,14 @@ final class AppModel {
         queryTask = Task { [weak self] in
             for await q in queries { await self?.controller?.setQuery(q) }
         }
-        intentService = IntentSearchService(ranker: ranker, embedder: nil)
+        index = IndexCoordinator(
+            ranker: ranker, controller: controller, vault: vaultURL, settings: settings,
+            donor: SpotlightDonor(index: CoreSpotlightIndex(), stateURL: Self.supportDirectory.appendingPathComponent("spotlight.json")),
+            hooks: IndexCoordinator.Hooks(
+                panelVisible: { [weak self] in self?.panel.isVisible ?? false },
+                query: { [weak self] in self?.query ?? "" },
+                log: { debugLog($0) },
+                onEvent: { [weak self] in self?.indexEvent($0) }))
         IntentBridge.shared.model = self
 
         // Test modes run next to the installed app: they take no hotkey and no login item.
@@ -125,50 +121,17 @@ final class AppModel {
                 }
             }
         }
-        openVault()
-        // The watcher misses an index swapped in while the app was not running or the folder did not exist yet.
-        pollTask = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 60_000_000_000)
-                await self?.reloadIndexes()
-                await self?.compactIfNeeded()
-            }
-        }
+        index?.start()
     }
 
-    /// (Re)starts everything that depends on the vault path: reloader, file watcher, first load.
-    private func openVault() {
-        guard let ranker else { return }
-        watcher?.stop()
-        loadTask?.cancel()
-        reloader = IndexReloader(vault: vaultURL, ranker: ranker)
-        watcher = IndexWatcher(directory: vaultURL.appendingPathComponent(".planner")) { [weak self] in
-            Task { @MainActor in await self?.reloadIndexes() }
+    private func indexEvent(_ event: IndexEvent) {
+        switch event {
+        case .loaded(let s):
+            status = s
+            loadMessage = nil
+        case .failed(let message):
+            loadMessage = "Index problem: \(message)"
         }
-        watcher?.start()
-        // Each build ends with a synchronous full GC (JSCRanker), so no compaction reloads are needed after loading.
-        loadTask = Task { await reloadIndexes() }
-    }
-
-    /// One synchronous GC a few seconds after a reload (see JSCRanker.collectGarbage): measured 143 → ~110 MB. The delay
-    /// lets the first searches on the new engine (the app re-runs the query on screen) finish and drop their garbage.
-    private var settleTask: Task<Void, Never>?
-    private func scheduleSettleGC() {
-        settleTask?.cancel()
-        settleTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 3_000_000_000)
-            guard !Task.isCancelled, let ranker = self?.ranker else { return }
-            await ranker.collectGarbage()
-        }
-    }
-
-    /// Safety net (see MemoryWatchdog): if the footprint still grows past the threshold while hidden, swap in a fresh engine.
-    private func compactIfNeeded() async {
-        let mb = MemoryWatchdog.footprintMB()
-        guard watchdog.shouldCompact(footprintMB: mb, panelVisible: panel.isVisible, now: Date()) else { return }
-        watchdog.didCompact(at: Date())
-        _ = await reloader?.forceReload()
-        debugLog("watchdog reload at \(mb) MB")
     }
 
     /// Applies a saved Settings change now, redoing only what that change affects.
@@ -181,10 +144,10 @@ final class AppModel {
             status = nil
             loadMessage = "Loading index…"
             selection.apply([])
-            openVault()   // also re-syncs Spotlight after loading
+            index?.openVault(vaultURL)   // also re-syncs Spotlight after loading
         } else {
-            if effects.contains(.reconfigureEmbedding), let status { Task { await configureEmbedding(from: status) } }
-            if effects.contains(.syncSpotlight) { Task { await syncSpotlight() } }
+            if effects.contains(.reconfigureEmbedding) { Task { await index?.reconfigureEmbedding() } }
+            if effects.contains(.syncSpotlight) { Task { await index?.syncSpotlight() } }
         }
     }
 
@@ -194,80 +157,7 @@ final class AppModel {
         return dir
     }
 
-    // MARK: index reloads
-
-    func reloadIndexes() async {
-        guard let reloader else { return }
-        let outcome = await reloader.check()
-        debugLog("reload outcome \(String(describing: outcome).prefix(60))")
-        switch outcome {
-        case .reloaded(let s):
-            status = s
-            loadMessage = nil
-            scheduleSettleGC()
-            await configureEmbedding(from: s)
-            await controller?.setQuery(query, force: true)
-            Task { await syncSpotlight() }
-        case .failed(let message):
-            loadMessage = "Index problem: \(message)"
-        case .unchanged, .deferred:
-            break
-        }
-    }
-
-    private func configureEmbedding(from s: RankerStatus) async {
-        if let controller, s.anySemantic, let pplx = pplxClient(for: s) {
-            await controller.configure(rowScorer: { try await pplx.rowScores($0, scope: $1) }, warmUp: { await pplx.warmUp() },
-                                       unreachable: "pplx service not reachable")
-            intentService = IntentSearchService(ranker: ranker!, embedder: nil, rowScorer: { try await pplx.rowScores($0, scope: $1) })
-            return
-        }
-        guard let controller, let model = s.model, let dims = s.dims, let instruction = s.queryInstruction, s.anySemantic,
-              let url = URL(string: settings.ollamaURL) else {
-            await controller?.configure(embedder: nil, offReason: s.anySemantic ? "Ollama URL is invalid" : "the index has no vectors")
-            intentService = IntentSearchService(ranker: ranker!, embedder: nil)
-            return
-        }
-        let client = OllamaClient(baseURL: url, model: model, instruction: instruction, dims: dims,
-                                  keepAlive: settings.ollamaKeepAlive)
-        await controller.configure(embedder: { try await client.embedQuery($0) }, warmUp: { await client.warmUp() })
-        intentService = IntentSearchService(ranker: ranker!, embedder: { try await client.embedQuery($0) })
-    }
-
-    /// The index was built by the pplx-embed-v2-late profile (`backend: "pplx"` in its manifests): semantic scores come
-    /// from the pplx service, checked against the builds loaded now (`status` comes from the same reload).
-    private func pplxClient(for s: RankerStatus) -> PplxClient? {
-        let dirs = IndexFiles.corpusDirs(vault: vaultURL)
-        let manifest = { (dir: URL) in
-            (try? Data(contentsOf: dir.appendingPathComponent("manifest.json")))
-                .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
-        }
-        let pm = manifest(dirs.papers), nm = manifest(dirs.notes)
-        guard (pm?["backend"] ?? nm?["backend"]) as? String == "pplx" else { return nil }
-        var hashes: [Scope: String] = [:]
-        if s.papers?.semantic == true, let h = pm?["content_hash"] as? String { hashes[.papers] = h }
-        if s.notes?.semantic == true, let h = nm?["content_hash"] as? String { hashes[.notes] = h }
-        let url = URL(string: (pm?["backend_url"] ?? nm?["backend_url"]) as? String ?? "http://127.0.0.1:11435")
-        return url.map { PplxClient(baseURL: $0, expectedHashes: hashes) }
-    }
-
-    private func syncSpotlight() async {
-        guard let donor else { return }
-        debugLog("spotlight sync")
-        let dirs = IndexFiles.corpusDirs(vault: vaultURL)
-        let read = { (dir: URL, name: String) in try? Data(contentsOf: dir.appendingPathComponent(name)) }
-        let settings = SpotlightSettings(papers: self.settings.spotlightPapers, noteTitles: self.settings.spotlightNoteTitles,
-                                         noteText: self.settings.spotlightNoteText)
-        let papersManifest = read(dirs.papers, "manifest.json").flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
-        do {
-            _ = try await donor.sync(
-                papers: read(dirs.papers, "papers.json"), notes: read(dirs.notes, "papers.json"),
-                chunks: self.settings.spotlightNoteText ? read(dirs.notes, "chunks.json") : nil, settings: settings,
-                zoteroStorage: papersManifest?["zotero_storage"] as? String, vault: vaultURL.path)
-        } catch {
-            debugLog("spotlight sync failed, nothing changed: \(error)")   // retried on the next reload
-        }
-    }
+    func reloadIndexes() async { await index?.reloadIndexes() }
 
     // MARK: results
 
@@ -351,7 +241,8 @@ final class AppModel {
     }
 
     func openSpotlightResult(id: String) {
-        guard let ranker, let executor else { return }
+        guard let ranker = index?.ranker else { return }
+        let executor = self.executor
         Task { _ = await SpotlightOpenService(ranker: ranker, executor: executor).open(identifier: id) }
     }
 }
