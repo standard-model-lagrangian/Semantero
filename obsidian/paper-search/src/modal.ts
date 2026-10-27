@@ -8,9 +8,11 @@ import {
 import type PaperSearchPlugin from "./main.ts";
 import { keyword, hybridSearchFromScores, type Hit, type LoadedIndex } from "./engine.ts";
 import { DEFAULT_KEEP_ALIVE } from "./ollama.ts";
-import { isPplx, warmSemantic } from "./semantic.ts";
-import { semanticText, shouldRunSemantic, SemanticCoordinator } from "./rank.ts";
-import { ensureLiteratureNote, formatCitation } from "./litnote.ts";
+import { embedderName, warmSemantic } from "./semantic.ts";
+import { semanticText, shouldRunSemantic } from "./rank.ts";
+import { QueryJobs } from "./queryjobs.ts";
+import { ensureLiteratureNote } from "./litnote.ts";
+import { formatCitation } from "./cite.ts";
 import { hitUrl, selectItemUrl } from "./zotero.ts";
 import { indexedKeys } from "./zoterolive.ts";
 import type { PaperMetadata } from "./bm25.ts";
@@ -25,10 +27,9 @@ export interface SearchModalItem {
 
 export class PaperSearchModal extends SuggestModal<SearchModalItem> {
   plugin: PaperSearchPlugin;
-  coordinator: SemanticCoordinator = new SemanticCoordinator();
+  /** The semantic merge and the Zotero lookup for the query on screen; a new query or closing drops them. */
+  jobs = new QueryJobs();
   currentItems: SearchModalItem[] = [];
-  debounceTimer: any = null;
-  liveTimer: any = null;
   /** Rows from Zotero for the query on screen, kept below the index's own hits. */
   liveItems: SearchModalItem[] = [];
   footerEl: HTMLElement | null = null;
@@ -103,6 +104,11 @@ export class PaperSearchModal extends SuggestModal<SearchModalItem> {
     });
   }
 
+  onClose() {
+    super.onClose();
+    this.jobs.cancel();
+  }
+
   paperOf(item: SearchModalItem): PaperMetadata | null {
     if (item.isLoadingRow) return null;
     if (item.livePaper) return item.livePaper;
@@ -132,6 +138,8 @@ export class PaperSearchModal extends SuggestModal<SearchModalItem> {
     if (key === this.shownKey && ix === this.shownIndex) return this.currentItems;
     this.shownKey = key;
     this.shownIndex = ix;
+    // Every new query supersedes the last one's jobs, even if it is too short to schedule a semantic merge itself.
+    const token = this.jobs.restart();
 
     // 1. Instant keyword search
     const kHits = keyword(ix, query, this.plugin.settings.limit);
@@ -144,52 +152,40 @@ export class PaperSearchModal extends SuggestModal<SearchModalItem> {
     this.currentItems = items;
 
     // 2. Schedule debounced semantic search, and a lookup in Zotero for papers saved since the last build
-    this.scheduleSemanticSearch(query, ix);
-    this.scheduleLive(query, ix);
+    this.scheduleSemanticSearch(query, ix, token);
+    this.scheduleLive(query, ix, token);
 
     return items;
   }
 
-  scheduleLive(query: string, ix: LoadedIndex) {
+  scheduleLive(query: string, ix: LoadedIndex, token: number) {
     this.liveItems = [];
-    if (this.liveTimer) clearTimeout(this.liveTimer);
-    this.liveTimer = setTimeout(async () => {
-      this.liveTimer = null;
+    this.jobs.after(this.plugin.settings.debounceMs, async () => {
       const found = await this.plugin.zotero.search(query, indexedKeys(ix));
-      if (this.shownKey !== semanticText(query) || this.shownIndex !== ix || found.length === 0) return;
+      if (!this.jobs.isCurrent(token) || found.length === 0) return;
       this.liveItems = found.map((livePaper) => ({ livePaper }));
       const items = [...this.currentItems.filter((it) => !it.livePaper), ...this.liveItems];
       const selected = (this as any).chooser?.selectedItem ?? 0;
       this.currentItems = items;
       (this as any).chooser?.setSuggestions(items);
       (this as any).chooser?.setSelectedItem(selected);
-    }, this.plugin.settings.debounceMs);
+    });
   }
 
-  scheduleSemanticSearch(query: string, ix: LoadedIndex) {
-    if (this.debounceTimer) {
-      clearTimeout(this.debounceTimer);
-      this.debounceTimer = null;
-    }
-
+  scheduleSemanticSearch(query: string, ix: LoadedIndex, token: number) {
     if (!shouldRunSemantic(query, this.plugin.settings.minCharsSemantic) || !ix.vectors) {
       return;
     }
-
-    const { seq } = this.coordinator.newRequest();
-
-    this.debounceTimer = setTimeout(async () => {
-      await this.runSemantic(query, ix, seq);
-    }, this.plugin.settings.debounceMs);
+    this.jobs.after(this.plugin.settings.debounceMs, () => this.runSemantic(query, ix, token));
   }
 
-  async runSemantic(query: string, ix: LoadedIndex, seq: number) {
+  async runSemantic(query: string, ix: LoadedIndex, token: number) {
     if (!ix.vectors) return;
 
     try {
       const scores = await this.plugin.semanticScoresFor(ix, semanticText(query), ix.manifest.query_instruction);
 
-      if (!this.coordinator.isCurrent(seq)) {
+      if (!this.jobs.isCurrent(token)) {
         return; // Stale response dropped
       }
 
@@ -218,7 +214,8 @@ export class PaperSearchModal extends SuggestModal<SearchModalItem> {
       (this as any).chooser?.setSuggestions(newItems);
       (this as any).chooser?.setSelectedItem(newSelectedIdx);
     } catch {
-      this.updateFooter(`semantic off: ${isPplx(ix) ? "pplx service" : "Ollama"} not reachable`);
+      if (!this.jobs.isCurrent(token)) return;
+      this.updateFooter(`semantic off: ${embedderName(ix)} not reachable`);
     }
   }
 

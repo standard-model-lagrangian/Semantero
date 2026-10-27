@@ -185,12 +185,12 @@ export function isExcludedContext(
 /**
  * Formats a citation string according to template.
  */
-export function formatCitation(
-  format: string = "[[{{citekey}}]]",
-  citekey: string
-): string {
+/** The citation inserted by ⌘↵ and `@@` unless the settings say otherwise: a wikilink to the literature note. */
+export const DEFAULT_CITATION_FORMAT = "[[{{citekey}}]]";
+
+export function formatCitation(format: string = DEFAULT_CITATION_FORMAT, citekey: string): string {
   if (!format.includes("{{citekey}}") && !format.includes("{{ citekey }}")) {
-    throw new Error('Citation format must contain "{{citekey}}"');
+    throw new Error(`Citation format must contain "{{citekey}}": ${format}`);
   }
   return format.replace(/\{\{\s*citekey\s*\}\}/g, citekey);
 }

@@ -25,6 +25,11 @@ export function isPplx(ix: LoadedIndex): boolean {
   return ix.manifest?.backend === "pplx";
 }
 
+/** The service that embeds queries for this index, as the owner knows it, for "not running" messages. */
+export function embedderName(ix: LoadedIndex | null): string {
+  return ix && isPplx(ix) ? "the pplx service" : "Ollama";
+}
+
 export async function semanticScores(
   requestUrl: RequestUrlFn,
   ix: LoadedIndex,

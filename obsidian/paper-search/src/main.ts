@@ -13,7 +13,8 @@ import {
 import { IndexStore } from "./indexstore.ts";
 import { PaperSearchModal } from "./modal.ts";
 import { checkHotkeyConflict } from "./hotkey.ts";
-import { formatCitation } from "./litnote.ts";
+import { formatCitation, DEFAULT_CITATION_FORMAT } from "./cite.ts";
+import { DEFAULT_RELATED_MIN_SCORE } from "./related.ts";
 import { embedQuery } from "./ollama.ts";
 import { semanticScores } from "./semantic.ts";
 import type { LoadedIndex } from "./engine.ts";
@@ -46,7 +47,7 @@ export const DEFAULT_SETTINGS: PaperSearchSettings = {
   debounceMs: 200,
   minCharsSemantic: 12,
   limit: 12,
-  citationFormat: "[[{{citekey}}]]",
+  citationFormat: DEFAULT_CITATION_FORMAT,
   createLiteratureNotes: true,
   literatureNoteFolder: "",
   literatureNoteTemplate: "Zotero Template.md",
@@ -54,7 +55,7 @@ export const DEFAULT_SETTINGS: PaperSearchSettings = {
   inlineLimit: 8,
   inlineShowSnippet: true,
   relatedLimit: 5,
-  relatedMinScore: 0.5,
+  relatedMinScore: DEFAULT_RELATED_MIN_SCORE,
   relatedAutoRefresh: false,
   relatedInstruction:
     "Given a passage from my research notes, retrieve papers that report the findings or methods it discusses",
@@ -287,7 +288,7 @@ class PaperSearchSettingTab extends PluginSettingTab {
       .setDesc("Format used when inserting citations (must include {{citekey}})")
       .addText((text) =>
         text
-          .setPlaceholder("[[{{citekey}}]]")
+          .setPlaceholder(DEFAULT_CITATION_FORMAT)
           .setValue(this.plugin.settings.citationFormat)
           .onChange(async (value) => {
             const trimmed = value.trim();
@@ -417,7 +418,7 @@ class PaperSearchSettingTab extends PluginSettingTab {
       .addText((text) =>
         text
           .setPlaceholder("0.50")
-          .setValue(String(this.plugin.settings.relatedMinScore ?? 0.5))
+          .setValue(String(this.plugin.settings.relatedMinScore ?? DEFAULT_RELATED_MIN_SCORE))
           .onChange(async (value) => {
             const parsed = parseFloat(value.trim());
             if (!isNaN(parsed) && parsed >= 0) {

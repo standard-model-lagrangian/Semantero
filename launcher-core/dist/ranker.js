@@ -613,10 +613,6 @@
           });
         }
       }
-      if (limit !== void 0 && results.length > limit * 4) {
-        results.sort((a, b) => b.score - a.score || a.paperIndex - b.paperIndex);
-        return results.slice(0, limit);
-      }
       results.sort((a, b) => b.score - a.score || a.paperIndex - b.paperIndex);
       if (limit !== void 0) {
         return results.slice(0, limit);

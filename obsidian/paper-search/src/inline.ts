@@ -1,9 +1,14 @@
 import { keyword, hybridSearchFromScores, rowScores, type LoadedIndex } from "./engine.ts";
-import { findTrigger, isExcludedContext, formatCitation } from "./cite.ts";
+import { findTrigger, isExcludedContext, formatCitation, DEFAULT_CITATION_FORMAT } from "./cite.ts";
 import { semanticText, shouldRunSemantic } from "./rank.ts";
 import { ensureLiteratureNote, type LitNoteSettings, type VaultLike, type MetadataCacheLike } from "./litnote.ts";
 import type { PaperMetadata } from "./bm25.ts";
 import { indexedKeys } from "./zoterolive.ts";
+import { QueryJobs } from "./queryjobs.ts";
+import { embedderName } from "./semantic.ts";
+
+/** How long `@@` waits after the last keystroke before the semantic merge and the Zotero lookup. */
+const INLINE_DEBOUNCE_MS = 250;
 
 export interface SuggestionItem {
   type: "paper" | "hint" | "loading" | "footer";
@@ -97,16 +102,16 @@ export function maintainSelection(
   suggest.suggestions.selectedItem = selectionAfterRefresh(oldHits, suggest.suggestions.selectedItem ?? 0, newHits);
 }
 
+/** content_hash (or build time, or load id) of a loaded index: what the cached and shown lists were ranked on. */
+function indexVersion(index: LoadedIndex | null): unknown {
+  return index?.manifest?.content_hash ?? index?.manifest?.built_at ?? (index as { id?: unknown } | null)?.id;
+}
+
 /**
  * Single adapter to update suggestions while the suggest list is open.
  * Uses internal suggest.suggestions.setSuggestions if available;
  * otherwise caches results in LRU cache so the next call gets them.
  */
-/** content_hash (or build time, or load id) of a loaded index: what the cached and shown lists were ranked on. */
-function indexVersion(index: any): unknown {
-  return index?.manifest?.content_hash ?? index?.manifest?.built_at ?? index?.id;
-}
-
 export function refreshSuggestions(
   suggest: FakeSuggestLike | null | undefined,
   hits: SuggestionItem[],
@@ -175,11 +180,10 @@ export class InlineSuggestController {
   settings: InlineSuggestSettings;
   queryCache = new LRUQueryCache<SuggestionItem[]>(16);
 
-  private debounceTimer: any = null;
-  private liveTimer: any = null;
   /** Rows for papers Zotero has and the index doesn't yet, for the query on screen. */
   private liveItems: SuggestionItem[] = [];
-  private currentSeq = 0;
+  /** The semantic merge and the Zotero lookup for the query on screen; a new query or closing the list drops them. */
+  private jobs: QueryJobs;
   private ollamaDownNotified = false;
   /** content_hash (or load id) of the index the query cache was filled from. */
   private cacheVersion: unknown = undefined;
@@ -187,8 +191,6 @@ export class InlineSuggestController {
   private shown: { key: string; version: unknown; items: SuggestionItem[] } | null = null;
   private sessionNotices: Set<string>;
   showNotice?: (msg: string) => void;
-  setTimeoutFn: (fn: () => void, ms: number) => any;
-  clearTimeoutFn: (id: any) => void;
 
   constructor(options: {
     indexStore: IndexStoreLike;
@@ -211,8 +213,7 @@ export class InlineSuggestController {
     this.metadataCache = options.metadataCache;
     this.settings = options.settings || {};
     this.showNotice = options.showNotice;
-    this.setTimeoutFn = options.setTimeoutFn || ((fn, ms) => setTimeout(fn, ms));
-    this.clearTimeoutFn = options.clearTimeoutFn || ((id) => clearTimeout(id));
+    this.jobs = new QueryJobs(options.setTimeoutFn, options.clearTimeoutFn);
   }
 
   onTrigger(
@@ -238,17 +239,14 @@ export class InlineSuggestController {
 
   /** Drop any pending or in-flight semantic request (list closed, or the query changed). */
   cancel(): void {
+    this.restart();
+  }
+
+  /** Forget the list on screen and supersede its jobs; returns the token for the next query's. */
+  private restart(): number {
     this.shown = null;
-    this.currentSeq++;
     this.liveItems = [];
-    if (this.debounceTimer) {
-      this.clearTimeoutFn(this.debounceTimer);
-      this.debounceTimer = null;
-    }
-    if (this.liveTimer) {
-      this.clearTimeoutFn(this.liveTimer);
-      this.liveTimer = null;
-    }
+    return this.jobs.restart();
   }
 
   async getSuggestions(
@@ -261,7 +259,7 @@ export class InlineSuggestController {
     if (shown && shown.key === semanticText(query) && shown.version === indexVersion(this.indexStore.getIndex())) return shown.items;
 
     // Every new query supersedes earlier requests, whether or not it runs semantic search itself.
-    this.cancel();
+    const token = this.restart();
 
     // Pick up a rebuilt index (e.g. a paper deleted in Zotero) without waiting for the modal.
     // Runs in the background so typing never waits on disk; the query cache drops on swap.
@@ -302,23 +300,21 @@ export class InlineSuggestController {
     }));
 
     if (shouldRunSemantic(query, this.settings.minCharsSemantic ?? 12) && this.embedder) {
-      const seq = this.currentSeq;
-      this.debounceTimer = this.setTimeoutFn(async () => {
-        this.debounceTimer = null;
+      this.jobs.after(INLINE_DEBOUNCE_MS, async () => {
         try {
           let scores: ArrayLike<number> | null;
           if (this.embedder!.rowScores) {
             scores = await this.embedder!.rowScores(semanticText(query), index);
-            if (seq !== this.currentSeq) return; // Outdated response (I5): drop it
+            if (!this.jobs.isCurrent(token)) return; // Outdated response (I5): drop it
           } else {
             const qVec = await this.embedder!.embedQuery(semanticText(query));
-            if (seq !== this.currentSeq) {
+            if (!this.jobs.isCurrent(token)) {
               // Outdated response (I5): drop it
               return;
             }
 
             if (!qVec) {
-              this.handleOllamaDown(initialItems, suggestInstance);
+              this.handleEmbedderDown(initialItems, suggestInstance);
               return;
             }
             scores = rowScores(index, qVec);
@@ -336,24 +332,22 @@ export class InlineSuggestController {
           if (this.shown) this.shown.items = mergedItems;
           refreshSuggestions(suggestInstance, mergedItems, query, this.queryCache);
         } catch {
-          if (seq !== this.currentSeq) return; // failure of an outdated request
-          this.handleOllamaDown(initialItems, suggestInstance);
+          if (!this.jobs.isCurrent(token)) return; // failure of an outdated request
+          this.handleEmbedderDown(initialItems, suggestInstance);
         }
-      }, 250);
+      });
     }
 
     if (this.zotero) {
-      const seq = this.currentSeq;
       const zotero = this.zotero;
-      this.liveTimer = this.setTimeoutFn(async () => {
-        this.liveTimer = null;
+      this.jobs.after(INLINE_DEBOUNCE_MS, async () => {
         const found = await zotero.search(query, indexedKeys(index));
-        if (seq !== this.currentSeq || found.length === 0) return;
+        if (!this.jobs.isCurrent(token) || found.length === 0) return;
         this.liveItems = found.map((paper) => ({ type: "paper", paper, source: "zotero" }));
         const items = withLive(this.shown?.items ?? initialItems, this.liveItems);
         if (this.shown) this.shown.items = items;
         refreshSuggestions(suggestInstance, items, query, this.queryCache);
-      }, 250);
+      });
     }
 
     this.shown = { key: semanticText(query), version, items: initialItems };
@@ -361,10 +355,10 @@ export class InlineSuggestController {
   }
 
   /** Keyword-only results with one footer row. Never cached, so the next query retries semantic. */
-  private handleOllamaDown(items: SuggestionItem[], suggestInstance?: FakeSuggestLike): void {
+  private handleEmbedderDown(items: SuggestionItem[], suggestInstance?: FakeSuggestLike): void {
     if (!this.ollamaDownNotified) {
       this.ollamaDownNotified = true;
-      this.showNotice?.("Paper search: Ollama is not running. Using keyword-only search.");
+      this.showNotice?.(`Paper search: ${embedderName(this.indexStore.getIndex())} is not running. Using keyword-only search.`);
     }
     const withSemanticOff: SuggestionItem[] = withLive(items, this.liveItems).map((it) => ({ ...it, semanticOff: true }));
     withSemanticOff.push({ type: "footer", message: "Semantic search unavailable" });
@@ -394,7 +388,7 @@ export class InlineSuggestController {
     }
 
     const citation = formatCitation(
-      this.settings.citationFormat || "[[{{citekey}}]]",
+      this.settings.citationFormat || DEFAULT_CITATION_FORMAT,
       item.paper.citekey
     );
 

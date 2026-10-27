@@ -62,13 +62,6 @@ export function normalizeFolder(folder: string): string {
   return parts.filter((p) => p && p !== ".").join("/");
 }
 
-export function formatCitation(format: string = "[[{{citekey}}]]", citekey: string): string {
-  if (!format.includes("{{citekey}}") && !format.includes("{{ citekey }}")) {
-    throw new Error(`Citation format must contain {{citekey}}: ${format}`);
-  }
-  return format.replace(/\{\{\s*citekey\s*\}\}/g, citekey);
-}
-
 export function findLiteratureNote(
   vault: VaultLike,
   metadataCache: MetadataCacheLike | null | undefined,
@@ -319,7 +312,7 @@ export async function ensureLiteratureNote(
   // 6. Template resolution and rendering
   const content = await renderLiteratureNote(vault, paper, settings, options);
 
-  // 8. Create file
+  // 7. Create file
   const filePath = folder ? `${folder}/${paper.citekey}.md` : `${paper.citekey}.md`;
   try {
     const file = await vault.create(filePath, content);

@@ -446,14 +446,6 @@ export class BM25Index {
       }
     }
 
-    // Rank results
-    // Partial top-k: if limit is provided, keep limit * 4 candidates before final slice
-    if (limit !== undefined && results.length > limit * 4) {
-      // Sort and take top limit * 4
-      results.sort((a, b) => b.score - a.score || a.paperIndex - b.paperIndex);
-      return results.slice(0, limit);
-    }
-
     results.sort((a, b) => b.score - a.score || a.paperIndex - b.paperIndex);
     if (limit !== undefined) {
       return results.slice(0, limit);

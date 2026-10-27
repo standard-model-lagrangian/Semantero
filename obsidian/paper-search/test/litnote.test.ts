@@ -5,11 +5,11 @@ import {
   findLiteratureNote,
   renderTemplate,
   ensureLiteratureNote,
-  formatCitation,
   isSafeCitekey,
   normalizeFolder,
   BUILTIN_TEMPLATE,
 } from "../src/litnote.ts";
+import { formatCitation } from "../src/cite.ts";
 import { FakeVault, FakeMetadataCache, FakeEditor } from "./fakes.ts";
 import type { PaperMetadata } from "../src/bm25.ts";
 

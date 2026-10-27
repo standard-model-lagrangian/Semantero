@@ -1,10 +1,14 @@
 import { extractPassage } from "./passage.ts";
-import { citedKeys, formatCitation } from "./cite.ts";
+import { citedKeys, formatCitation, DEFAULT_CITATION_FORMAT } from "./cite.ts";
 import { rowScores, semanticFromRowScores, type Hit, type LoadedIndex } from "./engine.ts";
 import { ensureLiteratureNote, type LitNoteSettings, type VaultLike, type MetadataCacheLike } from "./litnote.ts";
 import type { PaperMetadata } from "./bm25.ts";
 import { editorSnapshot, type ActiveEditorTracker } from "./editortracker.ts";
 import { hitUrl } from "./zotero.ts";
+import { embedderName } from "./semantic.ts";
+
+/** Hide related papers scoring below this (calibrated with scripts/eval-related.ts; a setting overrides it). */
+export const DEFAULT_RELATED_MIN_SCORE = 0.5;
 
 export interface RelatedSettings extends LitNoteSettings {
   relatedLimit?: number;
@@ -226,14 +230,14 @@ export class RelatedPapersController {
         }
       } else {
         if (!qVec) {
-          this.handleOllamaDown();
+          this.handleEmbedderDown();
           return;
         }
         scores = rowScores(ix, qVec);
       }
 
       // Semantic search candidates
-      const minScore = this.settings.relatedMinScore ?? 0.25;
+      const minScore = this.settings.relatedMinScore ?? DEFAULT_RELATED_MIN_SCORE;
       const candidates = scores ? semanticFromRowScores(ix, scores, passage, { limit: 50, minScore }) : [];
 
       this.citedKeysSet = new Set([...citedKeys(noteText)].map((k) => k.toLowerCase()));
@@ -244,7 +248,7 @@ export class RelatedPapersController {
       this.settleResultsState();
     } catch {
       if (seq === this.currentSeq && this.activeFilePath === pathAtStart) {
-        if (this.indexStore.isReady()) this.handleOllamaDown();
+        if (this.indexStore.isReady()) this.handleEmbedderDown();
         else this.setState("index-loading");
       }
     }
@@ -256,10 +260,10 @@ export class RelatedPapersController {
     this.setState(items.length > 0 ? "results" : "nothing-close");
   }
 
-  private handleOllamaDown(): void {
+  private handleEmbedderDown(): void {
     if (!this.ollamaDownNotified) {
       this.ollamaDownNotified = true;
-      this.showNotice?.("Paper search: Ollama is not running for related papers.");
+      this.showNotice?.(`Paper search: ${embedderName(this.indexStore.getIndex())} is not running for related papers.`);
     }
     this.setState("needs-ollama");
   }
@@ -319,7 +323,7 @@ export class RelatedPapersController {
     } | null,
     clipboard?: ClipboardLike | null
   ): Promise<void> {
-    const format = this.settings.citationFormat || "[[{{citekey}}]]";
+    const format = this.settings.citationFormat || DEFAULT_CITATION_FORMAT;
     const citation = formatCitation(format, paper.citekey);
 
     if (activeEditor) {
@@ -462,7 +466,7 @@ export function createRelatedPapersViewClass(
       if (this.controller.state === "needs-ollama") {
         body.createEl?.("div", {
           cls: "semantero-related-warning",
-          text: "Related papers needs Ollama running",
+          text: `Related papers needs ${embedderName(this.controller.indexStore.getIndex())} running`,
         });
         return;
       }

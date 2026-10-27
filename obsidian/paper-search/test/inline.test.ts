@@ -40,6 +40,7 @@ class FakeIndexStore {
     createDummyPaper("bauer2022", "Synthetic hydrogels for organoids"),
   ];
   bm25 = new BM25Index(this.papers, []);
+  manifest: { backend?: string } = {};
 
   isReady(): boolean {
     return this.ready;
@@ -61,6 +62,7 @@ class FakeIndexStore {
       rowToPaper: new Int32Array([0, 1, 2]),
       rowIsAbstract: new Uint8Array([1, 1, 1]),
       paperChunkRows: [new Int32Array(0), new Int32Array(0), new Int32Array(0)],
+      manifest: this.manifest,
     };
   }
 
@@ -411,6 +413,28 @@ test("I7 Ollama down -> keyword results only, at most one notice per session, se
   // Results should have semanticOff = true
   assert.ok(latestItems.length > 0);
   assert.strictEqual(latestItems[0].semanticOff, true);
+});
+
+test("I7b with the pplx backend down, the notice names the pplx service, not Ollama", async () => {
+  const indexStore = new FakeIndexStore();
+  indexStore.manifest = { backend: "pplx" };
+  const clock = new FakeClock();
+  const notices: string[] = [];
+  const controller = new InlineSuggestController({
+    indexStore,
+    embedder: { async embedQuery() { throw new Error("Connection refused"); } },
+    vault: new FakeVault(),
+    showNotice: (msg) => notices.push(msg),
+    setTimeoutFn: (fn, ms) => clock.setTimeout(fn, ms),
+    clearTimeoutFn: (id) => clock.clearTimeout(id),
+  });
+  await controller.getSuggestions("organoid stiffness", { suggestions: { setSuggestions() {}, values: [] } });
+  clock.advance(250);
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.strictEqual(notices.length, 1);
+  assert.ok(notices[0].includes("pplx service"), notices[0]);
+  assert.ok(!notices[0].includes("Ollama"), notices[0]);
 });
 
 test("I8 index not loaded yet -> returns loading row; choosing it does nothing", async () => {

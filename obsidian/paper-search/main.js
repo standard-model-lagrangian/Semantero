@@ -625,10 +625,6 @@ var BM25Index = class {
         });
       }
     }
-    if (limit !== void 0 && results.length > limit * 4) {
-      results.sort((a, b) => b.score - a.score || a.paperIndex - b.paperIndex);
-      return results.slice(0, limit);
-    }
     results.sort((a, b) => b.score - a.score || a.paperIndex - b.paperIndex);
     if (limit !== void 0) {
       return results.slice(0, limit);
@@ -1242,6 +1238,9 @@ async function warmUp(requestUrl3, options) {
 function isPplx(ix) {
   return ix.manifest?.backend === "pplx";
 }
+function embedderName(ix) {
+  return ix && isPplx(ix) ? "the pplx service" : "Ollama";
+}
 async function semanticScores(requestUrl3, ix, text, opts) {
   if (!ix.vectors || ix.totalRows === 0) return { scores: null };
   if (isPplx(ix)) {
@@ -1307,22 +1306,38 @@ function shouldRunSemantic(query, minChars = 12) {
 function semanticText(query) {
   return query.trim().replace(/\s+/g, " ");
 }
-var SemanticCoordinator = class {
-  currentSeq = 0;
-  newRequest() {
-    this.currentSeq += 1;
-    return { seq: this.currentSeq };
+
+// src/queryjobs.ts
+var QueryJobs = class {
+  generation = 0;
+  timers = /* @__PURE__ */ new Set();
+  setTimeoutFn;
+  clearTimeoutFn;
+  constructor(setTimeoutFn = (fn, ms) => setTimeout(fn, ms), clearTimeoutFn = (id) => clearTimeout(id)) {
+    this.setTimeoutFn = setTimeoutFn;
+    this.clearTimeoutFn = clearTimeoutFn;
   }
-  isCurrent(seq) {
-    return seq === this.currentSeq;
+  /** Cancel the previous query's jobs; returns the token for this query's. */
+  restart() {
+    this.cancel();
+    return this.generation;
   }
-  async runSemantic(query, embedFn) {
-    try {
-      const scores = await embedFn(query);
-      return { semanticAvailable: true, scores };
-    } catch {
-      return { semanticAvailable: false, scores: null };
-    }
+  cancel() {
+    this.generation++;
+    for (const id of this.timers) this.clearTimeoutFn(id);
+    this.timers.clear();
+  }
+  /** False once the query that `token` belongs to has been superseded or the box closed: drop the result. */
+  isCurrent(token) {
+    return token === this.generation;
+  }
+  /** Run `job` after `ms` (a debounce), unless the query changes first. */
+  after(ms, job) {
+    const id = this.setTimeoutFn(() => {
+      this.timers.delete(id);
+      job();
+    }, ms);
+    this.timers.add(id);
   }
 };
 
@@ -1380,12 +1395,6 @@ function normalizeFolder(folder) {
     }
   }
   return parts.filter((p) => p && p !== ".").join("/");
-}
-function formatCitation(format = "[[{{citekey}}]]", citekey) {
-  if (!format.includes("{{citekey}}") && !format.includes("{{ citekey }}")) {
-    throw new Error(`Citation format must contain {{citekey}}: ${format}`);
-  }
-  return format.replace(/\{\{\s*citekey\s*\}\}/g, citekey);
 }
 function findLiteratureNote(vault, metadataCache, citekey) {
   if (!citekey) return null;
@@ -1560,6 +1569,147 @@ async function ensureLiteratureNote(vault, metadataCache, paper, settings, optio
   }
 }
 
+// src/cite.ts
+function findTrigger(lineText, ch, trigger = "@@") {
+  if (ch < trigger.length) return null;
+  const windowStart = Math.max(0, ch - 160);
+  const windowText = lineText.slice(windowStart, ch);
+  const relIdx = windowText.lastIndexOf(trigger);
+  if (relIdx === -1) return null;
+  const triggerStart = windowStart + relIdx;
+  const triggerEnd = triggerStart + trigger.length;
+  if (triggerStart > 0) {
+    const prevChar = lineText[triggerStart - 1];
+    const isWhitespace = /\s/.test(prevChar);
+    const isOpenPunctuation = prevChar === "(" || prevChar === "[" || prevChar === "{" || prevChar === '"' || prevChar === "'";
+    if (!isWhitespace && !isOpenPunctuation) {
+      return null;
+    }
+  }
+  const query = lineText.slice(triggerEnd, ch);
+  if (query.length > 120) return null;
+  if (query.includes("]]") || query.includes(trigger) || query.includes("	")) {
+    return null;
+  }
+  if (query.startsWith("  ")) {
+    return null;
+  }
+  return {
+    start: triggerStart,
+    end: ch,
+    query
+  };
+}
+function isExcludedContext(sections, line, lineText, ch) {
+  if (sections && sections.length > 0) {
+    for (const sec of sections) {
+      if (sec.position && line >= sec.position.start.line && line <= sec.position.end.line) {
+        const type = (sec.type || "").toLowerCase();
+        if (type === "code" || type === "math" || type === "frontmatter" || type === "yaml") {
+          return true;
+        }
+      }
+    }
+  }
+  const textBeforeCursor = lineText.slice(0, ch);
+  if (!/[`$]|\[\[/.test(textBeforeCursor)) {
+    return false;
+  }
+  let codeRun = 0;
+  let inSingleMath = false;
+  let inDoubleMath = false;
+  let openLinks = 0;
+  let i = 0;
+  while (i < textBeforeCursor.length) {
+    const c = textBeforeCursor[i];
+    if (c === "`" && !inSingleMath && !inDoubleMath) {
+      let run = 1;
+      while (textBeforeCursor[i + run] === "`") run++;
+      if (codeRun === 0) codeRun = run;
+      else if (run === codeRun) codeRun = 0;
+      i += run;
+      continue;
+    }
+    if (codeRun > 0) {
+      i++;
+      continue;
+    }
+    if (c === "\\") {
+      i += 2;
+      continue;
+    }
+    if (c === "$") {
+      if (textBeforeCursor[i + 1] === "$" && !inSingleMath) {
+        inDoubleMath = !inDoubleMath;
+        i += 2;
+        continue;
+      }
+      if (inSingleMath) {
+        inSingleMath = false;
+      } else if (!inDoubleMath) {
+        const next = lineText[i + 1];
+        if (next !== void 0 && !/[\s\d]/.test(next)) inSingleMath = true;
+      }
+      i++;
+      continue;
+    }
+    if (!inSingleMath && !inDoubleMath) {
+      if (c === "[" && textBeforeCursor[i + 1] === "[") {
+        openLinks++;
+        i += 2;
+        continue;
+      }
+      if (c === "]" && textBeforeCursor[i + 1] === "]" && openLinks > 0) {
+        openLinks--;
+        i += 2;
+        continue;
+      }
+    }
+    i++;
+  }
+  return codeRun > 0 || inSingleMath || inDoubleMath || openLinks > 0;
+}
+var DEFAULT_CITATION_FORMAT = "[[{{citekey}}]]";
+function formatCitation(format = DEFAULT_CITATION_FORMAT, citekey) {
+  if (!format.includes("{{citekey}}") && !format.includes("{{ citekey }}")) {
+    throw new Error(`Citation format must contain "{{citekey}}": ${format}`);
+  }
+  return format.replace(/\{\{\s*citekey\s*\}\}/g, citekey);
+}
+function citedKeys(noteText) {
+  const result = /* @__PURE__ */ new Set();
+  if (!noteText) return result;
+  let stripped = noteText.replace(/```[\s\S]*?```/g, " ");
+  stripped = stripped.replace(/`[^`\n]*`/g, " ");
+  const fmMatch = stripped.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (fmMatch) {
+    const fm = fmMatch[1];
+    const citekeyMatch = fm.match(/^citekey:\s*["']?([^\s"'\r\n]+)["']?/m);
+    if (citekeyMatch && citekeyMatch[1]) {
+      result.add(citekeyMatch[1].trim());
+    }
+  }
+  const wikiRegex = /\[\[([a-zA-Z0-9_.-]+)(?:\|[^\]\n]*)?\]\]/g;
+  let match;
+  while ((match = wikiRegex.exec(stripped)) !== null) {
+    if (match[1]) {
+      result.add(match[1].trim());
+    }
+  }
+  const bracketRegex = /\[([^\]\n]*@[a-zA-Z0-9_.-]+[^\]\n]*)\]/g;
+  while ((match = bracketRegex.exec(stripped)) !== null) {
+    const bracketContent = match[1];
+    const keyRegex = /@([a-zA-Z0-9_.-]+)/g;
+    let keyMatch;
+    while ((keyMatch = keyRegex.exec(bracketContent)) !== null) {
+      if (keyMatch[1]) {
+        result.add(keyMatch[1].trim());
+      }
+    }
+  }
+  return result;
+}
+
 // src/zoterolive.ts
 var DEFAULT_ZOTERO_API = "http://localhost:23119/api";
 var MIN_LIVE_CHARS = 3;
@@ -1638,10 +1788,9 @@ function indexedKeys(index) {
 // src/modal.ts
 var PaperSearchModal = class extends import_obsidian.SuggestModal {
   plugin;
-  coordinator = new SemanticCoordinator();
+  /** The semantic merge and the Zotero lookup for the query on screen; a new query or closing drops them. */
+  jobs = new QueryJobs();
   currentItems = [];
-  debounceTimer = null;
-  liveTimer = null;
   /** Rows from Zotero for the query on screen, kept below the index's own hits. */
   liveItems = [];
   footerEl = null;
@@ -1704,6 +1853,10 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
       return false;
     });
   }
+  onClose() {
+    super.onClose();
+    this.jobs.cancel();
+  }
   paperOf(item) {
     if (item.isLoadingRow) return null;
     if (item.livePaper) return item.livePaper;
@@ -1727,6 +1880,7 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
     if (key === this.shownKey && ix === this.shownIndex) return this.currentItems;
     this.shownKey = key;
     this.shownIndex = ix;
+    const token = this.jobs.restart();
     const kHits = keyword(ix, query, this.plugin.settings.limit);
     this.lastKeywordHits = kHits;
     const items = kHits.map((h) => ({
@@ -1734,43 +1888,34 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
       paperIndex: h.paper
     }));
     this.currentItems = items;
-    this.scheduleSemanticSearch(query, ix);
-    this.scheduleLive(query, ix);
+    this.scheduleSemanticSearch(query, ix, token);
+    this.scheduleLive(query, ix, token);
     return items;
   }
-  scheduleLive(query, ix) {
+  scheduleLive(query, ix, token) {
     this.liveItems = [];
-    if (this.liveTimer) clearTimeout(this.liveTimer);
-    this.liveTimer = setTimeout(async () => {
-      this.liveTimer = null;
+    this.jobs.after(this.plugin.settings.debounceMs, async () => {
       const found = await this.plugin.zotero.search(query, indexedKeys(ix));
-      if (this.shownKey !== semanticText(query) || this.shownIndex !== ix || found.length === 0) return;
+      if (!this.jobs.isCurrent(token) || found.length === 0) return;
       this.liveItems = found.map((livePaper) => ({ livePaper }));
       const items = [...this.currentItems.filter((it) => !it.livePaper), ...this.liveItems];
       const selected = this.chooser?.selectedItem ?? 0;
       this.currentItems = items;
       this.chooser?.setSuggestions(items);
       this.chooser?.setSelectedItem(selected);
-    }, this.plugin.settings.debounceMs);
+    });
   }
-  scheduleSemanticSearch(query, ix) {
-    if (this.debounceTimer) {
-      clearTimeout(this.debounceTimer);
-      this.debounceTimer = null;
-    }
+  scheduleSemanticSearch(query, ix, token) {
     if (!shouldRunSemantic(query, this.plugin.settings.minCharsSemantic) || !ix.vectors) {
       return;
     }
-    const { seq } = this.coordinator.newRequest();
-    this.debounceTimer = setTimeout(async () => {
-      await this.runSemantic(query, ix, seq);
-    }, this.plugin.settings.debounceMs);
+    this.jobs.after(this.plugin.settings.debounceMs, () => this.runSemantic(query, ix, token));
   }
-  async runSemantic(query, ix, seq) {
+  async runSemantic(query, ix, token) {
     if (!ix.vectors) return;
     try {
       const scores = await this.plugin.semanticScoresFor(ix, semanticText(query), ix.manifest.query_instruction);
-      if (!this.coordinator.isCurrent(seq)) {
+      if (!this.jobs.isCurrent(token)) {
         return;
       }
       this.updateFooter("");
@@ -1790,7 +1935,8 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
       this.chooser?.setSuggestions(newItems);
       this.chooser?.setSelectedItem(newSelectedIdx);
     } catch {
-      this.updateFooter(`semantic off: ${isPplx(ix) ? "pplx service" : "Ollama"} not reachable`);
+      if (!this.jobs.isCurrent(token)) return;
+      this.updateFooter(`semantic off: ${embedderName(ix)} not reachable`);
     }
   }
   renderSuggestion(item, el) {
@@ -1893,476 +2039,6 @@ function checkHotkeyConflict(customHotkeys, targetModifiers = ["Mod", "Shift"], 
     }
   }
   return null;
-}
-
-// src/cite.ts
-function findTrigger(lineText, ch, trigger = "@@") {
-  if (ch < trigger.length) return null;
-  const windowStart = Math.max(0, ch - 160);
-  const windowText = lineText.slice(windowStart, ch);
-  const relIdx = windowText.lastIndexOf(trigger);
-  if (relIdx === -1) return null;
-  const triggerStart = windowStart + relIdx;
-  const triggerEnd = triggerStart + trigger.length;
-  if (triggerStart > 0) {
-    const prevChar = lineText[triggerStart - 1];
-    const isWhitespace = /\s/.test(prevChar);
-    const isOpenPunctuation = prevChar === "(" || prevChar === "[" || prevChar === "{" || prevChar === '"' || prevChar === "'";
-    if (!isWhitespace && !isOpenPunctuation) {
-      return null;
-    }
-  }
-  const query = lineText.slice(triggerEnd, ch);
-  if (query.length > 120) return null;
-  if (query.includes("]]") || query.includes(trigger) || query.includes("	")) {
-    return null;
-  }
-  if (query.startsWith("  ")) {
-    return null;
-  }
-  return {
-    start: triggerStart,
-    end: ch,
-    query
-  };
-}
-function isExcludedContext(sections, line, lineText, ch) {
-  if (sections && sections.length > 0) {
-    for (const sec of sections) {
-      if (sec.position && line >= sec.position.start.line && line <= sec.position.end.line) {
-        const type = (sec.type || "").toLowerCase();
-        if (type === "code" || type === "math" || type === "frontmatter" || type === "yaml") {
-          return true;
-        }
-      }
-    }
-  }
-  const textBeforeCursor = lineText.slice(0, ch);
-  if (!/[`$]|\[\[/.test(textBeforeCursor)) {
-    return false;
-  }
-  let codeRun = 0;
-  let inSingleMath = false;
-  let inDoubleMath = false;
-  let openLinks = 0;
-  let i = 0;
-  while (i < textBeforeCursor.length) {
-    const c = textBeforeCursor[i];
-    if (c === "`" && !inSingleMath && !inDoubleMath) {
-      let run = 1;
-      while (textBeforeCursor[i + run] === "`") run++;
-      if (codeRun === 0) codeRun = run;
-      else if (run === codeRun) codeRun = 0;
-      i += run;
-      continue;
-    }
-    if (codeRun > 0) {
-      i++;
-      continue;
-    }
-    if (c === "\\") {
-      i += 2;
-      continue;
-    }
-    if (c === "$") {
-      if (textBeforeCursor[i + 1] === "$" && !inSingleMath) {
-        inDoubleMath = !inDoubleMath;
-        i += 2;
-        continue;
-      }
-      if (inSingleMath) {
-        inSingleMath = false;
-      } else if (!inDoubleMath) {
-        const next = lineText[i + 1];
-        if (next !== void 0 && !/[\s\d]/.test(next)) inSingleMath = true;
-      }
-      i++;
-      continue;
-    }
-    if (!inSingleMath && !inDoubleMath) {
-      if (c === "[" && textBeforeCursor[i + 1] === "[") {
-        openLinks++;
-        i += 2;
-        continue;
-      }
-      if (c === "]" && textBeforeCursor[i + 1] === "]" && openLinks > 0) {
-        openLinks--;
-        i += 2;
-        continue;
-      }
-    }
-    i++;
-  }
-  return codeRun > 0 || inSingleMath || inDoubleMath || openLinks > 0;
-}
-function formatCitation2(format = "[[{{citekey}}]]", citekey) {
-  if (!format.includes("{{citekey}}") && !format.includes("{{ citekey }}")) {
-    throw new Error('Citation format must contain "{{citekey}}"');
-  }
-  return format.replace(/\{\{\s*citekey\s*\}\}/g, citekey);
-}
-function citedKeys(noteText) {
-  const result = /* @__PURE__ */ new Set();
-  if (!noteText) return result;
-  let stripped = noteText.replace(/```[\s\S]*?```/g, " ");
-  stripped = stripped.replace(/`[^`\n]*`/g, " ");
-  const fmMatch = stripped.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-  if (fmMatch) {
-    const fm = fmMatch[1];
-    const citekeyMatch = fm.match(/^citekey:\s*["']?([^\s"'\r\n]+)["']?/m);
-    if (citekeyMatch && citekeyMatch[1]) {
-      result.add(citekeyMatch[1].trim());
-    }
-  }
-  const wikiRegex = /\[\[([a-zA-Z0-9_.-]+)(?:\|[^\]\n]*)?\]\]/g;
-  let match;
-  while ((match = wikiRegex.exec(stripped)) !== null) {
-    if (match[1]) {
-      result.add(match[1].trim());
-    }
-  }
-  const bracketRegex = /\[([^\]\n]*@[a-zA-Z0-9_.-]+[^\]\n]*)\]/g;
-  while ((match = bracketRegex.exec(stripped)) !== null) {
-    const bracketContent = match[1];
-    const keyRegex = /@([a-zA-Z0-9_.-]+)/g;
-    let keyMatch;
-    while ((keyMatch = keyRegex.exec(bracketContent)) !== null) {
-      if (keyMatch[1]) {
-        result.add(keyMatch[1].trim());
-      }
-    }
-  }
-  return result;
-}
-
-// src/inline.ts
-var LRUQueryCache = class {
-  map = /* @__PURE__ */ new Map();
-  maxEntries;
-  constructor(maxEntries = 16) {
-    this.maxEntries = maxEntries;
-  }
-  get(key) {
-    if (!this.map.has(key)) return void 0;
-    const val = this.map.get(key);
-    this.map.delete(key);
-    this.map.set(key, val);
-    return val;
-  }
-  set(key, val) {
-    if (this.map.has(key)) {
-      this.map.delete(key);
-    } else if (this.map.size >= this.maxEntries) {
-      const oldestKey = this.map.keys().next().value;
-      if (oldestKey !== void 0) {
-        this.map.delete(oldestKey);
-      }
-    }
-    this.map.set(key, val);
-  }
-  has(key) {
-    return this.map.has(key);
-  }
-  clear() {
-    this.map.clear();
-  }
-  size() {
-    return this.map.size;
-  }
-};
-function selectionAfterRefresh(oldHits, oldSelected, newHits) {
-  const oldPaper = oldHits[oldSelected]?.paper;
-  if (!oldPaper) return 0;
-  const idx = newHits.findIndex((h) => h.paper && h.paper.citekey === oldPaper.citekey);
-  return idx === -1 ? 0 : idx;
-}
-function indexVersion(index) {
-  return index?.manifest?.content_hash ?? index?.manifest?.built_at ?? index?.id;
-}
-function refreshSuggestions(suggest, hits, query, cache) {
-  if (!suggest) return;
-  const s = suggest.suggestions;
-  if (s && typeof s.setSuggestions === "function") {
-    const newIdx = selectionAfterRefresh(s.values || [], s.selectedItem ?? 0, hits);
-    s.setSuggestions(hits);
-    if (s.values !== hits) s.values = hits;
-    if (typeof s.setSelectedItem === "function") s.setSelectedItem(newIdx);
-    else s.selectedItem = newIdx;
-  } else if (query && cache) {
-    cache.set(query, hits);
-  }
-}
-function withLive(items, live) {
-  const rest = items.filter((it) => it.source !== "zotero");
-  const have = new Set(rest.map((it) => it.paper?.key).filter(Boolean));
-  const add = live.filter((it) => !have.has(it.paper?.key));
-  if (add.length === 0) return rest.length === items.length ? items : rest;
-  const footer = rest.findIndex((it) => it.type === "footer");
-  return footer === -1 ? [...rest, ...add] : [...rest.slice(0, footer), ...add, ...rest.slice(footer)];
-}
-var InlineSuggestController = class {
-  indexStore;
-  embedder;
-  zotero;
-  vault;
-  metadataCache;
-  settings;
-  queryCache = new LRUQueryCache(16);
-  debounceTimer = null;
-  liveTimer = null;
-  /** Rows for papers Zotero has and the index doesn't yet, for the query on screen. */
-  liveItems = [];
-  currentSeq = 0;
-  ollamaDownNotified = false;
-  /** content_hash (or load id) of the index the query cache was filled from. */
-  cacheVersion = void 0;
-  /** The list on screen, its query (as `semanticText`) and the version of the index it came from. */
-  shown = null;
-  sessionNotices;
-  showNotice;
-  setTimeoutFn;
-  clearTimeoutFn;
-  constructor(options) {
-    this.sessionNotices = options.sessionNotices ?? /* @__PURE__ */ new Set();
-    this.indexStore = options.indexStore;
-    this.embedder = options.embedder;
-    this.zotero = options.zotero;
-    this.vault = options.vault;
-    this.metadataCache = options.metadataCache;
-    this.settings = options.settings || {};
-    this.showNotice = options.showNotice;
-    this.setTimeoutFn = options.setTimeoutFn || ((fn, ms) => setTimeout(fn, ms));
-    this.clearTimeoutFn = options.clearTimeoutFn || ((id) => clearTimeout(id));
-  }
-  onTrigger(cursor, lineText, sections) {
-    const trigger = this.settings.inlineTrigger || "@@";
-    const res = findTrigger(lineText, cursor.ch, trigger);
-    if (!res) return null;
-    if (isExcludedContext(sections, cursor.line, lineText, cursor.ch)) {
-      return null;
-    }
-    return {
-      start: { line: cursor.line, ch: res.start },
-      end: { line: cursor.line, ch: res.end },
-      query: res.query
-    };
-  }
-  /** Drop any pending or in-flight semantic request (list closed, or the query changed). */
-  cancel() {
-    this.shown = null;
-    this.currentSeq++;
-    this.liveItems = [];
-    if (this.debounceTimer) {
-      this.clearTimeoutFn(this.debounceTimer);
-      this.debounceTimer = null;
-    }
-    if (this.liveTimer) {
-      this.clearTimeoutFn(this.liveTimer);
-      this.liveTimer = null;
-    }
-  }
-  async getSuggestions(query, suggestInstance) {
-    const shown = this.shown;
-    if (shown && shown.key === semanticText(query) && shown.version === indexVersion(this.indexStore.getIndex())) return shown.items;
-    this.cancel();
-    this.indexStore.ensureFresh?.().catch(() => {
-    });
-    if (!this.indexStore.isReady()) {
-      return [{ type: "loading", message: "Loading paper index\u2026" }];
-    }
-    if (query === "") {
-      return [{ type: "hint", message: "Type to search your papers" }];
-    }
-    const index = this.indexStore.getIndex();
-    const version = indexVersion(index);
-    if (version !== this.cacheVersion) {
-      this.queryCache.clear();
-      this.cacheVersion = version;
-    }
-    if (this.queryCache.has(query)) {
-      const cached = this.queryCache.get(query);
-      this.shown = { key: semanticText(query), version, items: cached };
-      return cached;
-    }
-    const limit = this.settings.inlineLimit || 8;
-    const kwHits = keyword(index, query, limit);
-    const initialItems = kwHits.map((h) => ({
-      type: "paper",
-      paper: index.papers[h.paper],
-      snippet: h.snippet,
-      source: h.source,
-      score: h.score
-    }));
-    if (shouldRunSemantic(query, this.settings.minCharsSemantic ?? 12) && this.embedder) {
-      const seq = this.currentSeq;
-      this.debounceTimer = this.setTimeoutFn(async () => {
-        this.debounceTimer = null;
-        try {
-          let scores;
-          if (this.embedder.rowScores) {
-            scores = await this.embedder.rowScores(semanticText(query), index);
-            if (seq !== this.currentSeq) return;
-          } else {
-            const qVec = await this.embedder.embedQuery(semanticText(query));
-            if (seq !== this.currentSeq) {
-              return;
-            }
-            if (!qVec) {
-              this.handleOllamaDown(initialItems, suggestInstance);
-              return;
-            }
-            scores = rowScores(index, qVec);
-          }
-          const merged = hybridSearchFromScores(index, query, scores, limit);
-          const mergedItems = withLive(merged.map((h) => ({
-            type: "paper",
-            paper: index.papers[h.paper],
-            snippet: h.snippet,
-            source: h.source,
-            score: h.score
-          })), this.liveItems);
-          if (this.shown) this.shown.items = mergedItems;
-          refreshSuggestions(suggestInstance, mergedItems, query, this.queryCache);
-        } catch {
-          if (seq !== this.currentSeq) return;
-          this.handleOllamaDown(initialItems, suggestInstance);
-        }
-      }, 250);
-    }
-    if (this.zotero) {
-      const seq = this.currentSeq;
-      const zotero = this.zotero;
-      this.liveTimer = this.setTimeoutFn(async () => {
-        this.liveTimer = null;
-        const found = await zotero.search(query, indexedKeys(index));
-        if (seq !== this.currentSeq || found.length === 0) return;
-        this.liveItems = found.map((paper) => ({ type: "paper", paper, source: "zotero" }));
-        const items = withLive(this.shown?.items ?? initialItems, this.liveItems);
-        if (this.shown) this.shown.items = items;
-        refreshSuggestions(suggestInstance, items, query, this.queryCache);
-      }, 250);
-    }
-    this.shown = { key: semanticText(query), version, items: initialItems };
-    return initialItems;
-  }
-  /** Keyword-only results with one footer row. Never cached, so the next query retries semantic. */
-  handleOllamaDown(items, suggestInstance) {
-    if (!this.ollamaDownNotified) {
-      this.ollamaDownNotified = true;
-      this.showNotice?.("Paper search: Ollama is not running. Using keyword-only search.");
-    }
-    const withSemanticOff = withLive(items, this.liveItems).map((it) => ({ ...it, semanticOff: true }));
-    withSemanticOff.push({ type: "footer", message: "Semantic search unavailable" });
-    this.shown = null;
-    refreshSuggestions(suggestInstance, withSemanticOff);
-  }
-  async selectSuggestion(item, editor, context) {
-    if (item.type !== "paper" || !item.paper) {
-      return;
-    }
-    if (!item.paper.citekey) {
-      this.showNotice?.("Paper search: paper has no citekey. Ensure Better BibTeX is installed in Zotero.");
-      return;
-    }
-    const citation = formatCitation2(
-      this.settings.citationFormat || "[[{{citekey}}]]",
-      item.paper.citekey
-    );
-    editor.replaceRange(citation, context.start, context.end);
-    if (editor.setCursor) {
-      editor.setCursor({
-        line: context.start.line,
-        ch: context.start.ch + citation.length
-      });
-    }
-    if (this.settings.createLiteratureNotes !== false) {
-      try {
-        await ensureLiteratureNote(
-          this.vault,
-          this.metadataCache,
-          item.paper,
-          this.settings,
-          {
-            showNotice: this.showNotice,
-            sessionNotices: this.sessionNotices
-          }
-        );
-      } catch {
-      }
-    }
-  }
-  renderSuggestion(item, el) {
-    el.empty?.();
-    if (item.type === "loading") {
-      const row = el.createDiv?.({ cls: "semantero-suggest-loading" }) || el;
-      row.setText?.(item.message || "Loading paper index\u2026");
-      return;
-    }
-    if (item.type === "footer") {
-      const row = el.createDiv?.({ cls: "semantero-suggest-footer" }) || el;
-      row.setText?.(item.message || "Semantic search unavailable");
-      return;
-    }
-    if (item.type === "hint") {
-      const row = el.createDiv?.({ cls: "semantero-suggest-hint" }) || el;
-      row.setText?.(item.message || "Type to search your papers");
-      return;
-    }
-    if (item.type === "paper" && item.paper) {
-      const container = el.createDiv?.({ cls: "semantero-suggest-paper" }) || el;
-      let title = item.paper.title || "Untitled";
-      if (title.length > 80) {
-        title = title.slice(0, 79) + "\u2026";
-      }
-      const titleEl = container.createDiv?.({ cls: "semantero-suggest-title" });
-      titleEl?.setText?.(title);
-      const firstAuthor = item.paper.authors && item.paper.authors.length > 0 ? item.paper.authors[0] : "Unknown author";
-      const year = item.paper.year ? String(item.paper.year) : "n.d.";
-      const metaEl = container.createDiv?.({ cls: "semantero-suggest-meta" });
-      metaEl?.setText?.(`${firstAuthor} \xB7 ${year}${item.source === "zotero" ? " \xB7 new in Zotero" : ""}`);
-      if (this.settings.inlineShowSnippet !== false && item.snippet) {
-        const snippetEl = container.createDiv?.({ cls: "semantero-suggest-snippet" });
-        snippetEl?.setText?.(item.snippet);
-      }
-    }
-  }
-};
-function createPaperSearchSuggestClass(BaseClass) {
-  return class PaperSearchSuggest extends BaseClass {
-    controller;
-    constructor(app, controller) {
-      super(app);
-      this.controller = controller;
-      this.scope?.register?.([], "Tab", (evt) => {
-        if (typeof this.suggestions?.useSelectedItem !== "function") return true;
-        this.suggestions.useSelectedItem(evt);
-        return false;
-      });
-    }
-    onTrigger(cursor, editor, file) {
-      const lineText = editor.getLine(cursor.line);
-      const cache = this.app.metadataCache.getFileCache(file);
-      return this.controller.onTrigger(cursor, lineText, cache?.sections);
-    }
-    getSuggestions(context) {
-      return this.controller.getSuggestions(context.query, this);
-    }
-    renderSuggestion(value, el) {
-      this.controller.renderSuggestion(value, el);
-    }
-    close() {
-      this.controller.cancel();
-      super.close();
-    }
-    selectSuggestion(value, evt) {
-      if (this.context) {
-        this.controller.selectSuggestion(value, this.context.editor, {
-          start: this.context.start,
-          end: this.context.end
-        });
-      }
-    }
-  };
 }
 
 // src/passage.ts
@@ -2523,6 +2199,7 @@ function editorSnapshot(view) {
 }
 
 // src/related.ts
+var DEFAULT_RELATED_MIN_SCORE = 0.5;
 var RelatedPapersController = class {
   indexStore;
   embedder;
@@ -2642,12 +2319,12 @@ var RelatedPapersController = class {
         }
       } else {
         if (!qVec) {
-          this.handleOllamaDown();
+          this.handleEmbedderDown();
           return;
         }
         scores = rowScores(ix, qVec);
       }
-      const minScore = this.settings.relatedMinScore ?? 0.25;
+      const minScore = this.settings.relatedMinScore ?? DEFAULT_RELATED_MIN_SCORE;
       const candidates = scores ? semanticFromRowScores(ix, scores, passage, { limit: 50, minScore }) : [];
       this.citedKeysSet = new Set([...citedKeys(noteText)].map((k) => k.toLowerCase()));
       this.allHits = candidates;
@@ -2657,7 +2334,7 @@ var RelatedPapersController = class {
       this.settleResultsState();
     } catch {
       if (seq === this.currentSeq && this.activeFilePath === pathAtStart) {
-        if (this.indexStore.isReady()) this.handleOllamaDown();
+        if (this.indexStore.isReady()) this.handleEmbedderDown();
         else this.setState("index-loading");
       }
     }
@@ -2667,10 +2344,10 @@ var RelatedPapersController = class {
     const { items } = this.getDisplayItems();
     this.setState(items.length > 0 ? "results" : "nothing-close");
   }
-  handleOllamaDown() {
+  handleEmbedderDown() {
     if (!this.ollamaDownNotified) {
       this.ollamaDownNotified = true;
-      this.showNotice?.("Paper search: Ollama is not running for related papers.");
+      this.showNotice?.(`Paper search: ${embedderName(this.indexStore.getIndex())} is not running for related papers.`);
     }
     this.setState("needs-ollama");
   }
@@ -2709,8 +2386,8 @@ var RelatedPapersController = class {
     else this.setState(this.state);
   }
   async handleCiteAction(paper, activeEditor, clipboard) {
-    const format = this.settings.citationFormat || "[[{{citekey}}]]";
-    const citation = formatCitation2(format, paper.citekey);
+    const format = this.settings.citationFormat || DEFAULT_CITATION_FORMAT;
+    const citation = formatCitation(format, paper.citekey);
     if (activeEditor) {
       const cursor = activeEditor.getCursor ? activeEditor.getCursor() : { line: 0, ch: 0 };
       activeEditor.replaceRange(citation, cursor);
@@ -2820,7 +2497,7 @@ function createRelatedPapersViewClass(ItemViewBase) {
       if (this.controller.state === "needs-ollama") {
         body.createEl?.("div", {
           cls: "semantero-related-warning",
-          text: "Related papers needs Ollama running"
+          text: `Related papers needs ${embedderName(this.controller.indexStore.getIndex())} running`
         });
         return;
       }
@@ -2882,13 +2559,332 @@ function createRelatedPapersViewClass(ItemViewBase) {
   };
 }
 
+// src/inline.ts
+var INLINE_DEBOUNCE_MS = 250;
+var LRUQueryCache = class {
+  map = /* @__PURE__ */ new Map();
+  maxEntries;
+  constructor(maxEntries = 16) {
+    this.maxEntries = maxEntries;
+  }
+  get(key) {
+    if (!this.map.has(key)) return void 0;
+    const val = this.map.get(key);
+    this.map.delete(key);
+    this.map.set(key, val);
+    return val;
+  }
+  set(key, val) {
+    if (this.map.has(key)) {
+      this.map.delete(key);
+    } else if (this.map.size >= this.maxEntries) {
+      const oldestKey = this.map.keys().next().value;
+      if (oldestKey !== void 0) {
+        this.map.delete(oldestKey);
+      }
+    }
+    this.map.set(key, val);
+  }
+  has(key) {
+    return this.map.has(key);
+  }
+  clear() {
+    this.map.clear();
+  }
+  size() {
+    return this.map.size;
+  }
+};
+function selectionAfterRefresh(oldHits, oldSelected, newHits) {
+  const oldPaper = oldHits[oldSelected]?.paper;
+  if (!oldPaper) return 0;
+  const idx = newHits.findIndex((h) => h.paper && h.paper.citekey === oldPaper.citekey);
+  return idx === -1 ? 0 : idx;
+}
+function indexVersion(index) {
+  return index?.manifest?.content_hash ?? index?.manifest?.built_at ?? index?.id;
+}
+function refreshSuggestions(suggest, hits, query, cache) {
+  if (!suggest) return;
+  const s = suggest.suggestions;
+  if (s && typeof s.setSuggestions === "function") {
+    const newIdx = selectionAfterRefresh(s.values || [], s.selectedItem ?? 0, hits);
+    s.setSuggestions(hits);
+    if (s.values !== hits) s.values = hits;
+    if (typeof s.setSelectedItem === "function") s.setSelectedItem(newIdx);
+    else s.selectedItem = newIdx;
+  } else if (query && cache) {
+    cache.set(query, hits);
+  }
+}
+function withLive(items, live) {
+  const rest = items.filter((it) => it.source !== "zotero");
+  const have = new Set(rest.map((it) => it.paper?.key).filter(Boolean));
+  const add = live.filter((it) => !have.has(it.paper?.key));
+  if (add.length === 0) return rest.length === items.length ? items : rest;
+  const footer = rest.findIndex((it) => it.type === "footer");
+  return footer === -1 ? [...rest, ...add] : [...rest.slice(0, footer), ...add, ...rest.slice(footer)];
+}
+var InlineSuggestController = class {
+  indexStore;
+  embedder;
+  zotero;
+  vault;
+  metadataCache;
+  settings;
+  queryCache = new LRUQueryCache(16);
+  /** Rows for papers Zotero has and the index doesn't yet, for the query on screen. */
+  liveItems = [];
+  /** The semantic merge and the Zotero lookup for the query on screen; a new query or closing the list drops them. */
+  jobs;
+  ollamaDownNotified = false;
+  /** content_hash (or load id) of the index the query cache was filled from. */
+  cacheVersion = void 0;
+  /** The list on screen, its query (as `semanticText`) and the version of the index it came from. */
+  shown = null;
+  sessionNotices;
+  showNotice;
+  constructor(options) {
+    this.sessionNotices = options.sessionNotices ?? /* @__PURE__ */ new Set();
+    this.indexStore = options.indexStore;
+    this.embedder = options.embedder;
+    this.zotero = options.zotero;
+    this.vault = options.vault;
+    this.metadataCache = options.metadataCache;
+    this.settings = options.settings || {};
+    this.showNotice = options.showNotice;
+    this.jobs = new QueryJobs(options.setTimeoutFn, options.clearTimeoutFn);
+  }
+  onTrigger(cursor, lineText, sections) {
+    const trigger = this.settings.inlineTrigger || "@@";
+    const res = findTrigger(lineText, cursor.ch, trigger);
+    if (!res) return null;
+    if (isExcludedContext(sections, cursor.line, lineText, cursor.ch)) {
+      return null;
+    }
+    return {
+      start: { line: cursor.line, ch: res.start },
+      end: { line: cursor.line, ch: res.end },
+      query: res.query
+    };
+  }
+  /** Drop any pending or in-flight semantic request (list closed, or the query changed). */
+  cancel() {
+    this.restart();
+  }
+  /** Forget the list on screen and supersede its jobs; returns the token for the next query's. */
+  restart() {
+    this.shown = null;
+    this.liveItems = [];
+    return this.jobs.restart();
+  }
+  async getSuggestions(query, suggestInstance) {
+    const shown = this.shown;
+    if (shown && shown.key === semanticText(query) && shown.version === indexVersion(this.indexStore.getIndex())) return shown.items;
+    const token = this.restart();
+    this.indexStore.ensureFresh?.().catch(() => {
+    });
+    if (!this.indexStore.isReady()) {
+      return [{ type: "loading", message: "Loading paper index\u2026" }];
+    }
+    if (query === "") {
+      return [{ type: "hint", message: "Type to search your papers" }];
+    }
+    const index = this.indexStore.getIndex();
+    const version = indexVersion(index);
+    if (version !== this.cacheVersion) {
+      this.queryCache.clear();
+      this.cacheVersion = version;
+    }
+    if (this.queryCache.has(query)) {
+      const cached = this.queryCache.get(query);
+      this.shown = { key: semanticText(query), version, items: cached };
+      return cached;
+    }
+    const limit = this.settings.inlineLimit || 8;
+    const kwHits = keyword(index, query, limit);
+    const initialItems = kwHits.map((h) => ({
+      type: "paper",
+      paper: index.papers[h.paper],
+      snippet: h.snippet,
+      source: h.source,
+      score: h.score
+    }));
+    if (shouldRunSemantic(query, this.settings.minCharsSemantic ?? 12) && this.embedder) {
+      this.jobs.after(INLINE_DEBOUNCE_MS, async () => {
+        try {
+          let scores;
+          if (this.embedder.rowScores) {
+            scores = await this.embedder.rowScores(semanticText(query), index);
+            if (!this.jobs.isCurrent(token)) return;
+          } else {
+            const qVec = await this.embedder.embedQuery(semanticText(query));
+            if (!this.jobs.isCurrent(token)) {
+              return;
+            }
+            if (!qVec) {
+              this.handleEmbedderDown(initialItems, suggestInstance);
+              return;
+            }
+            scores = rowScores(index, qVec);
+          }
+          const merged = hybridSearchFromScores(index, query, scores, limit);
+          const mergedItems = withLive(merged.map((h) => ({
+            type: "paper",
+            paper: index.papers[h.paper],
+            snippet: h.snippet,
+            source: h.source,
+            score: h.score
+          })), this.liveItems);
+          if (this.shown) this.shown.items = mergedItems;
+          refreshSuggestions(suggestInstance, mergedItems, query, this.queryCache);
+        } catch {
+          if (!this.jobs.isCurrent(token)) return;
+          this.handleEmbedderDown(initialItems, suggestInstance);
+        }
+      });
+    }
+    if (this.zotero) {
+      const zotero = this.zotero;
+      this.jobs.after(INLINE_DEBOUNCE_MS, async () => {
+        const found = await zotero.search(query, indexedKeys(index));
+        if (!this.jobs.isCurrent(token) || found.length === 0) return;
+        this.liveItems = found.map((paper) => ({ type: "paper", paper, source: "zotero" }));
+        const items = withLive(this.shown?.items ?? initialItems, this.liveItems);
+        if (this.shown) this.shown.items = items;
+        refreshSuggestions(suggestInstance, items, query, this.queryCache);
+      });
+    }
+    this.shown = { key: semanticText(query), version, items: initialItems };
+    return initialItems;
+  }
+  /** Keyword-only results with one footer row. Never cached, so the next query retries semantic. */
+  handleEmbedderDown(items, suggestInstance) {
+    if (!this.ollamaDownNotified) {
+      this.ollamaDownNotified = true;
+      this.showNotice?.(`Paper search: ${embedderName(this.indexStore.getIndex())} is not running. Using keyword-only search.`);
+    }
+    const withSemanticOff = withLive(items, this.liveItems).map((it) => ({ ...it, semanticOff: true }));
+    withSemanticOff.push({ type: "footer", message: "Semantic search unavailable" });
+    this.shown = null;
+    refreshSuggestions(suggestInstance, withSemanticOff);
+  }
+  async selectSuggestion(item, editor, context) {
+    if (item.type !== "paper" || !item.paper) {
+      return;
+    }
+    if (!item.paper.citekey) {
+      this.showNotice?.("Paper search: paper has no citekey. Ensure Better BibTeX is installed in Zotero.");
+      return;
+    }
+    const citation = formatCitation(
+      this.settings.citationFormat || DEFAULT_CITATION_FORMAT,
+      item.paper.citekey
+    );
+    editor.replaceRange(citation, context.start, context.end);
+    if (editor.setCursor) {
+      editor.setCursor({
+        line: context.start.line,
+        ch: context.start.ch + citation.length
+      });
+    }
+    if (this.settings.createLiteratureNotes !== false) {
+      try {
+        await ensureLiteratureNote(
+          this.vault,
+          this.metadataCache,
+          item.paper,
+          this.settings,
+          {
+            showNotice: this.showNotice,
+            sessionNotices: this.sessionNotices
+          }
+        );
+      } catch {
+      }
+    }
+  }
+  renderSuggestion(item, el) {
+    el.empty?.();
+    if (item.type === "loading") {
+      const row = el.createDiv?.({ cls: "semantero-suggest-loading" }) || el;
+      row.setText?.(item.message || "Loading paper index\u2026");
+      return;
+    }
+    if (item.type === "footer") {
+      const row = el.createDiv?.({ cls: "semantero-suggest-footer" }) || el;
+      row.setText?.(item.message || "Semantic search unavailable");
+      return;
+    }
+    if (item.type === "hint") {
+      const row = el.createDiv?.({ cls: "semantero-suggest-hint" }) || el;
+      row.setText?.(item.message || "Type to search your papers");
+      return;
+    }
+    if (item.type === "paper" && item.paper) {
+      const container = el.createDiv?.({ cls: "semantero-suggest-paper" }) || el;
+      let title = item.paper.title || "Untitled";
+      if (title.length > 80) {
+        title = title.slice(0, 79) + "\u2026";
+      }
+      const titleEl = container.createDiv?.({ cls: "semantero-suggest-title" });
+      titleEl?.setText?.(title);
+      const firstAuthor = item.paper.authors && item.paper.authors.length > 0 ? item.paper.authors[0] : "Unknown author";
+      const year = item.paper.year ? String(item.paper.year) : "n.d.";
+      const metaEl = container.createDiv?.({ cls: "semantero-suggest-meta" });
+      metaEl?.setText?.(`${firstAuthor} \xB7 ${year}${item.source === "zotero" ? " \xB7 new in Zotero" : ""}`);
+      if (this.settings.inlineShowSnippet !== false && item.snippet) {
+        const snippetEl = container.createDiv?.({ cls: "semantero-suggest-snippet" });
+        snippetEl?.setText?.(item.snippet);
+      }
+    }
+  }
+};
+function createPaperSearchSuggestClass(BaseClass) {
+  return class PaperSearchSuggest extends BaseClass {
+    controller;
+    constructor(app, controller) {
+      super(app);
+      this.controller = controller;
+      this.scope?.register?.([], "Tab", (evt) => {
+        if (typeof this.suggestions?.useSelectedItem !== "function") return true;
+        this.suggestions.useSelectedItem(evt);
+        return false;
+      });
+    }
+    onTrigger(cursor, editor, file) {
+      const lineText = editor.getLine(cursor.line);
+      const cache = this.app.metadataCache.getFileCache(file);
+      return this.controller.onTrigger(cursor, lineText, cache?.sections);
+    }
+    getSuggestions(context) {
+      return this.controller.getSuggestions(context.query, this);
+    }
+    renderSuggestion(value, el) {
+      this.controller.renderSuggestion(value, el);
+    }
+    close() {
+      this.controller.cancel();
+      super.close();
+    }
+    selectSuggestion(value, evt) {
+      if (this.context) {
+        this.controller.selectSuggestion(value, this.context.editor, {
+          start: this.context.start,
+          end: this.context.end
+        });
+      }
+    }
+  };
+}
+
 // src/main.ts
 var DEFAULT_SETTINGS = {
   ollamaUrl: "http://127.0.0.1:11434",
   debounceMs: 200,
   minCharsSemantic: 12,
   limit: 12,
-  citationFormat: "[[{{citekey}}]]",
+  citationFormat: DEFAULT_CITATION_FORMAT,
   createLiteratureNotes: true,
   literatureNoteFolder: "",
   literatureNoteTemplate: "Zotero Template.md",
@@ -2896,7 +2892,7 @@ var DEFAULT_SETTINGS = {
   inlineLimit: 8,
   inlineShowSnippet: true,
   relatedLimit: 5,
-  relatedMinScore: 0.5,
+  relatedMinScore: DEFAULT_RELATED_MIN_SCORE,
   relatedAutoRefresh: false,
   relatedInstruction: "Given a passage from my research notes, retrieve papers that report the findings or methods it discusses",
   askZotero: true
@@ -3077,7 +3073,7 @@ var PaperSearchSettingTab = class extends import_obsidian2.PluginSettingTab {
       })
     );
     new import_obsidian2.Setting(containerEl).setName("Citation Format").setDesc("Format used when inserting citations (must include {{citekey}})").addText(
-      (text) => text.setPlaceholder("[[{{citekey}}]]").setValue(this.plugin.settings.citationFormat).onChange(async (value) => {
+      (text) => text.setPlaceholder(DEFAULT_CITATION_FORMAT).setValue(this.plugin.settings.citationFormat).onChange(async (value) => {
         const trimmed = value.trim();
         try {
           formatCitation(trimmed, "test");
@@ -3145,7 +3141,7 @@ var PaperSearchSettingTab = class extends import_obsidian2.PluginSettingTab {
       })
     );
     new import_obsidian2.Setting(containerEl).setName("Related Minimum Score").setDesc("Minimum cosine similarity threshold to display related papers (default 0.50)").addText(
-      (text) => text.setPlaceholder("0.50").setValue(String(this.plugin.settings.relatedMinScore ?? 0.5)).onChange(async (value) => {
+      (text) => text.setPlaceholder("0.50").setValue(String(this.plugin.settings.relatedMinScore ?? DEFAULT_RELATED_MIN_SCORE)).onChange(async (value) => {
         const parsed = parseFloat(value.trim());
         if (!isNaN(parsed) && parsed >= 0) {
           this.plugin.settings.relatedMinScore = parsed;
