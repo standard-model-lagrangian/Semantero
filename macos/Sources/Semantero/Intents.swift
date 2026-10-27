@@ -21,7 +21,7 @@ struct SearchResultEntity: AppEntity {
 
     init(_ vm: ResultVM) {
         id = vm.id; title = vm.title; subtitle = vm.subtitle.isEmpty ? vm.accessory : vm.subtitle
-        symbolName = vm.kind == "paper" ? "doc.text" : vm.kind == "daily" ? "calendar" : "note.text"
+        symbolName = symbol(for: vm.kind)
     }
 }
 

@@ -60,13 +60,17 @@ public actor SpotlightDonor {
 
     public func sync(papers: Data?, notes: Data?, chunks: Data?, settings: SpotlightSettings, zoteroStorage: String?,
                      vault: String?) async throws -> SyncReport {
+        // An index file that is present but doesn't decode throws before anything is deleted: read as "no entries", it
+        // would wipe that domain from Spotlight. A missing file (nil) does mean "no entries".
         var wanted: [SearchableItem] = []
-        if settings.papers, let papers, let list = try? JSONDecoder().decode([PaperEntry].self, from: papers) {
-            wanted += list.map { Self.item($0, storage: zoteroStorage) }
+        if settings.papers, let papers {
+            wanted += try JSONDecoder().decode([PaperEntry].self, from: papers).map { Self.item($0, storage: zoteroStorage) }
         }
-        if settings.noteTitles, let notes, let list = try? JSONDecoder().decode([NoteEntry].self, from: notes) {
+        if settings.noteTitles, let notes {
+            let list = try JSONDecoder().decode([NoteEntry].self, from: notes)
             var text: [Int: String] = [:]
-            if settings.noteText, let chunks, let cs = try? JSONDecoder().decode([ChunkEntry].self, from: chunks) {
+            if settings.noteText, let chunks {
+                let cs = try JSONDecoder().decode([ChunkEntry].self, from: chunks)
                 for c in cs { text[c.paper, default: ""] += (text[c.paper] == nil ? "" : " ") + c.text }
             }
             wanted += list.enumerated().map { Self.item($1, vault: vault, text: settings.noteText ? (text[$0] ?? "") : nil) }

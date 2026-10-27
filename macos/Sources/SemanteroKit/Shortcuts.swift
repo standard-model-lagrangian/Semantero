@@ -73,5 +73,4 @@ public struct ShortcutTable: Sendable {
         actions.first { $0.id == actionID }.flatMap { KeyChord(parsing: $0.key) }
     }
     public func definition(for actionID: String) -> ActionDef? { actions.first { $0.id == actionID } }
-    public var allChords: [KeyChord] { actions.compactMap { KeyChord(parsing: $0.key) } }
 }

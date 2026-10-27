@@ -25,9 +25,9 @@ public actor IndexReloader {
 
     public init(vault: URL, ranker: Ranker) { self.vault = vault; self.ranker = ranker }
 
-    /// Loads the current index again into a fresh engine even though nothing changed. JavaScriptCore only gives back the
-    /// memory its first load churned through (~600 MB) when a virtual machine is torn down, so the app calls this once, a
-    /// few seconds after the first load (spike S1). The old engine answers queries until the new one is ready.
+    /// Loads the current index again into a fresh engine even though nothing changed. JavaScriptCore only gives back some
+    /// memory when a virtual machine is torn down, so the app's memory watchdog calls this when the footprint keeps
+    /// growing while the panel is hidden (see MemoryWatchdog). The old engine answers queries until the new one is ready.
     public func forceReload() async -> ReloadOutcome { await check(force: true) }
 
     /// One check at a time: a check that arrives while another is loading waits for it, then looks again (so a burst
@@ -146,6 +146,6 @@ public final class IndexWatcher: @unchecked Sendable {
         stream = nil
     }
 
-    /// For tests and the periodic safety poll: behaves like a file event.
+    /// For tests: behaves like a file event.
     public func poke() { debouncer.poke() }
 }

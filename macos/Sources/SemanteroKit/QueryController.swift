@@ -92,7 +92,6 @@ public actor QueryController {
         }
         run()
     }
-    public var currentSeq: Int { seq }
 
     private func run(keepMerged: Bool = false) {
         seq += 1

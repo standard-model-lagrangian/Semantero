@@ -15,6 +15,8 @@ public protocol Ranker: Sendable {
     func recent(limit: Int) async throws -> [ResultVM]
     /// Results for remembered ids (Spotlight), in the order asked; unknown ids are skipped.
     func lookup(ids: [String]) async throws -> [ResultVM]
+    /// Reclaim what the last load left behind (see JSCRanker.collectGarbage).
+    func collectGarbage() async
 }
 
 public extension Ranker {
@@ -23,6 +25,9 @@ public extension Ranker {
                              limit: Int) async throws -> [ResultVM] {
         try await keyword(query, scope: scope, limit: limit)
     }
+
+    /// Rankers without a JavaScript heap have nothing to collect.
+    func collectGarbage() async {}
 }
 
 /// A ranker that can replace only the notes corpus, reusing the loaded papers corpus. Used when only the notes index

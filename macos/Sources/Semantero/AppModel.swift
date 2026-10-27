@@ -4,19 +4,13 @@ import Foundation
 import Observation
 import ServiceManagement
 
-/// Which ranker the app runs (docs/DECISIONS_AND_GAPS.md, spike S1 and "Memory pass"): JavaScriptCore for keyword
-/// search, merging and view models; Accelerate for the vector pass (option B). With the JIT tiers the app needs for its
-/// memory budget, the all-JavaScriptCore vector pass measured 20–54 ms per query against Accelerate's 2–3 ms.
-enum RankerOption { case javaScriptCore, javaScriptCoreWithAccelerate }
-let rankerOption: RankerOption = .javaScriptCoreWithAccelerate
-
 @MainActor
 @Observable
 final class AppModel {
     static let shared = AppModel()
 
     // What the views render
-    var query = "" { didSet { if query != oldValue { Task { await controller?.setQuery(query) } } } }
+    var query = "" { didSet { if query != oldValue { queryInput?.yield(query) } } }
     var scope: Scope = .all {
         didSet {
             guard scope != oldValue else { return }
@@ -42,8 +36,12 @@ final class AppModel {
     private var donor: SpotlightDonor?
     private var updates: AsyncStream<QueryUpdate>.Continuation?
     private var consumeTask: Task<Void, Never>?
+    /// Typed queries, sent to the controller by one task so they arrive in order (a task per keystroke could arrive out
+    /// of order, leave the controller on an older query and `apply` dropping every update for the one on screen).
+    private var queryInput: AsyncStream<String>.Continuation?
+    private var queryTask: Task<Void, Never>?
     private var pollTask: Task<Void, Never>?
-    private var compactionTask: Task<Void, Never>?
+    private var loadTask: Task<Void, Never>?
     private var watchdog = MemoryWatchdog()
     let hotkey = HotkeyRegistrar()
     var panel: PanelController!
@@ -75,11 +73,13 @@ final class AppModel {
                 pasteboard: SystemPasteboard(), events: CGEventPoster(), workspace: SystemWorkspace(), system: LiveSystemState(),
                 files: DiskFiles(), panel: panel, toast: ToastCenter.shared, quickLook: QuickLookService.shared),
             restoreClipboard: { [settings] in settings.restoreClipboard })
+        // The ranker (docs/DECISIONS_AND_GAPS.md, spike S1 and "Memory pass"): JavaScriptCore for keyword search, merging
+        // and view models; Accelerate for the vector pass (option B). With the JIT tiers the app needs for its memory
+        // budget, an all-JavaScriptCore vector pass measured 20–54 ms per query against Accelerate's 2–3 ms.
         do {
-            guard let js = Bundle.main.url(forResource: "ranker", withExtension: "js")
-                    ?? Optional(URL(fileURLWithPath: "../launcher-core/dist/ranker.js")) else { return }
-            let jsc = try JSCRanker(rankerURL: js)
-            ranker = rankerOption == .javaScriptCoreWithAccelerate ? AcceleratedRanker(inner: jsc) : jsc
+            let js = Bundle.main.url(forResource: "ranker", withExtension: "js")
+                ?? URL(fileURLWithPath: "../launcher-core/dist/ranker.js")
+            ranker = AcceleratedRanker(inner: try JSCRanker(rankerURL: js))
         } catch {
             loadMessage = "Could not load the ranker: \(error)"
             return
@@ -93,6 +93,11 @@ final class AppModel {
         consumeTask = Task { [weak self] in
             for await update in stream { self?.apply(update) }
         }
+        let (queries, queryInput) = AsyncStream<String>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        self.queryInput = queryInput
+        queryTask = Task { [weak self] in
+            for await q in queries { await self?.controller?.setQuery(q) }
+        }
         intentService = IntentSearchService(ranker: ranker, embedder: nil)
         IntentBridge.shared.model = self
 
@@ -102,21 +107,19 @@ final class AppModel {
             registerHotkey()
             applyLaunchAtLogin()
         }
-        if let out = ProcessInfo.processInfo.environment["SEMANTERO_SELFTEST"] { Task { await SelfTest.run(model: self, output: out) } }
+        if let out = env["SEMANTERO_SELFTEST"] { Task { await SelfTest.run(model: self, output: out) } }
         // Debugging aid: SEMANTERO_SHOW_PANEL="<query>" opens the panel with that query once the index is loaded.
-        if let q = ProcessInfo.processInfo.environment["SEMANTERO_SHOW_PANEL"] {
+        if let q = env["SEMANTERO_SHOW_PANEL"] {
             Task {
-                try? await Task.sleep(nanoseconds: 4_000_000_000)
+                _ = await waitUntil(timeout: .seconds(30)) { self.status != nil || self.loadMessage != "Loading index…" }
                 self.panel.show()
                 self.query = q
                 // SEMANTERO_SNAPSHOT=<png path>: save the panel's view to a PNG (no screen-recording permission) and quit.
-                if let path = ProcessInfo.processInfo.environment["SEMANTERO_SNAPSHOT"] {
-                    try? await Task.sleep(nanoseconds: 3_000_000_000)
+                if let path = env["SEMANTERO_SNAPSHOT"] {
+                    // The results for `q`, semantic merge included (or a definite "off": a cold model can take seconds).
+                    _ = await waitUntil(timeout: .seconds(30)) { self.resultsSettled(for: q) }
                     // SEMANTERO_SNAPSHOT_ACTIONS=1: capture with the ⌘K menu open.
-                    if ProcessInfo.processInfo.environment["SEMANTERO_SNAPSHOT_ACTIONS"] != nil {
-                        self.showActionMenu = true
-                        try? await Task.sleep(nanoseconds: 800_000_000)
-                    }
+                    if env["SEMANTERO_SNAPSHOT_ACTIONS"] != nil { self.showActionMenu = true }
                     self.panel.snapshot(to: path)
                     NSApplication.shared.terminate(nil)
                 }
@@ -137,24 +140,25 @@ final class AppModel {
     private func openVault() {
         guard let ranker else { return }
         watcher?.stop()
-        compactionTask?.cancel()
+        loadTask?.cancel()
         reloader = IndexReloader(vault: vaultURL, ranker: ranker)
         watcher = IndexWatcher(directory: vaultURL.appendingPathComponent(".planner")) { [weak self] in
             Task { @MainActor in await self?.reloadIndexes() }
         }
         watcher?.start()
         // Each build ends with a synchronous full GC (JSCRanker), so no compaction reloads are needed after loading.
-        compactionTask = Task { await reloadIndexes() }
+        loadTask = Task { await reloadIndexes() }
     }
 
-    /// One synchronous GC a few seconds after a reload (see JSCRanker.collectGarbage): measured 143 → ~110 MB.
+    /// One synchronous GC a few seconds after a reload (see JSCRanker.collectGarbage): measured 143 → ~110 MB. The delay
+    /// lets the first searches on the new engine (the app re-runs the query on screen) finish and drop their garbage.
     private var settleTask: Task<Void, Never>?
     private func scheduleSettleGC() {
         settleTask?.cancel()
         settleTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 3_000_000_000)
             guard !Task.isCancelled, let ranker = self?.ranker else { return }
-            if let r = ranker as? AcceleratedRanker { await r.collectGarbage() } else if let r = ranker as? JSCRanker { await r.collectGarbage() }
+            await ranker.collectGarbage()
         }
     }
 
@@ -164,9 +168,7 @@ final class AppModel {
         guard watchdog.shouldCompact(footprintMB: mb, panelVisible: panel.isVisible, now: Date()) else { return }
         watchdog.didCompact(at: Date())
         _ = await reloader?.forceReload()
-        if ProcessInfo.processInfo.environment["SEMANTERO_DEBUG"] != nil {
-            fputs("semantero: \(Date().formatted(date: .omitted, time: .standard)) watchdog reload at \(mb) MB\n", stderr)
-        }
+        debugLog("watchdog reload at \(mb) MB")
     }
 
     /// Applies a saved Settings change now, redoing only what that change affects.
@@ -197,9 +199,7 @@ final class AppModel {
     func reloadIndexes() async {
         guard let reloader else { return }
         let outcome = await reloader.check()
-        if ProcessInfo.processInfo.environment["SEMANTERO_DEBUG"] != nil {
-            fputs("semantero: \(Date().formatted(date: .omitted, time: .standard)) reload outcome \(String(describing: outcome).prefix(60))\n", stderr)
-        }
+        debugLog("reload outcome \(String(describing: outcome).prefix(60))")
         switch outcome {
         case .reloaded(let s):
             status = s
@@ -253,16 +253,20 @@ final class AppModel {
 
     private func syncSpotlight() async {
         guard let donor else { return }
-        if ProcessInfo.processInfo.environment["SEMANTERO_DEBUG"] != nil { fputs("semantero: \(Date().formatted(date: .omitted, time: .standard)) spotlight sync\n", stderr) }
+        debugLog("spotlight sync")
         let dirs = IndexFiles.corpusDirs(vault: vaultURL)
         let read = { (dir: URL, name: String) in try? Data(contentsOf: dir.appendingPathComponent(name)) }
         let settings = SpotlightSettings(papers: self.settings.spotlightPapers, noteTitles: self.settings.spotlightNoteTitles,
                                          noteText: self.settings.spotlightNoteText)
         let papersManifest = read(dirs.papers, "manifest.json").flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
-        _ = try? await donor.sync(
-            papers: read(dirs.papers, "papers.json"), notes: read(dirs.notes, "papers.json"),
-            chunks: self.settings.spotlightNoteText ? read(dirs.notes, "chunks.json") : nil, settings: settings,
-            zoteroStorage: papersManifest?["zotero_storage"] as? String, vault: vaultURL.path)
+        do {
+            _ = try await donor.sync(
+                papers: read(dirs.papers, "papers.json"), notes: read(dirs.notes, "papers.json"),
+                chunks: self.settings.spotlightNoteText ? read(dirs.notes, "chunks.json") : nil, settings: settings,
+                zoteroStorage: papersManifest?["zotero_storage"] as? String, vault: vaultURL.path)
+        } catch {
+            debugLog("spotlight sync failed, nothing changed: \(error)")   // retried on the next reload
+        }
     }
 
     // MARK: results
@@ -278,6 +282,13 @@ final class AppModel {
         lastAppliedQuery = (update.query, update.scope)
         selection.apply(update.results)
         semantic = update.semantic
+    }
+
+    /// The list on screen is `q`'s, with its semantic merge in (or semantic search definitely not running).
+    func resultsSettled(for q: String) -> Bool {
+        guard query == q, lastAppliedQuery?.0 == q else { return false }
+        if case .pending = semantic { return false }
+        return true
     }
 
     func moveSelection(_ delta: Int) { selection.move(delta) }
@@ -309,7 +320,8 @@ final class AppModel {
     func panelWillShow() {
         if Date().timeIntervalSince(lastQueryAt) > 60 { query = "" }
         showActionMenu = false
-        Task { await controller?.panelOpened(); await reloadIndexes() }
+        Task { await controller?.panelOpened() }
+        Task { await reloadIndexes() }
         if query.isEmpty { Task { await controller?.setQuery("", force: true) } }
     }
     func panelDidHide() { lastQueryAt = Date() }
@@ -326,7 +338,9 @@ final class AppModel {
         guard path.hasPrefix("/Applications/") || path.hasPrefix(NSHomeDirectory() + "/Applications/") else { return }
         do {
             if settings.launchAtLogin { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
-        } catch { /* running from a build folder: registration only works for an installed app */ }
+        } catch {
+            debugLog("login item: \(error)")
+        }
     }
 
     var statusLine: String {

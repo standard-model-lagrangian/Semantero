@@ -50,7 +50,12 @@ final class PanelController: NSObject, PanelControl, NSWindowDelegate, @unchecke
     /// Debugging aid (SEMANTERO_SNAPSHOT): the panel's own view hierarchy as a PNG, drawn by the view itself, so it needs no
     /// screen-recording permission. Glass materials depend on the window server and may come out flat.
     func snapshot(to path: String) {
-        guard let view = panel.contentView, let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+        guard let view = panel.contentView else { return }
+        // Bring the SwiftUI hierarchy up to date with the model first (a state change such as opening the ⌘K menu is
+        // otherwise drawn on the next pass of the run loop).
+        view.layoutSubtreeIfNeeded()
+        view.displayIfNeeded()
+        guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
         view.cacheDisplay(in: view.bounds, to: rep)
         if let png = rep.representation(using: .png, properties: [:]) { try? png.write(to: URL(fileURLWithPath: path)) }
     }

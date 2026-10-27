@@ -33,6 +33,7 @@ extension KeyChord {
     }
 }
 
+/// The SF Symbol for a result kind, in the panel and in the Spotlight action's results.
 func symbol(for kind: String) -> String {
     switch kind {
     case "paper": return "doc.text"

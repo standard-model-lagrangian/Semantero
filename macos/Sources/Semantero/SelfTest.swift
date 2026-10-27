@@ -20,26 +20,21 @@ enum SelfTest {
                     model.panel.send(e)
                 }
             }
+            // Typing pace, not a wait for a result: each check below waits for the state it looks at.
             try? await Task.sleep(nanoseconds: 150_000_000)
         }
         let down = String(UnicodeScalar(NSDownArrowFunctionKey)!), up = String(UnicodeScalar(NSUpArrowFunctionKey)!)
 
-        for _ in 0..<60 where model.status == nil { try? await Task.sleep(nanoseconds: 250_000_000) }
-        check("index loaded", model.status != nil, model.statusLine)
+        check("index loaded", await waitUntil(timeout: .seconds(15)) { model.status != nil }, model.statusLine)
         model.recordedActions = []
         model.panel.show()
-        try? await Task.sleep(nanoseconds: 500_000_000)
         check("panel visible", model.panel.isVisible)
-        check("empty query shows recent notes", !model.results.isEmpty, "\(model.results.count) rows")
+        check("empty query shows recent notes", await waitUntil(timeout: .seconds(5)) { !model.results.isEmpty },
+              "\(model.results.count) rows")
 
         for ch in "stress relaxation" { await key(0, String(ch)) }
-        // Wait for the semantic merge (or a definite "off") rather than a fixed time: a cold Ollama can take seconds.
-        for _ in 0..<60 {
-            if case .merged = model.semantic { break }
-            if case .off = model.semantic { break }
-            try? await Task.sleep(nanoseconds: 100_000_000)
-        }
-        try? await Task.sleep(nanoseconds: 200_000_000)
+        // Wait for the semantic merge (or a definite "off") rather than a fixed time: a cold model can take seconds.
+        _ = await waitUntil(timeout: .seconds(6)) { model.resultsSettled(for: "stress relaxation") }
         check("typing reaches the search field", model.query == "stress relaxation", "query = \(model.query)")
         check("results for the typed query", !model.results.isEmpty, model.results.prefix(3).map(\.title).joined(separator: " | "))
         let typedResults = model.results, typedSemantic = model.semantic

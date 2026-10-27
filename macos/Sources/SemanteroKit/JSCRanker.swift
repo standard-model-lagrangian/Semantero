@@ -38,7 +38,8 @@ public actor JSCRanker: NotesReloading {
     private let source: String
     private let expectedVersion: String
     private var engine: Engine?
-    private var loadGeneration = 0
+    /// Loads started so far (internal: tests use it to know a load has begun before starting another).
+    private(set) var loadGeneration = 0
     private var installedGeneration = 0
 
     public init(rankerURL: URL, expectedVersion: String = JSCRanker.expectedVersion) throws {

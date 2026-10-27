@@ -90,7 +90,7 @@ public final class HotkeyRegistrar: @unchecked Sendable {
             return noErr
         }, 1, &type, Unmanaged.passUnretained(self).toOpaque(), &handlerRef)
         guard status == noErr else { return false }
-        let id = EventHotKeyID(signature: OSType(0x4441_4954), id: 1)  // 'DAIT'
+        let id = EventHotKeyID(signature: OSType(0x4441_4954), id: 1)  // 'DAIT', from the app's old name; any four-char code will do
         return RegisterEventHotKey(spec.keyCode, spec.modifiers, id, GetApplicationEventTarget(), 0, &hotKeyRef) == noErr
     }
 

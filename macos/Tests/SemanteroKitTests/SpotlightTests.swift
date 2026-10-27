@@ -63,6 +63,16 @@ struct SpotlightTests {
         #expect(index.calls == before)
     }
 
+    @Test func anIndexFileThatDoesNotDecodeLeavesSpotlightAlone() async throws {
+        // Reading it as "no papers" would delete every donated paper and re-donate them all on the next good sync.
+        let index = FakeIndex(), d = donor(index)
+        _ = try await sync(d)
+        let before = index.calls
+        await #expect(throws: DecodingError.self) { try await sync(d, papers: Data("[{\"key\": 1}]".utf8)) }
+        #expect(index.calls == before)
+        #expect(try await sync(d) == SyncReport(indexed: 0, deleted: 0))
+    }
+
     // S35
     @Test func changedPaperIsRedonatedOnceAndRemovedNoteIsDeletedOnce() async throws {
         let index = FakeIndex(), d = donor(index)
