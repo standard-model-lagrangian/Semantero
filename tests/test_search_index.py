@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from planner import pdftext, zotlib
+from planner import pdftext, store, zotlib
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures" / "search"
 
@@ -617,7 +617,7 @@ class TestSearchIndex(unittest.TestCase):
         """Every build records the library fingerprint it reflects (full and dims-change rebuilds included); when the
         fingerprint can't be computed, the previous one is kept."""
         from unittest.mock import patch
-        from planner import searchindex, zotwatch
+        from planner import searchindex, zotlib, zotwatch
 
         searchindex.build_index(self.cfg, full=True, embed_fn=self.fake_embed)
         state_file = self.data_dir / "search" / "state.json"
@@ -631,7 +631,7 @@ class TestSearchIndex(unittest.TestCase):
         self.assertEqual(json.loads(state_file.read_text()).get("fingerprint"), real)
 
         self.cfg.search["dims"] = 16  # state no longer reusable: everything re-embedded
-        with patch.object(zotwatch, "compute_fingerprint", return_value=None):
+        with patch.object(zotlib, "compute_fingerprint", return_value=None):
             searchindex.build_index(self.cfg, full=False, embed_fn=self.fake_embed)
         self.assertEqual(json.loads(state_file.read_text()).get("fingerprint"), real)
 
@@ -1000,7 +1000,7 @@ class TestSearchIndex(unittest.TestCase):
 
             # Non-blocking search_lock should raise BlockingIOError
             with self.assertRaises(BlockingIOError) as ctx_nb:
-                with searchindex.search_lock(self.cfg, blocking=False):
+                with store.search_lock(self.cfg, blocking=False):
                     pass
             self.assertIn("busy", str(ctx_nb.exception))
         finally:

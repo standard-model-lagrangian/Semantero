@@ -1,46 +1,14 @@
 import array
-import fcntl
 import hashlib
 import json
 import os
 import shutil
 import time
-from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from . import embed, htmltext, pdftext, zotlib
-
-
-def load_json(path: Path, default=None):
-    if path.exists():
-        try:
-            return json.loads(path.read_text())
-        except Exception:
-            return default
-    return default
-
-
-def write_json(path: Path, data):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
-
-
-def fsync_files(directory: Path, names: list[str]) -> None:
-    for fn in names:
-        with open(directory / fn, "rb") as f:
-            os.fsync(f.fileno())
-
-
-def atomic_swap(tmp_dir: Path, final_dir: Path, old_dir: Path) -> None:
-    """Move a fully written tmp_dir into place: old aside, new in, old deleted."""
-    if old_dir.exists():
-        shutil.rmtree(old_dir)
-    if final_dir.exists():
-        final_dir.rename(old_dir)
-    tmp_dir.rename(final_dir)
-    if old_dir.exists():
-        shutil.rmtree(old_dir)
+from .store import atomic_swap, fsync_files, load_json, recover_swap, search_lock, write_json
 
 
 def append_vector(out: array.array, vec) -> None:
@@ -57,59 +25,6 @@ def compute_content_hash(papers_data: list[dict], chunks_data: list[dict], vecto
     hasher.update(json.dumps(chunks_data, sort_keys=True, ensure_ascii=False).encode("utf-8"))
     hasher.update(hashlib.sha256(vector_bytes).digest())
     return hasher.hexdigest()
-
-
-# Locks this process already holds, by path, with their nesting depth. flock locks belong to the
-# open file, so a second open() of the same lock in this process would block on the first one
-# (watch-run holds the lock and then calls build_index, which takes it again).
-_held_locks: dict[str, int] = {}
-
-
-@contextmanager
-def search_lock(cfg, timeout: float = 60.0, blocking: bool = True):
-    with named_lock(cfg, "search.lock", timeout, blocking) as f:
-        yield f
-
-
-@contextmanager
-def named_lock(cfg, filename: str, timeout: float = 60.0, blocking: bool = True):
-    """Advisory lock on <data_dir>/<filename>; re-entrant within one process."""
-    lock_path = cfg.data_dir / filename
-    key = str(lock_path.resolve())
-    if _held_locks.get(key):
-        _held_locks[key] += 1
-        try:
-            yield None
-        finally:
-            _held_locks[key] -= 1
-        return
-
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    f = open(lock_path, "a")
-    start_time = time.time()
-    acquired = False
-    try:
-        while True:
-            try:
-                fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                acquired = True
-                break
-            except (BlockingIOError, OSError):
-                if not blocking:
-                    raise BlockingIOError("busy: lock held by another process")
-                if (time.time() - start_time) >= timeout:
-                    raise TimeoutError(f"Could not acquire {filename} after {timeout}s: held by another process")
-                time.sleep(0.05)
-        _held_locks[key] = 1
-        yield f
-    finally:
-        if acquired:
-            _held_locks.pop(key, None)
-            try:
-                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
-            except OSError:
-                pass
-        f.close()
 
 
 def get_stats(cfg) -> dict:
@@ -270,6 +185,7 @@ def build_index(
     zotero_dir = Path(cfg.search.get("zotero_dir", "~/Zotero")).expanduser()
 
     with search_lock(cfg, timeout=lock_timeout, blocking=True):
+        recover_swap(search_dir, old_dir)
         # Clean tmp dir before starting
         if tmp_dir.exists():
             shutil.rmtree(tmp_dir)
@@ -288,8 +204,7 @@ def build_index(
             # covers items, edits and every attachment's path, size and mtime. Recorded after each successful build.
             fingerprint = None
             if limit is None:
-                from .zotwatch import compute_fingerprint
-                fingerprint = compute_fingerprint(zotero_dir)
+                fingerprint = zotlib.compute_fingerprint(zotero_dir)
             if not full and limit is None:
                 shortcut = _unchanged_result(search_dir, old_state, fingerprint, model, dims, chunker, t0)
                 if shortcut is not None:

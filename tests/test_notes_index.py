@@ -491,7 +491,7 @@ class TestBuild(NotesCase):
         self.assertNotIn("empty.md", self.by_path())
 
     def test_blocking_false_raises_when_lock_is_held(self):
-        from planner.searchindex import named_lock
+        from planner.store import named_lock
         import fcntl
         lock = self.data_dir / "notes.lock"
         f = open(lock, "a")

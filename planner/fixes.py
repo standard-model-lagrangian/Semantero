@@ -3,9 +3,9 @@
 Sidecars keep the extractor's output untouched; fixes are applied when sidecars are read,
 so they survive re-extraction and feed cleaned thread ids back to the nightly model.
 """
-import json
 from pathlib import Path
 
+from . import store
 from .vault import sha
 
 FILE = "thread_fixes.json"
@@ -17,14 +17,12 @@ def item_key(day: str, text: str) -> str:
 
 def load(data_dir: Path) -> dict:
     p = data_dir / FILE
-    data = json.loads(p.read_text()) if p.exists() else {}
+    data = store.load_json(p, {})
     return {"aliases": data.get("aliases", {}), "items": data.get("items", {}), "log": data.get("log", [])}
 
 
 def save(data_dir: Path, fixes: dict) -> None:
-    p = data_dir / FILE
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(fixes, indent=2, ensure_ascii=False) + "\n")
+    store.write_json(data_dir / FILE, fixes)
 
 
 def resolve(tid: str, aliases: dict) -> str:

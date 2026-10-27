@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 
 from . import config
-from .searchindex import named_lock
+from .store import named_lock
 
 CORPORA = ("search", "notes")
 LOCKS = {"search": "search.lock", "notes": "notes.lock"}

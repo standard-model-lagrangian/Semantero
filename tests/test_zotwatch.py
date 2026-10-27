@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from planner import searchindex, zotwatch
+from planner import searchindex, store, zotwatch
 from planner.config import Config
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures" / "search"
@@ -516,8 +516,8 @@ class TestZotwatch(unittest.TestCase):
             except OSError:
                 print('busy')
         """)
-        with searchindex.search_lock(self.cfg, blocking=False):
-            with searchindex.search_lock(self.cfg, timeout=1.0):
+        with store.search_lock(self.cfg, blocking=False):
+            with store.search_lock(self.cfg, timeout=1.0):
                 out = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True).stdout.strip()
                 self.assertEqual(out, "busy")
             # inner exit must not release the outer hold

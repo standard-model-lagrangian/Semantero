@@ -1,5 +1,4 @@
 """Render the daily brief callout and insert it into a note without touching anything else."""
-import os
 import re
 from datetime import date
 from pathlib import Path
@@ -92,8 +91,3 @@ def upsert(text: str | None, block: str, already_inserted: bool, template: str =
     head, rest = (text[: fm.end()], text[fm.end():]) if fm else ("", text)
     return head + block + "\n" + rest
 
-
-def write_atomic(path: Path, text: str) -> None:
-    tmp = path.with_name(f".{path.name}.planner-tmp")
-    tmp.write_text(text)
-    os.replace(tmp, path)

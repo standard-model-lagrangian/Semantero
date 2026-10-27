@@ -1,6 +1,8 @@
+import hashlib
 import re
 import shutil
 import sqlite3
+import sys
 import tempfile
 import time
 from collections.abc import Iterator
@@ -282,3 +284,81 @@ def read_library(zotero_dir: Path | str) -> list[Paper]:
             )
 
         return papers
+
+
+def compute_fingerprint(zotero_dir: Path | str) -> str | None:
+    zotero_dir = Path(zotero_dir).expanduser()
+    db_path = zotero_dir / "zotero.sqlite"
+    if not db_path.exists():
+        return None
+
+    try:
+        with open_snapshot(zotero_dir) as conn:
+            return _fingerprint(conn, zotero_dir)
+    except Exception as e:
+        print(f"zotero fingerprint: sqlite unreadable ({e})", file=sys.stderr, flush=True)
+        return None
+
+
+def _fingerprint(conn: sqlite3.Connection, zotero_dir: Path) -> str:
+    """Items, edits and every PDF/snapshot attachment's path, size and mtime."""
+    cur = conn.cursor()
+
+    # 1. number of regular items not in the trash
+    cur.execute("""
+        SELECT COUNT(*) FROM items
+        WHERE itemID NOT IN (SELECT itemID FROM deletedItems)
+          AND itemTypeID NOT IN (
+              SELECT itemTypeID FROM itemTypes
+              WHERE typeName IN ('attachment', 'note', 'annotation')
+          )
+    """)
+    regular_count = cur.fetchone()[0]
+
+    # 2. max(clientDateModified) over items
+    cur.execute("""
+        SELECT MAX(clientDateModified) FROM items
+        WHERE itemID NOT IN (SELECT itemID FROM deletedItems)
+    """)
+    max_client_date = cur.fetchone()[0] or ""
+
+    # 3. number of PDF and web-snapshot attachments
+    cur.execute("""
+        SELECT COUNT(*) FROM itemAttachments
+        WHERE itemID NOT IN (SELECT itemID FROM deletedItems)
+          AND contentType IN ('application/pdf', 'text/html')
+    """)
+    att_count = cur.fetchone()[0]
+
+    # 4. sorted list of (path, mtime, size) for each PDF or snapshot attachment
+    cur.execute("""
+        SELECT i.key, a.path
+        FROM itemAttachments a
+        JOIN items i ON a.itemID = i.itemID
+        WHERE a.contentType IN ('application/pdf', 'text/html')
+          AND a.itemID NOT IN (SELECT itemID FROM deletedItems)
+    """)
+    pdf_rows = cur.fetchall()
+
+    pdf_stats: list[tuple[str, int, int]] = []
+    for att_key, path_str in pdf_rows:
+        full_path = attachment_path(zotero_dir, att_key, path_str)
+        if full_path is None:
+            continue
+
+        if full_path.exists():
+            stat = full_path.stat()
+            pdf_stats.append((str(full_path), stat.st_mtime_ns, stat.st_size))
+        else:
+            pdf_stats.append((str(full_path), 0, 0))
+
+    pdf_stats.sort(key=lambda x: x[0])
+
+    hasher = hashlib.sha256()
+    hasher.update(f"reg:{regular_count}".encode())
+    hasher.update(f"max_date:{max_client_date}".encode())
+    hasher.update(f"att:{att_count}".encode())
+    for p, m, s in pdf_stats:
+        hasher.update(f"{p}:{m}:{s}".encode())
+
+    return hasher.hexdigest()

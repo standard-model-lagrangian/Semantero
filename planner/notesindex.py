@@ -15,7 +15,8 @@ from datetime import datetime
 from pathlib import Path
 
 from . import embed, mdtext
-from .searchindex import atomic_swap, compute_content_hash, fsync_files, load_json, named_lock, write_json
+from .searchindex import compute_content_hash
+from .store import atomic_swap, fsync_files, load_json, named_lock, recover_swap, write_json
 from .vault import DAILY_RE
 
 CHUNKER = "md-headings-v1"
@@ -168,6 +169,7 @@ def build_index(
     pplx_url = cfg.search.get("pplx_url", "http://127.0.0.1:11435")
 
     with named_lock(cfg, "notes.lock", timeout=lock_timeout, blocking=blocking):
+        recover_swap(notes_dir, old_dir)
         if tmp_dir.exists():
             shutil.rmtree(tmp_dir)
         try:

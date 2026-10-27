@@ -1,5 +1,4 @@
 import argparse
-import json
 import socket
 import subprocess
 import sys
@@ -11,17 +10,10 @@ from datetime import date, datetime, timedelta
 from . import brief, config, embed, fixes, health, notesindex, profiles, searchindex, stats, threads, vault, weekly
 from .extract import PROMPT, PROMPT_VERSION, extract, user_message
 from .llm import OPENAI_COMPAT, LLMError, chat_json, list_models
+from . import store
+from .store import load_json, write_json
 
 MARK = {"done": "✓", "partial": "~", "skipped": "✗", "unknown": "·"}
-
-
-def load_json(path, default):
-    return json.loads(path.read_text()) if path.exists() else default
-
-
-def write_json(path, data):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
 
 
 def cmd_backfill(cfg, args):
@@ -178,7 +170,7 @@ def cmd_brief(cfg, args):
             print("\n".join(new.splitlines()[:block.count(chr(10)) + 6]))
         return
     if new is not None and new != current:
-        brief.write_atomic(note_path, new)
+        store.write_text(note_path, new)
     if new is not None and not already:
         state["brief_inserted"].append(day.isoformat())
         write_json(state_path, state)
@@ -223,7 +215,7 @@ def cmd_weekly(cfg, args):
         print(f"[dry run] would write {path} and apply {len(applied)} thread fixes")
         return
     path.parent.mkdir(parents=True, exist_ok=True)
-    brief.write_atomic(path, note)
+    store.write_text(path, note)
     if applied:
         fx["log"].append({"review": path.stem, "applied": applied})
         fixes.save(cfg.data_dir, fx)
@@ -343,7 +335,7 @@ def cmd_threads(cfg, args):
     if new_threads is None:
         print(f"skip {threads_path.name}: markers removed, leaving it alone")
     elif new_threads != curr_threads:
-        brief.write_atomic(threads_path, new_threads)
+        store.write_text(threads_path, new_threads)
         print(f"wrote {threads_path.name}")
     else:
         print(f"{threads_path.name} unchanged")
@@ -466,7 +458,7 @@ def _morning(cfg, args):
     if new_threads is None:
         print(f"skip {threads_path.name}: markers removed, leaving it alone", flush=True)
     elif new_threads != curr_threads:
-        brief.write_atomic(threads_path, new_threads)
+        store.write_text(threads_path, new_threads)
         print(f"wrote {threads_path.name}", flush=True)
 
     # Update search index; failure becomes a warning and never blocks the brief
