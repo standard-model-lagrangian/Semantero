@@ -45,7 +45,12 @@ def open_snapshot(zotero_dir: Path | str) -> Iterator[sqlite3.Connection]:
             shutil.copyfile(db, copy_db)
             if _stamp(wal) == before:
                 break
-            time.sleep(0.2 * (attempt + 1))
+            if attempt < 2:
+                time.sleep(0.2 * (attempt + 1))
+        else:
+            # Zotero kept writing through every try: read this copy anyway (the watcher's post-build fingerprint
+            # check rebuilds if it missed something), but leave a trace in the log.
+            print(f"zotero snapshot: {wal.name} kept changing during the copy; reading it anyway", file=sys.stderr)
         # Read-write on purpose: opening the copy replays its log into it (read-only can't without a -shm file).
         conn = sqlite3.connect(copy_db)
         try:

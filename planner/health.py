@@ -226,7 +226,7 @@ def check_search_index(cfg) -> Result | None:
                     False,
                     f"Search index is {diff.days} days old (> 3 days). Run: planner search index",
                 )
-        except Exception:
+        except (TypeError, ValueError):
             pass
 
     return None
@@ -257,7 +257,7 @@ def check_notes_index(cfg) -> Result | None:
             f"({cfg_model}/{cfg_dims}). Run: planner notes index --full")
     try:
         age = datetime.now() - datetime.fromisoformat(manifest.get("built_at", ""))
-    except Exception:
+    except (TypeError, ValueError):
         age = None
     if age is not None and age > timedelta(days=1) and manifest.get("degraded"):
         name, start = embed.service(cfg.search)
@@ -308,8 +308,8 @@ def check_search_tools(cfg) -> Result | None:
                 return Result("search tools", False, f"Ollama list does not include `{model}`. Run: ollama pull {model}")
         else:
             return Result("search tools", False, "Ollama command failed. Fix: brew services start ollama")
-    except Exception:
-        return Result("search tools", False, "Ollama check failed. Fix: brew services start ollama")
+    except (OSError, subprocess.SubprocessError) as e:
+        return Result("search tools", False, f"Ollama didn't answer `ollama list` ({e}). Fix: brew services start ollama")
 
     return None
 
@@ -344,7 +344,7 @@ def check_zotero_watch(cfg) -> Result | None:
                         )
                 elif "build completed" in line or "no changes" in line:
                     consecutive_fails = 0
-        except Exception:
+        except OSError:
             pass
 
     return None

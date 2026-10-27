@@ -349,7 +349,7 @@ def notes_tick_warning(cfg, err: Exception) -> str | None:
             age = datetime.now() - datetime.fromisoformat(st["built_at"])
             if age <= timedelta(days=1):
                 return None
-        except Exception:
+        except (KeyError, TypeError, ValueError):
             pass
     return f"Notes index couldn't be updated ({str(err)[:140]}). Run: planner notes index"
 
@@ -477,8 +477,8 @@ def _morning(cfg, args):
             })
             try:
                 cmd_brief(cfg, argparse.Namespace(date=day.isoformat(), write=True, warnings=warnings))
-            except Exception:
-                pass
+            except Exception as e:   # the morning run carries on; the brief keeps its earlier text
+                print(f"morning: rewriting the brief with today's warnings failed ({e})", file=sys.stderr)
 
     state = load_json(state_path, {"brief_inserted": []})  # cmd_brief updated it
     state["last_morning"] = day.isoformat()

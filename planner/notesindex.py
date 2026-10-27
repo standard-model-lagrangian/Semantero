@@ -400,7 +400,7 @@ def get_stats(cfg) -> dict:
     try:
         diff = datetime.now() - datetime.fromisoformat(manifest.get("built_at", ""))
         age = f"{diff.days}d {diff.seconds // 3600}h ago" if diff.days else f"{diff.seconds // 3600}h ago"
-    except Exception:
+    except (TypeError, ValueError):
         pass
     return {
         "indexed": True, "notes": len(papers), "kinds": kinds, "chunks": manifest.get("chunks", 0),

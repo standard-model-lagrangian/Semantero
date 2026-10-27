@@ -1,4 +1,5 @@
 import time
+import traceback
 import urllib.request
 from datetime import datetime
 from pathlib import Path
@@ -130,6 +131,7 @@ def watch_run(
                         log(f"{res['missing_vectors']} texts keyword-only (embedder unavailable); retrying hourly")
                 except Exception as e:
                     log(f"build failed ({e})")
+                    traceback.print_exc()
                     return 0
 
                 # 5. Record fingerprint on success
@@ -149,4 +151,5 @@ def watch_run(
         return 0
     except Exception as e:
         log(f"error ({e})")
+        traceback.print_exc()
         return 0
