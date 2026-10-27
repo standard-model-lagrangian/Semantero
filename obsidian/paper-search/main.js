@@ -1560,12 +1560,90 @@ async function ensureLiteratureNote(vault, metadataCache, paper, settings, optio
   }
 }
 
+// src/zoterolive.ts
+var DEFAULT_ZOTERO_API = "http://localhost:23119/api";
+var MIN_LIVE_CHARS = 3;
+var LIVE_LIMIT = 3;
+var QUERY_PAGE = 25;
+var RETRY_MS = 6e4;
+function paperFromApiItem(item) {
+  const d = item?.data;
+  if (!d || typeof d.key !== "string") return null;
+  if (d.itemType === "attachment" || d.itemType === "note" || d.itemType === "annotation") return null;
+  const creators = Array.isArray(d.creators) ? d.creators : [];
+  const authors = creators.filter((c) => !c.creatorType || c.creatorType === "author").map((c) => (c.lastName || c.name || "").trim()).filter(Boolean);
+  const m = /\b(\d{4})\b/.exec(String(d.date ?? ""));
+  return {
+    key: d.key,
+    citekey: typeof d.citationKey === "string" ? d.citationKey : "",
+    title: d.title || "",
+    authors,
+    year: m ? Number(m[1]) : null,
+    journal: d.publicationTitle || null,
+    doi: d.DOI || null,
+    tags: Array.isArray(d.tags) ? d.tags.map((t) => t?.tag).filter(Boolean) : [],
+    collections: [],
+    abstract: d.abstractNote || null,
+    pdfs: [],
+    snapshots: []
+  };
+}
+var ZoteroLive = class {
+  downUntil = 0;
+  requestUrl;
+  baseUrl;
+  now;
+  constructor(requestUrl3, baseUrl = DEFAULT_ZOTERO_API, now = () => Date.now()) {
+    this.requestUrl = requestUrl3;
+    this.baseUrl = baseUrl;
+    this.now = now;
+  }
+  /** Papers matching `query` (Zotero's title/creator/year search) whose keys are not in `known`. Never throws. */
+  async search(query, known, limit = LIVE_LIMIT) {
+    const q = query.trim();
+    if (q.length < MIN_LIVE_CHARS || this.now() < this.downUntil) return [];
+    try {
+      const resp = await this.requestUrl({
+        // Most matches are already indexed and get dropped, so ask for a page of them.
+        url: `${this.baseUrl.replace(/\/+$/, "")}/users/0/items/top?q=${encodeURIComponent(q)}&limit=${QUERY_PAGE}`,
+        method: "GET"
+      });
+      if (resp.status !== 200 || !Array.isArray(resp.json)) {
+        this.downUntil = this.now() + RETRY_MS;
+        return [];
+      }
+      const out = [];
+      for (const item of resp.json) {
+        const p = paperFromApiItem(item);
+        if (p && !known.has(p.key)) out.push(p);
+        if (out.length >= limit) break;
+      }
+      return out;
+    } catch {
+      this.downUntil = this.now() + RETRY_MS;
+      return [];
+    }
+  }
+};
+var keySets = /* @__PURE__ */ new WeakMap();
+function indexedKeys(index) {
+  let s = keySets.get(index);
+  if (!s) {
+    s = new Set(index.papers.map((p) => p.key));
+    keySets.set(index, s);
+  }
+  return s;
+}
+
 // src/modal.ts
 var PaperSearchModal = class extends import_obsidian.SuggestModal {
   plugin;
   coordinator = new SemanticCoordinator();
   currentItems = [];
   debounceTimer = null;
+  liveTimer = null;
+  /** Rows from Zotero for the query on screen, kept below the index's own hits. */
+  liveItems = [];
   footerEl = null;
   lastKeywordHits = [];
   /** The query on screen (as `semanticText`) and the index it was ranked on. */
@@ -1598,8 +1676,9 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
     this.scope.register(["Mod"], "Enter", (evt) => {
       evt.preventDefault();
       const item = this.getSelectedItem();
-      if (item && !item.isLoadingRow && item.paperIndex !== void 0) {
-        this.insertCitationAndEnsureNote(item.paperIndex);
+      const paper = item && this.paperOf(item);
+      if (paper) {
+        this.insertCitationAndEnsureNote(paper);
         this.close();
       }
       return false;
@@ -1607,8 +1686,9 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
     this.scope.register(["Alt"], "Enter", (evt) => {
       evt.preventDefault();
       const item = this.getSelectedItem();
-      if (item && !item.isLoadingRow && item.paperIndex !== void 0) {
-        this.openLiteratureNote(item.paperIndex);
+      const paper = item && this.paperOf(item);
+      if (paper) {
+        this.openLiteratureNote(paper);
         this.close();
       }
       return false;
@@ -1616,12 +1696,19 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
     this.scope.register(["Shift"], "Enter", (evt) => {
       evt.preventDefault();
       const item = this.getSelectedItem();
-      if (item && !item.isLoadingRow && item.paperIndex !== void 0) {
-        this.selectInZotero(item.paperIndex);
+      const paper = item && this.paperOf(item);
+      if (paper) {
+        this.selectInZotero(paper);
         this.close();
       }
       return false;
     });
+  }
+  paperOf(item) {
+    if (item.isLoadingRow) return null;
+    if (item.livePaper) return item.livePaper;
+    if (item.paperIndex === void 0) return null;
+    return this.plugin.indexStore.getIndex()?.papers[item.paperIndex] ?? null;
   }
   getSelectedItem() {
     return this.chooser?.values?.[this.chooser?.selectedItem] || null;
@@ -1648,7 +1735,23 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
     }));
     this.currentItems = items;
     this.scheduleSemanticSearch(query, ix);
+    this.scheduleLive(query, ix);
     return items;
+  }
+  scheduleLive(query, ix) {
+    this.liveItems = [];
+    if (this.liveTimer) clearTimeout(this.liveTimer);
+    this.liveTimer = setTimeout(async () => {
+      this.liveTimer = null;
+      const found = await this.plugin.zotero.search(query, indexedKeys(ix));
+      if (this.shownKey !== semanticText(query) || this.shownIndex !== ix || found.length === 0) return;
+      this.liveItems = found.map((livePaper) => ({ livePaper }));
+      const items = [...this.currentItems.filter((it) => !it.livePaper), ...this.liveItems];
+      const selected = this.chooser?.selectedItem ?? 0;
+      this.currentItems = items;
+      this.chooser?.setSuggestions(items);
+      this.chooser?.setSelectedItem(selected);
+    }, this.plugin.settings.debounceMs);
   }
   scheduleSemanticSearch(query, ix) {
     if (this.debounceTimer) {
@@ -1672,10 +1775,10 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
       }
       this.updateFooter("");
       const mergedHits = hybridSearchFromScores(ix, query, scores, this.plugin.settings.limit);
-      const newItems = mergedHits.map((h) => ({
-        hit: h,
-        paperIndex: h.paper
-      }));
+      const newItems = [
+        ...mergedHits.map((h) => ({ hit: h, paperIndex: h.paper })),
+        ...this.liveItems
+      ];
       const currentItem = this.getSelectedItem();
       const prevPaper = currentItem?.paperIndex ?? null;
       let newSelectedIdx = 0;
@@ -1696,9 +1799,8 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
       el.createDiv({ text: "Loading paper index\u2026", cls: "paper-search-loading" });
       return;
     }
-    const ix = this.plugin.indexStore.getIndex();
-    if (!ix || item.paperIndex === void 0) return;
-    const paper = ix.papers[item.paperIndex];
+    const paper = this.paperOf(item);
+    if (!paper) return;
     const hit = item.hit;
     const row = el.createDiv({ cls: "paper-search-item" });
     const titleEl = row.createDiv({ cls: "paper-title", text: paper.title });
@@ -1707,6 +1809,7 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
     if (paper.authors && paper.authors.length > 0) metaParts.push(paper.authors.join(", "));
     if (paper.year) metaParts.push(String(paper.year));
     if (paper.journal) metaParts.push(paper.journal);
+    if (item.livePaper) metaParts.push("new in Zotero");
     const metaEl = row.createDiv({ cls: "paper-meta", text: metaParts.join(" \xB7 ") });
     metaEl.style.fontSize = "0.85em";
     metaEl.style.color = "var(--text-muted)";
@@ -1732,18 +1835,12 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
     }
   }
   onChooseSuggestion(item, _evt) {
-    if (item.isLoadingRow || item.paperIndex === void 0) return;
-    const ix = this.plugin.indexStore.getIndex();
-    if (!ix) return;
-    const paper = ix.papers[item.paperIndex];
+    const paper = this.paperOf(item);
+    if (!paper) return;
     const hit = item.hit;
     window.open(hitUrl(paper, hit));
   }
-  async insertCitationAndEnsureNote(paperIndex) {
-    const ix = this.plugin.indexStore.getIndex();
-    if (!ix) return;
-    const paper = ix.papers[paperIndex];
-    if (!paper) return;
+  async insertCitationAndEnsureNote(paper) {
     if (!paper.citekey) {
       new import_obsidian.Notice("Paper search: paper has no citekey. Ensure Better BibTeX is installed in Zotero.");
       return;
@@ -1762,10 +1859,7 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
       { showNotice: (m) => new import_obsidian.Notice(m), sessionNotices: this.plugin.litNoteNotices }
     );
   }
-  async openLiteratureNote(paperIndex) {
-    const ix = this.plugin.indexStore.getIndex();
-    if (!ix) return;
-    const paper = ix.papers[paperIndex];
+  async openLiteratureNote(paper) {
     const res = await ensureLiteratureNote(
       this.app.vault,
       this.app.metadataCache,
@@ -1777,10 +1871,7 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
       this.app.workspace.getLeaf().openFile(res.file);
     }
   }
-  selectInZotero(paperIndex) {
-    const ix = this.plugin.indexStore.getIndex();
-    if (!ix) return;
-    const paper = ix.papers[paperIndex];
+  selectInZotero(paper) {
     if (paper.key) {
       window.open(selectItemUrl(paper.key));
     }
@@ -2001,14 +2092,26 @@ function refreshSuggestions(suggest, hits, query, cache) {
     cache.set(query, hits);
   }
 }
+function withLive(items, live) {
+  const rest = items.filter((it) => it.source !== "zotero");
+  const have = new Set(rest.map((it) => it.paper?.key).filter(Boolean));
+  const add = live.filter((it) => !have.has(it.paper?.key));
+  if (add.length === 0) return rest.length === items.length ? items : rest;
+  const footer = rest.findIndex((it) => it.type === "footer");
+  return footer === -1 ? [...rest, ...add] : [...rest.slice(0, footer), ...add, ...rest.slice(footer)];
+}
 var InlineSuggestController = class {
   indexStore;
   embedder;
+  zotero;
   vault;
   metadataCache;
   settings;
   queryCache = new LRUQueryCache(16);
   debounceTimer = null;
+  liveTimer = null;
+  /** Rows for papers Zotero has and the index doesn't yet, for the query on screen. */
+  liveItems = [];
   currentSeq = 0;
   ollamaDownNotified = false;
   /** content_hash (or load id) of the index the query cache was filled from. */
@@ -2023,6 +2126,7 @@ var InlineSuggestController = class {
     this.sessionNotices = options.sessionNotices ?? /* @__PURE__ */ new Set();
     this.indexStore = options.indexStore;
     this.embedder = options.embedder;
+    this.zotero = options.zotero;
     this.vault = options.vault;
     this.metadataCache = options.metadataCache;
     this.settings = options.settings || {};
@@ -2047,9 +2151,14 @@ var InlineSuggestController = class {
   cancel() {
     this.shown = null;
     this.currentSeq++;
+    this.liveItems = [];
     if (this.debounceTimer) {
       this.clearTimeoutFn(this.debounceTimer);
       this.debounceTimer = null;
+    }
+    if (this.liveTimer) {
+      this.clearTimeoutFn(this.liveTimer);
+      this.liveTimer = null;
     }
   }
   async getSuggestions(query, suggestInstance) {
@@ -2105,19 +2214,32 @@ var InlineSuggestController = class {
             scores = rowScores(index, qVec);
           }
           const merged = hybridSearchFromScores(index, query, scores, limit);
-          const mergedItems = merged.map((h) => ({
+          const mergedItems = withLive(merged.map((h) => ({
             type: "paper",
             paper: index.papers[h.paper],
             snippet: h.snippet,
             source: h.source,
             score: h.score
-          }));
+          })), this.liveItems);
           if (this.shown) this.shown.items = mergedItems;
           refreshSuggestions(suggestInstance, mergedItems, query, this.queryCache);
         } catch {
           if (seq !== this.currentSeq) return;
           this.handleOllamaDown(initialItems, suggestInstance);
         }
+      }, 250);
+    }
+    if (this.zotero) {
+      const seq = this.currentSeq;
+      const zotero = this.zotero;
+      this.liveTimer = this.setTimeoutFn(async () => {
+        this.liveTimer = null;
+        const found = await zotero.search(query, indexedKeys(index));
+        if (seq !== this.currentSeq || found.length === 0) return;
+        this.liveItems = found.map((paper) => ({ type: "paper", paper, source: "zotero" }));
+        const items = withLive(this.shown?.items ?? initialItems, this.liveItems);
+        if (this.shown) this.shown.items = items;
+        refreshSuggestions(suggestInstance, items, query, this.queryCache);
       }, 250);
     }
     this.shown = { key: semanticText(query), version, items: initialItems };
@@ -2129,7 +2251,7 @@ var InlineSuggestController = class {
       this.ollamaDownNotified = true;
       this.showNotice?.("Paper search: Ollama is not running. Using keyword-only search.");
     }
-    const withSemanticOff = items.map((it) => ({ ...it, semanticOff: true }));
+    const withSemanticOff = withLive(items, this.liveItems).map((it) => ({ ...it, semanticOff: true }));
     withSemanticOff.push({ type: "footer", message: "Semantic search unavailable" });
     this.shown = null;
     refreshSuggestions(suggestInstance, withSemanticOff);
@@ -2197,7 +2319,7 @@ var InlineSuggestController = class {
       const firstAuthor = item.paper.authors && item.paper.authors.length > 0 ? item.paper.authors[0] : "Unknown author";
       const year = item.paper.year ? String(item.paper.year) : "n.d.";
       const metaEl = container.createDiv?.({ cls: "semantero-suggest-meta" });
-      metaEl?.setText?.(`${firstAuthor} \xB7 ${year}`);
+      metaEl?.setText?.(`${firstAuthor} \xB7 ${year}${item.source === "zotero" ? " \xB7 new in Zotero" : ""}`);
       if (this.settings.inlineShowSnippet !== false && item.snippet) {
         const snippetEl = container.createDiv?.({ cls: "semantero-suggest-snippet" });
         snippetEl?.setText?.(item.snippet);
@@ -2776,7 +2898,8 @@ var DEFAULT_SETTINGS = {
   relatedLimit: 5,
   relatedMinScore: 0.5,
   relatedAutoRefresh: false,
-  relatedInstruction: "Given a passage from my research notes, retrieve papers that report the findings or methods it discusses"
+  relatedInstruction: "Given a passage from my research notes, retrieve papers that report the findings or methods it discusses",
+  askZotero: true
 };
 var PaperSearchPlugin = class extends import_obsidian2.Plugin {
   settings = DEFAULT_SETTINGS;
@@ -2784,6 +2907,11 @@ var PaperSearchPlugin = class extends import_obsidian2.Plugin {
   /** Once-per-session literature-note notices, shared by the modal, @@ and the panel. */
   litNoteNotices = /* @__PURE__ */ new Set();
   editorTracker = new ActiveEditorTracker();
+  zoteroLive = new ZoteroLive(import_obsidian2.requestUrl);
+  /** Papers saved since the last index build, straight from Zotero ([] when the setting is off). */
+  zotero = {
+    search: (q, known) => this.settings.askZotero ? this.zoteroLive.search(q, known) : Promise.resolve([])
+  };
   async onload() {
     await this.loadSettings();
     const adapter = {
@@ -2823,6 +2951,7 @@ var PaperSearchPlugin = class extends import_obsidian2.Plugin {
     const suggestController = new InlineSuggestController({
       indexStore: this.indexStore,
       embedder,
+      zotero: this.zotero,
       vault: this.app.vault,
       metadataCache: this.app.metadataCache,
       settings: this.settings,
@@ -2990,6 +3119,14 @@ var PaperSearchSettingTab = class extends import_obsidian2.PluginSettingTab {
           this.plugin.settings.inlineLimit = parsed;
           await this.plugin.saveSettings();
         }
+      })
+    );
+    new import_obsidian2.Setting(containerEl).setName("Ask Zotero for new papers").setDesc(
+      `Lists papers saved in Zotero since the index was last built, so they can be cited at once. Needs Zotero's Settings \u2192 Advanced \u2192 "Allow other applications on this computer to communicate with Zotero".`
+    ).addToggle(
+      (toggle) => toggle.setValue(this.plugin.settings.askZotero).onChange(async (value) => {
+        this.plugin.settings.askZotero = value;
+        await this.plugin.saveSettings();
       })
     );
     new import_obsidian2.Setting(containerEl).setName("Inline Show Snippets").setDesc("Show matched snippet text below each paper in the inline suggestion list").addToggle(

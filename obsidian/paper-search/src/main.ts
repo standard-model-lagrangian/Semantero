@@ -20,6 +20,7 @@ import type { LoadedIndex } from "./engine.ts";
 import { createPaperSearchSuggestClass, InlineSuggestController } from "./inline.ts";
 import { createRelatedPapersViewClass, RelatedPapersController } from "./related.ts";
 import { ActiveEditorTracker, editorSnapshot } from "./editortracker.ts";
+import { ZoteroLive } from "./zoterolive.ts";
 
 export interface PaperSearchSettings {
   ollamaUrl: string;
@@ -37,6 +38,7 @@ export interface PaperSearchSettings {
   relatedMinScore: number;
   relatedAutoRefresh: boolean;
   relatedInstruction: string;
+  askZotero: boolean;
 }
 
 export const DEFAULT_SETTINGS: PaperSearchSettings = {
@@ -56,6 +58,7 @@ export const DEFAULT_SETTINGS: PaperSearchSettings = {
   relatedAutoRefresh: false,
   relatedInstruction:
     "Given a passage from my research notes, retrieve papers that report the findings or methods it discusses",
+  askZotero: true,
 };
 
 export default class PaperSearchPlugin extends Plugin {
@@ -64,6 +67,12 @@ export default class PaperSearchPlugin extends Plugin {
   /** Once-per-session literature-note notices, shared by the modal, @@ and the panel. */
   litNoteNotices = new Set<string>();
   editorTracker = new ActiveEditorTracker();
+  private zoteroLive = new ZoteroLive(requestUrl);
+  /** Papers saved since the last index build, straight from Zotero ([] when the setting is off). */
+  zotero = {
+    search: (q: string, known: Set<string>) =>
+      this.settings.askZotero ? this.zoteroLive.search(q, known) : Promise.resolve([]),
+  };
 
   async onload() {
     await this.loadSettings();
@@ -116,6 +125,7 @@ export default class PaperSearchPlugin extends Plugin {
     const suggestController = new InlineSuggestController({
       indexStore: this.indexStore,
       embedder,
+      zotero: this.zotero,
       vault: this.app.vault,
       metadataCache: this.app.metadataCache,
       settings: this.settings,
@@ -355,6 +365,21 @@ class PaperSearchSettingTab extends PluginSettingTab {
               this.plugin.settings.inlineLimit = parsed;
               await this.plugin.saveSettings();
             }
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Ask Zotero for new papers")
+      .setDesc(
+        "Lists papers saved in Zotero since the index was last built, so they can be cited at once. Needs Zotero's " +
+          "Settings → Advanced → \"Allow other applications on this computer to communicate with Zotero\"."
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.askZotero)
+          .onChange(async (value) => {
+            this.plugin.settings.askZotero = value;
+            await this.plugin.saveSettings();
           })
       );
 

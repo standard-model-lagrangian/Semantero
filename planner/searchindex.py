@@ -234,11 +234,14 @@ def build_index(
     embed_fn=None,
     lock_timeout: float = 60.0,
     allow_fallback: bool | None = None,
+    keyword_only: bool = False,
 ) -> dict:
     """Build or incrementally update search index.
 
     If Ollama is unreachable (and allow_fallback), texts without a cached vector are written with no
     row: keyword search still finds them, and the index is marked degraded until a later build embeds them.
+    keyword_only skips embedding on purpose and writes that same degraded index: the watcher publishes one first so a
+    new paper is citable within seconds, then runs a normal build for its vectors.
     """
     if allow_fallback is None:
         allow_fallback = (embed_fn is None)
@@ -421,7 +424,9 @@ def build_index(
 
             pending_texts = pending_abs_texts + pending_chunk_texts
             embed_succeeded = True
-            if pending_texts:
+            if pending_texts and keyword_only:
+                embed_succeeded = False
+            elif pending_texts:
                 if allow_fallback:
                     try:
                         if embed_fn:
@@ -438,7 +443,7 @@ def build_index(
                                 pplx_url=pplx_url,
                             )
                     except Exception as e:
-                        print(f"search index: Ollama embedding unavailable ({e}); falling back to keyword-only index", flush=True)
+                        print(f"search index: embedding unavailable ({e}); falling back to keyword-only index", flush=True)
                         embed_succeeded = False
                         new_vecs = None
                 else:

@@ -12,10 +12,14 @@ import { isPplx, warmSemantic } from "./semantic.ts";
 import { semanticText, shouldRunSemantic, SemanticCoordinator } from "./rank.ts";
 import { ensureLiteratureNote, formatCitation } from "./litnote.ts";
 import { hitUrl, selectItemUrl } from "./zotero.ts";
+import { indexedKeys } from "./zoterolive.ts";
+import type { PaperMetadata } from "./bm25.ts";
 
 export interface SearchModalItem {
   hit?: Hit;
   paperIndex?: number;
+  /** A paper Zotero has and the index doesn't list yet (zoterolive.ts); no paperIndex. */
+  livePaper?: PaperMetadata;
   isLoadingRow?: boolean;
 }
 
@@ -24,6 +28,9 @@ export class PaperSearchModal extends SuggestModal<SearchModalItem> {
   coordinator: SemanticCoordinator = new SemanticCoordinator();
   currentItems: SearchModalItem[] = [];
   debounceTimer: any = null;
+  liveTimer: any = null;
+  /** Rows from Zotero for the query on screen, kept below the index's own hits. */
+  liveItems: SearchModalItem[] = [];
   footerEl: HTMLElement | null = null;
   lastKeywordHits: Hit[] = [];
   /** The query on screen (as `semanticText`) and the index it was ranked on. */
@@ -65,8 +72,9 @@ export class PaperSearchModal extends SuggestModal<SearchModalItem> {
     this.scope.register(["Mod"], "Enter", (evt: KeyboardEvent) => {
       evt.preventDefault();
       const item = this.getSelectedItem();
-      if (item && !item.isLoadingRow && item.paperIndex !== undefined) {
-        this.insertCitationAndEnsureNote(item.paperIndex);
+      const paper = item && this.paperOf(item);
+      if (paper) {
+        this.insertCitationAndEnsureNote(paper);
         this.close();
       }
       return false;
@@ -75,8 +83,9 @@ export class PaperSearchModal extends SuggestModal<SearchModalItem> {
     this.scope.register(["Alt"], "Enter", (evt: KeyboardEvent) => {
       evt.preventDefault();
       const item = this.getSelectedItem();
-      if (item && !item.isLoadingRow && item.paperIndex !== undefined) {
-        this.openLiteratureNote(item.paperIndex);
+      const paper = item && this.paperOf(item);
+      if (paper) {
+        this.openLiteratureNote(paper);
         this.close();
       }
       return false;
@@ -85,12 +94,20 @@ export class PaperSearchModal extends SuggestModal<SearchModalItem> {
     this.scope.register(["Shift"], "Enter", (evt: KeyboardEvent) => {
       evt.preventDefault();
       const item = this.getSelectedItem();
-      if (item && !item.isLoadingRow && item.paperIndex !== undefined) {
-        this.selectInZotero(item.paperIndex);
+      const paper = item && this.paperOf(item);
+      if (paper) {
+        this.selectInZotero(paper);
         this.close();
       }
       return false;
     });
+  }
+
+  paperOf(item: SearchModalItem): PaperMetadata | null {
+    if (item.isLoadingRow) return null;
+    if (item.livePaper) return item.livePaper;
+    if (item.paperIndex === undefined) return null;
+    return this.plugin.indexStore.getIndex()?.papers[item.paperIndex] ?? null;
   }
 
   getSelectedItem(): SearchModalItem | null {
@@ -126,10 +143,27 @@ export class PaperSearchModal extends SuggestModal<SearchModalItem> {
     }));
     this.currentItems = items;
 
-    // 2. Schedule debounced semantic search
+    // 2. Schedule debounced semantic search, and a lookup in Zotero for papers saved since the last build
     this.scheduleSemanticSearch(query, ix);
+    this.scheduleLive(query, ix);
 
     return items;
+  }
+
+  scheduleLive(query: string, ix: LoadedIndex) {
+    this.liveItems = [];
+    if (this.liveTimer) clearTimeout(this.liveTimer);
+    this.liveTimer = setTimeout(async () => {
+      this.liveTimer = null;
+      const found = await this.plugin.zotero.search(query, indexedKeys(ix));
+      if (this.shownKey !== semanticText(query) || this.shownIndex !== ix || found.length === 0) return;
+      this.liveItems = found.map((livePaper) => ({ livePaper }));
+      const items = [...this.currentItems.filter((it) => !it.livePaper), ...this.liveItems];
+      const selected = (this as any).chooser?.selectedItem ?? 0;
+      this.currentItems = items;
+      (this as any).chooser?.setSuggestions(items);
+      (this as any).chooser?.setSelectedItem(selected);
+    }, this.plugin.settings.debounceMs);
   }
 
   scheduleSemanticSearch(query: string, ix: LoadedIndex) {
@@ -165,10 +199,10 @@ export class PaperSearchModal extends SuggestModal<SearchModalItem> {
       // Merge over the full ranked lists, not the 12 shown while typing.
       const mergedHits = hybridSearchFromScores(ix, query, scores, this.plugin.settings.limit);
 
-      const newItems: SearchModalItem[] = mergedHits.map((h) => ({
-        hit: h,
-        paperIndex: h.paper,
-      }));
+      const newItems: SearchModalItem[] = [
+        ...mergedHits.map((h) => ({ hit: h, paperIndex: h.paper })),
+        ...this.liveItems,
+      ];
 
       // Maintain selection
       const currentItem = this.getSelectedItem();
@@ -196,9 +230,8 @@ export class PaperSearchModal extends SuggestModal<SearchModalItem> {
       return;
     }
 
-    const ix = this.plugin.indexStore.getIndex();
-    if (!ix || item.paperIndex === undefined) return;
-    const paper = ix.papers[item.paperIndex];
+    const paper = this.paperOf(item);
+    if (!paper) return;
     const hit = item.hit;
 
     const row = el.createDiv({ cls: "paper-search-item" });
@@ -209,6 +242,7 @@ export class PaperSearchModal extends SuggestModal<SearchModalItem> {
     if (paper.authors && paper.authors.length > 0) metaParts.push(paper.authors.join(", "));
     if (paper.year) metaParts.push(String(paper.year));
     if (paper.journal) metaParts.push(paper.journal);
+    if (item.livePaper) metaParts.push("new in Zotero");
 
     const metaEl = row.createDiv({ cls: "paper-meta", text: metaParts.join(" · ") });
     metaEl.style.fontSize = "0.85em";
@@ -240,22 +274,15 @@ export class PaperSearchModal extends SuggestModal<SearchModalItem> {
   }
 
   onChooseSuggestion(item: SearchModalItem, _evt: MouseEvent | KeyboardEvent) {
-    if (item.isLoadingRow || item.paperIndex === undefined) return;
-    const ix = this.plugin.indexStore.getIndex();
-    if (!ix) return;
-    const paper = ix.papers[item.paperIndex];
+    const paper = this.paperOf(item);
+    if (!paper) return;
     const hit = item.hit;
 
     // Enter: open the matching PDF at its page, or the matching web snapshot, in Zotero
     window.open(hitUrl(paper, hit));
   }
 
-  async insertCitationAndEnsureNote(paperIndex: number) {
-    const ix = this.plugin.indexStore.getIndex();
-    if (!ix) return;
-    const paper = ix.papers[paperIndex];
-    if (!paper) return;
-
+  async insertCitationAndEnsureNote(paper: PaperMetadata) {
     if (!paper.citekey) {
       new Notice("Paper search: paper has no citekey. Ensure Better BibTeX is installed in Zotero.");
       return;
@@ -277,11 +304,7 @@ export class PaperSearchModal extends SuggestModal<SearchModalItem> {
     );
   }
 
-  async openLiteratureNote(paperIndex: number) {
-    const ix = this.plugin.indexStore.getIndex();
-    if (!ix) return;
-    const paper = ix.papers[paperIndex];
-
+  async openLiteratureNote(paper: PaperMetadata) {
     const res = await ensureLiteratureNote(
       this.app.vault,
       this.app.metadataCache,
@@ -295,10 +318,7 @@ export class PaperSearchModal extends SuggestModal<SearchModalItem> {
     }
   }
 
-  selectInZotero(paperIndex: number) {
-    const ix = this.plugin.indexStore.getIndex();
-    if (!ix) return;
-    const paper = ix.papers[paperIndex];
+  selectInZotero(paper: PaperMetadata) {
     if (paper.key) {
       window.open(selectItemUrl(paper.key));
     }

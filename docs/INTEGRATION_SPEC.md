@@ -91,12 +91,12 @@ hybrid(keywordHits, semanticHits, limit, k = 60): Hit[]                 // RRF, 
 
 **A new launchd job, `launchd/com.planner.zotero-watch.plist`:**
 - `WatchPaths`: `~/Zotero/zotero.sqlite` and `~/Zotero/storage` (a new attachment folder fires the second).
-- `ThrottleInterval`: 30 s. `RunAtLoad`: false.
+- `ThrottleInterval`: 10 s (30 s until 27 Oct 2026). `RunAtLoad`: false.
 - Runs `bin/planner-run.sh search watch-run`, logging to `logs/zotero-watch.log`.
 
 **`planner search watch-run`** does this, in order:
 1. **Lock.** Take a non-blocking `fcntl.flock` on `.planner/search.lock`. The morning job's `search index` uses the same lock. If the lock is held, log `busy` and exit 0. Whoever holds the lock re-checks the fingerprint before releasing it (step 6), so a change made in between isn't lost.
-2. **Wait for Zotero to go quiet.** Wait until `zotero.sqlite` hasn't been modified for `quiet_s` (default 20 s), checking every 5 s, for at most `max_wait_s` (600 s). If it never goes quiet, log `gave up waiting` and exit 0; the next trigger or the morning run catches up.
+2. **Wait for Zotero to go quiet.** Wait until `zotero.sqlite` hasn't been modified for `quiet_s` (default 8 s; 20 s until 27 Oct 2026), checking every 5 s, for at most `max_wait_s` (600 s). If it never goes quiet, log `gave up waiting` and exit 0; the next trigger or the morning run catches up.
 3. **Fingerprint** (read-only via the `?immutable=1` URI, about 25 MB):
    - number of regular items not in the trash;
    - `max(clientDateModified)` over items;
@@ -382,7 +382,7 @@ Python tests use `unittest` and temporary directories, as now. TypeScript tests 
 - **W8 plist:**
   - `plutil -lint` passes;
   - `WatchPaths` has both paths;
-  - `ThrottleInterval` ≥ 30;
+  - `ThrottleInterval` ≥ 10;
   - `ProgramArguments` uses `bin/planner-run.sh search watch-run`;
   - the log path is under `logs/`;
   - no `KeepAlive`.

@@ -2,11 +2,21 @@ import hashlib
 import sqlite3
 import time
 import urllib.request
+from datetime import datetime
 from pathlib import Path
 
 from . import searchindex
 from .searchindex import search_lock, load_json, write_json
 from .zotlib import attachment_path
+
+
+# Seconds zotero.sqlite must sit unmodified before a build. Zotero writes a new item, its attachment and any
+# retrieved metadata within a few seconds of each other; the post-build fingerprint recheck catches a late write.
+QUIET_S = 8.0
+
+
+def log(msg: str) -> None:
+    print(f"{datetime.now():%Y-%m-%d %H:%M:%S} zotero watch: {msg}", flush=True)
 
 
 def compute_fingerprint(zotero_dir: Path | str) -> str | None:
@@ -80,7 +90,7 @@ def compute_fingerprint(zotero_dir: Path | str) -> str | None:
 
         return hasher.hexdigest()
     except Exception as e:
-        print(f"zotero watch: sqlite unreadable ({e})", flush=True)
+        log(f"sqlite unreadable ({e})")
         return None
 
 
@@ -92,9 +102,17 @@ def ollama_up(ollama_url: str, timeout: float = 2.0) -> bool:
         return False
 
 
+def embedder_up(cfg) -> tuple[str, bool]:
+    """(name, answering) for the configured embedding service: pplxd for the pplx profile, else Ollama."""
+    if cfg.search.get("backend", "ollama") == "pplx":
+        from . import pplx
+        return "pplx", pplx.health(cfg.search.get("pplx_url", "http://127.0.0.1:11435")) is not None
+    return "Ollama", ollama_up(cfg.search.get("ollama_url", "http://localhost:11434"))
+
+
 def wait_for_quiet(
     db_path: Path,
-    quiet_s: float = 20.0,
+    quiet_s: float = QUIET_S,
     check_interval_s: float = 5.0,
     max_wait_s: float = 600.0,
     time_fn=time.time,
@@ -118,7 +136,7 @@ def wait_for_quiet(
 
 def watch_run(
     cfg,
-    quiet_s: float = 20.0,
+    quiet_s: float = QUIET_S,
     check_interval_s: float = 5.0,
     max_wait_s: float = 600.0,
     time_fn=time.time,
@@ -128,7 +146,7 @@ def watch_run(
     db_path = zotero_dir / "zotero.sqlite"
 
     if not db_path.exists():
-        print(f"zotero watch: {db_path} does not exist", flush=True)
+        log(f"{db_path} does not exist")
         return 0
 
     # 1. Non-blocking lock
@@ -148,7 +166,7 @@ def watch_run(
                     sleep_fn=sleep_fn,
                 )
                 if not quiet:
-                    print("zotero watch: gave up waiting", flush=True)
+                    log("gave up waiting")
                     return 0
 
                 # 3. Fingerprint
@@ -160,29 +178,35 @@ def watch_run(
                 state = load_json(state_file, {})
                 old_fp = state.get("fingerprint")
 
-                if fp == old_fp:
+                retry = fp == old_fp
+                if retry:
                     if not state.get("degraded"):
-                        print("zotero watch: no changes", flush=True)
+                        log("no changes")
                         return 0
-                    # Keyword-only index: retry embedding, but only once Ollama answers, so an hourly
-                    # check with Ollama still down costs one HTTP probe, not a pdftotext pass.
-                    if not ollama_up(cfg.search.get("ollama_url", "http://localhost:11434")):
-                        print("zotero watch: keyword-only index, Ollama still unavailable", flush=True)
+                    # Keyword-only index: retry embedding, but only once the embedder answers, so an hourly
+                    # check with it still down costs one HTTP probe, not a pdftotext pass.
+                    name, up = embedder_up(cfg)
+                    if not up:
+                        log(f"keyword-only index, {name} still unavailable")
                         return 0
-                    print("zotero watch: Ollama is back, embedding the keyword-only texts", flush=True)
+                    log(f"{name} is back, embedding the keyword-only texts")
 
-                # 4. Build index
+                # 4. Build index: a library change is published keyword-only first (citable in a second or two),
+                # then embedded (~0.4 s a chunk on pplx). A retry has nothing new to publish, so it embeds directly.
+                t0 = time.time()
                 try:
-                    res = searchindex.build_index(cfg, full=False)
-                    print(
-                        f"zotero watch: build completed ({res['papers']} papers, {res['chunks']} chunks)",
-                        flush=True,
-                    )
+                    if not retry:
+                        res = searchindex.build_index(cfg, full=False, keyword_only=True)
+                        if res.get("missing_vectors"):
+                            log(f"keyword index published in {time.time() - t0:.1f}s ({res['papers']} papers); "
+                                f"embedding {res['missing_vectors']} texts")
+                    if retry or res.get("missing_vectors"):
+                        res = searchindex.build_index(cfg, full=False)
+                    log(f"build completed in {time.time() - t0:.1f}s ({res['papers']} papers, {res['chunks']} chunks)")
                     if res.get("missing_vectors"):
-                        print(f"zotero watch: {res['missing_vectors']} texts keyword-only (Ollama unavailable); "
-                              "retrying hourly", flush=True)
+                        log(f"{res['missing_vectors']} texts keyword-only (embedder unavailable); retrying hourly")
                 except Exception as e:
-                    print(f"zotero watch: build failed ({e})", flush=True)
+                    log(f"build failed ({e})")
                     return 0
 
                 # 5. Record fingerprint on success
@@ -198,8 +222,8 @@ def watch_run(
 
             return 0
     except BlockingIOError:
-        print("zotero watch: busy", flush=True)
+        log("busy")
         return 0
     except Exception as e:
-        print(f"zotero watch: error ({e})", flush=True)
+        log(f"error ({e})")
         return 0

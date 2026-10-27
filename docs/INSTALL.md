@@ -135,8 +135,8 @@ The script:
 3. copies the plugin into `<vault>/.obsidian/plugins/semantero/`;
 4. checks your library has citekeys, then builds the first index into `<vault>/.planner/search/` (with pplx, allow
    about an hour per 9,000 paper texts; after that, a new paper takes seconds);
-5. writes and loads `~/Library/LaunchAgents/com.planner.zotero-watch.plist`. This re-indexes about 20 s after Zotero
-   changes, plus an hourly retry while the index is keyword-only.
+5. writes and loads `~/Library/LaunchAgents/com.planner.zotero-watch.plist`. This re-indexes about 10 s after Zotero
+   changes (keyword-only first, so a new paper is citable before it is embedded), plus an hourly retry while the index is keyword-only.
 
 Then in Obsidian: **Settings → Community plugins → Installed plugins → reload → enable "Semantero"**.
 

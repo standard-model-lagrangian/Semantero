@@ -34,7 +34,7 @@ All execution speed budgets specified in `INTEGRATION_SPEC.md` were benchmarked 
 | **B10** | Passage extraction & cleanup (200 kB note) | ≤ 5.0 ms | **p50 = 0.05 ms, p95 = 0.07 ms, max = 0.09 ms** | **55× headroom (PASS)** |
 | **B11** | Literature note find + template render + create | ≤ 30 ms | **p50 = 0.01 ms, p95 = 0.03 ms, max = 0.47 ms** | **60× headroom (PASS)** |
 | **B12** | `planner search watch-run` with no change | ≤ 1.5 s wall, 0 bytes written under `.planner/search/` | **under 1.5 s on the fixture library (PF9)** | **PASS** |
-| **B13** | New paper saved in Zotero → findable by keyword in the pop-up | ≤ 90 s (20 s quiet + 30 s throttle + ~10 s embed + reload) | not measured end to end | **UNTESTED** |
+| **B13** | New paper saved in Zotero → findable by keyword in the pop-up | ≤ 90 s (20 s quiet + 30 s throttle + ~10 s embed + reload); since 27 Oct: ~10–20 s (8 s quiet + keyword-only publish + reload), at once via Zotero's local API | not measured end to end (watcher log is now timestamped) | **UNTESTED** |
 | **B14** | Inline selection stability across re-ranks | 0 jumps/violations | **0 violations across 1,000 randomised runs** | **PASS** |
 
 ---
@@ -75,11 +75,11 @@ All execution speed budgets specified in `INTEGRATION_SPEC.md` were benchmarked 
   - Verified via L1–L13 and PF_B11.
 - **1b Zotero Watcher & Launchd (`planner/zotwatch.py`):**
   - Fingerprint (read-only `?immutable=1` sqlite URI): count of regular items not in the trash, `max(clientDateModified)`, count of attachments, and the sorted (PDF path, mtime, size) list. Stored as `fingerprint` in `.planner/search/state.json`, only after a successful build; `search index` rebuilds keep the key.
-  - Quiet period: waits until `zotero.sqlite` has not been modified for 20 s (`quiet_s`), checking every 5 s, for at most 600 s (`max_wait_s`); otherwise logs `gave up waiting`.
+  - Quiet period: waits until `zotero.sqlite` has not been modified for 8 s (`quiet_s`, 20 s until 27 Oct), checking every 5 s, for at most 600 s (`max_wait_s`); otherwise logs `gave up waiting`.
   - Advisory lock: non-blocking `search_lock(cfg, blocking=False)` on `.planner/search.lock`, shared with the morning job's `search index`. If busy, exits 0 with `"busy"`.
   - Loop limit: up to 3 rounds if changes occur while indexing.
   - CLI command: `planner search watch-run` for launchd execution.
-  - Launchd plist: `launchd/com.planner.zotero-watch.plist` with `WatchPaths` on `~/Zotero/zotero.sqlite` and `ThrottleInterval = 30`.
+  - Launchd plist: `launchd/com.planner.zotero-watch.plist` with `WatchPaths` on `~/Zotero/zotero.sqlite` and `ThrottleInterval = 10` (30 until 27 Oct).
   - Health check: `check_zotero_watch` in `planner/health.py` reports warning if plist is not loaded in `launchctl list`.
   - Verified via W1–W10 and PF9.
 
@@ -441,3 +441,29 @@ Migration, done once on the owner's Mac:
   saved Related panel in `workspace.json` were switched to the new id. The plugin has no `data.json`, so no settings.
 - The Swift tests made a new preferences domain per run and never removed it (107 `daito-test-*.plist` files). They
   now reuse one fixed, emptied domain per test.
+
+### Time to cite a new paper (27 Oct 2026)
+
+Measured before: a paper became citable 1–2 min after Zotero finished adding it; three papers added 23:37–23:41 on
+26 Oct were in the index at 23:49. Embedding is most of it (pplx ~0.38 s a chunk, ~90 chunks a paper, timed on 32
+real chunks), and citing needs none of it. Changes:
+- **Keyword-only publish first.** `watch_run` calls `build_index(keyword_only=True)`, which writes the same degraded
+  index a down embedder does, then a normal build embeds it. A metadata-only change has nothing to embed, so the first
+  build is the whole build. Costs: PDF text extracted twice for new attachments (≤0.4 s each), one more ~25 MB index
+  write, and readers reload twice (the plugin parses `chunks.json`, 19 MB, once more; peak memory unchanged, since the
+  old index is dropped on swap as before). A retry of a degraded index embeds directly.
+- **Quiet window 20 s → 8 s, launchd throttle 30 s → 10 s.** The post-build fingerprint recheck (up to 3 rounds)
+  already covers a Zotero write that lands after the window. ~100 launches in 3 days, each a fingerprint check of well
+  under a second, so a shorter throttle costs little.
+- **Retry probe follows the backend.** The hourly retry of a degraded index probed Ollama even on the pplx profile;
+  it now asks pplxd's `/health` (`zotwatch.embedder_up`).
+- **pplxd asks llama-server for 4 texts at a time** (`HIDDEN_GROUP`), not 32. Per-token hidden states come back as JSON,
+  ~250 MB for 32 texts, which took ~1 GB to parse and was cut off three times since 25 Oct (`IncompleteRead` in
+  `logs/pplxd.log`). Speed is the same (12.0 s vs 12.4 s for 32 chunks).
+- **Zotero local API fallback** (`src/zoterolive.ts`): `@@` and the search modal ask
+  `localhost:23119/api/users/0/items/top?q=` 250 ms after typing (queries of 3+ characters) and append up to 3 papers
+  the index doesn't list, marked "new in Zotero"; citing one inserts the citekey and creates the literature note as
+  usual (no PDF link until the index has it, so Enter selects the item). Zotero ships with the local API off; while it
+  is off or Zotero is closed, a failed request stops lookups for a minute. Setting: "Ask Zotero for new papers".
+- Watcher log lines carry a timestamp and the build's duration, so the next measurement can be end to end.
+

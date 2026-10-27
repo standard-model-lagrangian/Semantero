@@ -206,6 +206,22 @@ class TestEncoder(ServiceCase):
         self.assertEqual(v.shape, (1, 4))
 
 
+class TestLlamaRequests(ServiceCase):
+    def test_hidden_states_requested_a_few_texts_at_a_time_in_order(self):
+        llama = pplxd.Llama.__new__(pplxd.Llama)
+        sent = []
+
+        def post(path, body):
+            sent.append(len(body["content"]))
+            # llama-server may answer out of order; each row carries its index
+            return [{"index": i, "embedding": [[float(ids[0])]]} for i, ids in reversed(list(enumerate(body["content"])))]
+
+        llama._post = post
+        out = llama.hidden([[n] for n in range(10)])
+        self.assertEqual(sent, [pplxd.HIDDEN_GROUP] * 2 + [10 - 2 * pplxd.HIDDEN_GROUP])
+        self.assertEqual([float(v[0][0]) for v in out], [float(n) for n in range(10)])
+
+
 class TestTokenCache(ServiceCase):
     def test_add_dedupe_reopen(self):
         c = pplxd.TokenCache(self.tmp / "c", dims=4)

@@ -285,7 +285,7 @@ class TestZotwatch(unittest.TestCase):
         self.assertEqual(pl["Label"], "com.planner.zotero-watch")
         self.assertIn("WatchPaths", pl)
         self.assertEqual(len(pl["WatchPaths"]), 2)
-        self.assertGreaterEqual(pl["ThrottleInterval"], 30)
+        self.assertGreaterEqual(pl["ThrottleInterval"], 10)
         self.assertIn("watch-run", pl["ProgramArguments"])
         self.assertIn("logs/zotero-watch.log", pl["StandardOutPath"])
         self.assertNotIn("KeepAlive", pl)
@@ -427,6 +427,52 @@ class TestZotwatch(unittest.TestCase):
         state = json.loads((self.data_dir / "search" / "state.json").read_text())
         self.assertEqual(state.get("fingerprint"), zotwatch.compute_fingerprint(self.zotero_dir))
         self.assertTrue((self.data_dir / "search" / "vectors.f32").exists())
+
+    # W13 a library change is published keyword-only first (citable before embedding), then embedded
+    def test_w13_keyword_index_published_before_embedding(self):
+        real_build = searchindex.build_index
+        seen = []
+
+        def recording_build(cfg, **kw):
+            res = real_build(cfg, embed_fn=None if kw.get("keyword_only") else self.fake_embed, **kw)
+            papers = json.loads((self.data_dir / "search" / "papers.json").read_text())
+            seen.append((kw.get("keyword_only", False), res["missing_vectors"], len(papers)))
+            return res
+
+        stdout = io.StringIO()
+        with patch("planner.searchindex.build_index", side_effect=recording_build), patch("sys.stdout", stdout):
+            self.assertEqual(zotwatch.watch_run(self.cfg, quiet_s=0.0), 0)
+        log = stdout.getvalue()
+        self.assertEqual([k for k, _, _ in seen], [True, False], log)
+        (_, missing, n_first), (_, missing_after, n_after) = seen
+        self.assertGreater(missing, 0)          # first publish: every paper listed, no vectors yet
+        self.assertEqual(n_first, n_after)
+        self.assertEqual(missing_after, 0)
+        self.assertIn("keyword index published", log)
+        self.assertNotIn("degraded", json.loads((self.data_dir / "search" / "state.json").read_text()))
+
+        # Metadata-only edit with nothing new to embed: the keyword-only build is the whole build
+        seen.clear()
+        conn = sqlite3.connect(self.zotero_dir / "zotero.sqlite")
+        conn.execute("UPDATE items SET clientDateModified = '2026-10-21T12:00:00' WHERE key = 'KEY0001'")
+        conn.commit()
+        conn.close()
+        with patch("planner.searchindex.build_index", side_effect=recording_build), patch("sys.stdout", io.StringIO()):
+            zotwatch.watch_run(self.cfg, quiet_s=0.0)
+        self.assertEqual([k for k, _, _ in seen], [True])
+
+    # W14 the retry probe asks the configured embedder, not always Ollama
+    def test_w14_embedder_up_follows_backend(self):
+        self.cfg.search["backend"] = "pplx"
+        with patch("planner.pplx.health", return_value={"ok": True}) as h, patch("planner.zotwatch.ollama_up") as o:
+            self.assertEqual(zotwatch.embedder_up(self.cfg), ("pplx", True))
+            o.assert_not_called()
+            h.assert_called_once()
+        with patch("planner.pplx.health", return_value=None):
+            self.assertEqual(zotwatch.embedder_up(self.cfg), ("pplx", False))
+        self.cfg.search["backend"] = "ollama"
+        with patch("planner.zotwatch.ollama_up", return_value=True):
+            self.assertEqual(zotwatch.embedder_up(self.cfg), ("Ollama", True))
 
     # W12 the lock still excludes a different process while held re-entrantly in this one
     def test_w12_reentrant_lock_still_excludes_other_processes(self):

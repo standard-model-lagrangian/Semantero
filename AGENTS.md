@@ -43,7 +43,9 @@ Decisions log: [docs/DECISIONS_AND_GAPS.md](docs/DECISIONS_AND_GAPS.md). Manual 
   - **Related Papers Panel (`RelatedPapersView`)**: Sidebar pane extracting the active note's passage/cursor section, cleans markdown formatting, shortens to $\le 2000$ characters at sentence boundaries, and retrieves relevant papers using calibrated instruction embedding. Hides already-cited papers by default with toggle to inspect them.
 - **Incremental Zotero Watcher** (`planner/zotwatch.py`, `planner search watch-run`):
   - Triggered via launchd (`com.planner.zotero-watch.plist`) on changes to `~/Zotero/zotero.sqlite`.
-  - Waits for `zotero.sqlite` to be quiet for 20 s, then compares a fingerprint of the library with `state.json` → `fingerprint`; unchanged means no build and no writes. The fingerprint is recorded only after a successful build.
+  - Waits for `zotero.sqlite` to be quiet for 8 s, then compares a fingerprint of the library with `state.json` → `fingerprint`; unchanged means no build and no writes. The fingerprint is recorded only after a successful build.
+  - A change is published twice: keyword-only first (`build_index(keyword_only=True)`, citable a second or two after the quiet window), then with vectors (~0.4 s a chunk on pplx). Log lines are timestamped.
+  - The plugin's `@@` and search modal also ask Zotero's local API (`src/zoterolive.ts`, setting "Ask Zotero for new papers") for papers the index doesn't list yet; needs Zotero's "Allow other applications on this computer to communicate with Zotero", otherwise one refused request a minute.
   - The index builder (`planner/searchindex.py`) computes `content_hash` over papers, chunks, and vector bytes, and writes nothing when it is unchanged.
   - Indexes child PDFs and web snapshots (`text/html`, text via stdlib `html.parser` in `planner/htmltext.py`, chunks with page 0); both are in the fingerprint.
   - Retries missing PDF/snapshot attachments on subsequent runs when files appear on disk.

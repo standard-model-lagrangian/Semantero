@@ -40,6 +40,7 @@ DIMS = 128
 UBATCH = 2048          # longest input in one pass (non-causal attention needs the whole input in one micro-batch); our
                        # chunks are ~300-500 tokens, so this cap (the model allows 4096 for documents) never bites
 IDLE_SECONDS = 300     # llama-server unloads the model after this long without a request
+HIDDEN_GROUP = 4       # texts per llama-server /embeddings request (see LlamaServer.hidden)
 BLOCK_TOKENS = 1 << 16  # MaxSim block: fp16 -> fp32 conversion and matmul stay in cache
 WORKERS = 4
 
@@ -109,9 +110,14 @@ class Llama:
         return self._post("/tokenize", {"content": text, "add_special": False, "parse_special": True})["tokens"]
 
     def hidden(self, id_lists: list[list[int]]) -> list[np.ndarray]:
-        out = self._post("/embeddings", {"content": id_lists})
-        out.sort(key=lambda r: r["index"])
-        return [np.asarray(r["embedding"], dtype=np.float32) for r in out]
+        # A few texts per request: every token's hidden state comes back as JSON (~8 MB a 512-token text), and 32 at
+        # once (~250 MB) took ~1 GB to parse and was sometimes cut off (IncompleteRead). Same speed either way.
+        res = []
+        for i in range(0, len(id_lists), HIDDEN_GROUP):
+            out = self._post("/embeddings", {"content": id_lists[i:i + HIDDEN_GROUP]})
+            out.sort(key=lambda r: r["index"])
+            res += [np.asarray(r["embedding"], dtype=np.float32) for r in out]
+        return res
 
     def stop(self) -> None:
         if self.proc and self.proc.poll() is None:

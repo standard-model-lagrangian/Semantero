@@ -55,7 +55,7 @@ ones you don't. Then it puts that index one keystroke away, in Obsidian and in e
 
 ```mermaid
 flowchart LR
-    Z[("Zotero<br/>sqlite + PDFs")] -->|change detected| W["Watcher<br/><sub>launchd · 20 s quiet window<br/>library fingerprint</sub>"]
+    Z[("Zotero<br/>sqlite + PDFs")] -->|change detected| W["Watcher<br/><sub>launchd · 8 s quiet window<br/>library fingerprint</sub>"]
     V[("Obsidian vault<br/>Markdown notes")] -->|every 5 min| N["Notes indexer"]
     W --> X["Extract + chunk<br/><sub>PDF text, web snapshots<br/>headers/refs stripped</sub>"]
     X --> E["Embed locally<br/><sub>pplx-embed-v2-late · or Qwen3 via Ollama</sub>"]

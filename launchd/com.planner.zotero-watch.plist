@@ -18,8 +18,9 @@
         <string>/Users/frederick/Zotero/zotero.sqlite</string>
         <string>/Users/frederick/Zotero/storage</string>
     </array>
+    <!-- launchd starts the job at most this often; a run that only fingerprints takes well under a second. -->
     <key>ThrottleInterval</key>
-    <integer>30</integer>
+    <integer>10</integer>
     <!-- Hourly retry for a keyword-only index; exits after a fingerprint check otherwise. -->
     <key>StartInterval</key>
     <integer>3600</integer>

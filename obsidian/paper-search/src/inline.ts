@@ -3,12 +3,14 @@ import { findTrigger, isExcludedContext, formatCitation } from "./cite.ts";
 import { semanticText, shouldRunSemantic } from "./rank.ts";
 import { ensureLiteratureNote, type LitNoteSettings, type VaultLike, type MetadataCacheLike } from "./litnote.ts";
 import type { PaperMetadata } from "./bm25.ts";
+import { indexedKeys } from "./zoterolive.ts";
 
 export interface SuggestionItem {
   type: "paper" | "hint" | "loading" | "footer";
   paper?: PaperMetadata;
   snippet?: string;
-  source?: "keyword" | "semantic" | "both";
+  /** "zotero": not in the index yet, found by asking Zotero itself (zoterolive.ts). */
+  source?: "keyword" | "semantic" | "both" | "zotero";
   score?: number;
   message?: string;
   semanticOff?: boolean;
@@ -139,6 +141,21 @@ export interface EmbedderLike {
   rowScores?(text: string, ix: LoadedIndex): Promise<ArrayLike<number> | null>;
 }
 
+/** Asks Zotero for papers the index doesn't list yet (zoterolive.ts); [] when it can't. */
+export interface ZoteroLiveLike {
+  search(query: string, known: Set<string>): Promise<PaperMetadata[]>;
+}
+
+/** `items` with the Zotero-only rows replaced by `live` (minus any now in the list), ahead of a footer row. */
+export function withLive(items: SuggestionItem[], live: SuggestionItem[]): SuggestionItem[] {
+  const rest = items.filter((it) => it.source !== "zotero");
+  const have = new Set(rest.map((it) => it.paper?.key).filter(Boolean));
+  const add = live.filter((it) => !have.has(it.paper?.key));
+  if (add.length === 0) return rest.length === items.length ? items : rest;
+  const footer = rest.findIndex((it) => it.type === "footer");
+  return footer === -1 ? [...rest, ...add] : [...rest.slice(0, footer), ...add, ...rest.slice(footer)];
+}
+
 export interface IndexStoreLike {
   isReady(): boolean;
   getIndex(): any;
@@ -152,12 +169,16 @@ export interface IndexStoreLike {
 export class InlineSuggestController {
   indexStore: IndexStoreLike;
   embedder?: EmbedderLike;
+  zotero?: ZoteroLiveLike;
   vault: VaultLike;
   metadataCache?: MetadataCacheLike;
   settings: InlineSuggestSettings;
   queryCache = new LRUQueryCache<SuggestionItem[]>(16);
 
   private debounceTimer: any = null;
+  private liveTimer: any = null;
+  /** Rows for papers Zotero has and the index doesn't yet, for the query on screen. */
+  private liveItems: SuggestionItem[] = [];
   private currentSeq = 0;
   private ollamaDownNotified = false;
   /** content_hash (or load id) of the index the query cache was filled from. */
@@ -172,6 +193,7 @@ export class InlineSuggestController {
   constructor(options: {
     indexStore: IndexStoreLike;
     embedder?: EmbedderLike;
+    zotero?: ZoteroLiveLike;
     vault: VaultLike;
     metadataCache?: MetadataCacheLike;
     settings?: InlineSuggestSettings;
@@ -184,6 +206,7 @@ export class InlineSuggestController {
     this.sessionNotices = options.sessionNotices ?? new Set<string>();
     this.indexStore = options.indexStore;
     this.embedder = options.embedder;
+    this.zotero = options.zotero;
     this.vault = options.vault;
     this.metadataCache = options.metadataCache;
     this.settings = options.settings || {};
@@ -217,9 +240,14 @@ export class InlineSuggestController {
   cancel(): void {
     this.shown = null;
     this.currentSeq++;
+    this.liveItems = [];
     if (this.debounceTimer) {
       this.clearTimeoutFn(this.debounceTimer);
       this.debounceTimer = null;
+    }
+    if (this.liveTimer) {
+      this.clearTimeoutFn(this.liveTimer);
+      this.liveTimer = null;
     }
   }
 
@@ -297,13 +325,13 @@ export class InlineSuggestController {
           }
 
           const merged = hybridSearchFromScores(index, query, scores, limit);
-          const mergedItems: SuggestionItem[] = merged.map((h) => ({
+          const mergedItems = withLive(merged.map((h): SuggestionItem => ({
             type: "paper",
             paper: index.papers[h.paper],
             snippet: h.snippet,
             source: h.source,
             score: h.score,
-          }));
+          })), this.liveItems);
 
           if (this.shown) this.shown.items = mergedItems;
           refreshSuggestions(suggestInstance, mergedItems, query, this.queryCache);
@@ -311,6 +339,20 @@ export class InlineSuggestController {
           if (seq !== this.currentSeq) return; // failure of an outdated request
           this.handleOllamaDown(initialItems, suggestInstance);
         }
+      }, 250);
+    }
+
+    if (this.zotero) {
+      const seq = this.currentSeq;
+      const zotero = this.zotero;
+      this.liveTimer = this.setTimeoutFn(async () => {
+        this.liveTimer = null;
+        const found = await zotero.search(query, indexedKeys(index));
+        if (seq !== this.currentSeq || found.length === 0) return;
+        this.liveItems = found.map((paper) => ({ type: "paper", paper, source: "zotero" }));
+        const items = withLive(this.shown?.items ?? initialItems, this.liveItems);
+        if (this.shown) this.shown.items = items;
+        refreshSuggestions(suggestInstance, items, query, this.queryCache);
       }, 250);
     }
 
@@ -324,7 +366,7 @@ export class InlineSuggestController {
       this.ollamaDownNotified = true;
       this.showNotice?.("Paper search: Ollama is not running. Using keyword-only search.");
     }
-    const withSemanticOff: SuggestionItem[] = items.map((it) => ({ ...it, semanticOff: true }));
+    const withSemanticOff: SuggestionItem[] = withLive(items, this.liveItems).map((it) => ({ ...it, semanticOff: true }));
     withSemanticOff.push({ type: "footer", message: "Semantic search unavailable" });
     this.shown = null; // the next call, even with only a space added, tries semantic search again
     refreshSuggestions(suggestInstance, withSemanticOff);
@@ -424,7 +466,7 @@ export class InlineSuggestController {
           : "Unknown author";
       const year = item.paper.year ? String(item.paper.year) : "n.d.";
       const metaEl = container.createDiv?.({ cls: "semantero-suggest-meta" });
-      metaEl?.setText?.(`${firstAuthor} · ${year}`);
+      metaEl?.setText?.(`${firstAuthor} · ${year}${item.source === "zotero" ? " · new in Zotero" : ""}`);
 
       // Snippet only when inlineShowSnippet is enabled
       if (this.settings.inlineShowSnippet !== false && item.snippet) {
