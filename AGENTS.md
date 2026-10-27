@@ -78,7 +78,7 @@ planner/                __main__ (CLI), extract, threads, fixes, stats, brief, w
                         mdtext.py (Markdown cleaning/sections/chunks), notesindex.py (vault notes index)
                         profiles.py (embedding profiles), pplx.py (pplx client, stdlib), pplxd.py (pplx service, numpy)
 pplx/                   frozen pplx-embed-v2-late: convert/ (stage, GGUF, parity), requirements-pplxd.txt
-obsidian/paper-search/  Obsidian plugin: src/ (engine, indexstore, bm25, modal, inline, litnote, passage, related)
+obsidian/paper-search/  Obsidian plugin: src/ (engine, indexstore, bm25, modal (view), modalsearch (its controller), queryjobs, inline, litnote, passage, related)
                         test/ (unit & perf benchmarks), scripts/ (make-synthetic-index, eval-related)
 launcher-core/          launcher ranking core: src/ (corpora, merge, query, vm, paths, urls, cite, actions, api), shortcuts.json,
                         conformance/, dist/ranker.js (committed), scripts/ (eval, record-conformance, make-bench-vault)
@@ -142,7 +142,7 @@ Run from `obsidian/paper-search`:
 | Command | Effect |
 |---|---|
 | `npm test` | Run all unit tests in `test/*.test.ts` via Node native test runner |
-| `npm run typecheck` | `tsc --noEmit` over `src/` (esbuild does not typecheck) |
+| `npm run typecheck` | `tsc --noEmit` over `src/`, then over `src/`, `test/` and `scripts/` with Node types (`tsconfig.test.json`); esbuild does not typecheck |
 | `npm run build` | Build production `main.js` via esbuild |
 | `SEMANTERO_LIVE=1 SEMANTERO_PERF=1 node --test test/perf.test.ts` | Benchmark budgets B1–B14 with live Ollama & synthetic index |
 | `node scripts/eval-related.ts --index <dir> --vault <copy> --toml eval/related.toml` | Evaluate Hit@5 and calibrate `relatedMinScore` |
@@ -159,7 +159,7 @@ Run from `obsidian/paper-search`:
 - **Editing `prompts/extract.md` changes `PROMPT_VERSION`,** which invalidates every sidecar, so the next run re-extracts all notes. Groq's free tier rate-limits this to around 10 minutes, with automatic waits. Changing the `extract` model does the same.
 - **Sidecars are raw model output.** Corrections belong in `thread_fixes.json`, not in edited sidecars.
 - **No default hotkeys in plugin code.** Command registrations do not bind default keys; hotkeys belong in `.obsidian/hotkeys.json`. On load, `checkHotkeyConflict` flags clashes with existing commands.
-- **Internal Obsidian APIs** (`chooser`, `suggestions.setSuggestions`) are accessed only through adapter wrappers with tested fallbacks (test I6).
+- **Internal Obsidian APIs** (`chooser`, `suggestions.setSuggestions`) are accessed only through adapter wrappers with tested fallbacks (tests I6, MS11).
 - **Python model calls:** Anthropic goes through the official SDK (`planner/llm.py`). Groq and other OpenAI-compatible hosts use stdlib HTTP.
 - **One ranking implementation.** Ranking lives in `obsidian/paper-search/src/` (no Obsidian imports there; test T1 enforces it). `launcher-core` and the app reuse it; never port ranking logic into Swift without the conformance suite passing (see LAUNCHER_SPEC.md, "Ranker decision").
 - **Rebuild `launcher-core/dist/ranker.js` after changing `launcher-core/src/` or the shared core,** commit it, and re-record `conformance/cases.json` only when results change on purpose (`make record-conformance`, review the diff).

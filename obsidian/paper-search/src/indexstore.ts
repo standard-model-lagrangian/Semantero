@@ -49,7 +49,7 @@ export class IndexStore {
   }
 
   /** Number of vector rows the index refers to: highest abstract or chunk row + 1. */
-  public static countRows(papers: PaperMetadata[], chunks: { row?: number }[]): number {
+  public static countRows(papers: PaperMetadata[], chunks: { row?: number | null }[]): number {
     let maxRow = -1;
     for (const p of papers) if (typeof p.abstractRow === "number" && p.abstractRow > maxRow) maxRow = p.abstractRow;
     for (const c of chunks) if (typeof c.row === "number" && c.row > maxRow) maxRow = c.row;

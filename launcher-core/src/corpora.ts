@@ -9,7 +9,7 @@ export type CorpusName = "papers" | "notes";
 export interface RawCorpus {
   manifest: any;
   papers: PaperMetadata[];
-  chunks: (ChunkDocument & { row?: number | null })[];
+  chunks: (Omit<ChunkDocument, "row"> & { row?: number | null })[];
   vectors: ArrayBuffer | ArrayBufferView | null;
 }
 
@@ -44,7 +44,7 @@ export function buildCorpus(name: CorpusName, raw: RawCorpus): Corpus {
   const manifest = raw.manifest ?? {};
   const dimsOk = Number.isInteger(manifest.dims) && manifest.dims > 0;
   const dims = dimsOk ? (manifest.dims as number) : 1024;
-  const rows = IndexStore.countRows(raw.papers, raw.chunks as { row?: number }[]);
+  const rows = IndexStore.countRows(raw.papers, raw.chunks);
 
   let vectors: Float32Array | null = null;
   let reason: string | null = null;
@@ -56,7 +56,7 @@ export function buildCorpus(name: CorpusName, raw: RawCorpus): Corpus {
     if (raw.vectors.byteLength !== rows * dims * 4) reason = "vectors file invalid";
     else if (rows > 0) vectors = toFloat32(raw.vectors);
   }
-  const chunks = raw.chunks.map((c) => ({ ...c, row: c.row === null ? undefined : c.row })) as (ChunkDocument & { row?: number })[];
+  const chunks = raw.chunks.map((c): ChunkDocument => ({ ...c, row: c.row === null ? undefined : c.row }));
   const ix = IndexStore.precomputeIndex(manifest, raw.papers, chunks, vectors, dims, name);
   return { name, ix, semantic: vectors !== null, reason };
 }

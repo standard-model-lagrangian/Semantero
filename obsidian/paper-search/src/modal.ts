@@ -6,41 +6,35 @@ import {
   requestUrl,
 } from "obsidian";
 import type PaperSearchPlugin from "./main.ts";
-import { keyword, hybridSearchFromScores, type Hit, type LoadedIndex } from "./engine.ts";
 import { DEFAULT_KEEP_ALIVE } from "./ollama.ts";
-import { embedderName, warmSemantic } from "./semantic.ts";
-import { semanticText, shouldRunSemantic } from "./rank.ts";
-import { QueryJobs } from "./queryjobs.ts";
-import { ensureLiteratureNote } from "./litnote.ts";
+import { DEFAULT_QUERY_INSTRUCTION, warmSemantic } from "./semantic.ts";
 import { formatCitation } from "./cite.ts";
 import { hitUrl, selectItemUrl } from "./zotero.ts";
-import { indexedKeys } from "./zoterolive.ts";
 import type { PaperMetadata } from "./bm25.ts";
+import { ModalSearchController, chooserView, type ChooserLike, type ModalSearchItem } from "./modalsearch.ts";
 
-export interface SearchModalItem {
-  hit?: Hit;
-  paperIndex?: number;
-  /** A paper Zotero has and the index doesn't list yet (zoterolive.ts); no paperIndex. */
-  livePaper?: PaperMetadata;
-  isLoadingRow?: boolean;
-}
+export type SearchModalItem = ModalSearchItem;
 
+/** The search modal's view: rendering, keys and actions. What to show when lives in ModalSearchController. */
 export class PaperSearchModal extends SuggestModal<SearchModalItem> {
   plugin: PaperSearchPlugin;
-  /** The semantic merge and the Zotero lookup for the query on screen; a new query or closing drops them. */
-  jobs = new QueryJobs();
-  currentItems: SearchModalItem[] = [];
-  /** Rows from Zotero for the query on screen, kept below the index's own hits. */
-  liveItems: SearchModalItem[] = [];
+  controller: ModalSearchController;
   footerEl: HTMLElement | null = null;
-  lastKeywordHits: Hit[] = [];
-  /** The query on screen (as `semanticText`) and the index it was ranked on. */
-  shownKey: string | null = null;
-  shownIndex: LoadedIndex | null = null;
 
   constructor(app: App, plugin: PaperSearchPlugin) {
     super(app);
     this.plugin = plugin;
+    this.controller = new ModalSearchController({
+      indexStore: plugin.indexStore,
+      semanticScores: (ix, text, instruction) => plugin.semanticScoresFor(ix, text, instruction || DEFAULT_QUERY_INSTRUCTION),
+      zotero: plugin.zotero,
+      settings: plugin.settings,
+      view: chooserView(() => this.chooser(), (msg) => this.footerEl?.setText(msg)),
+      vault: app.vault,
+      metadataCache: app.metadataCache,
+      showNotice: (m) => new Notice(m),
+      sessionNotices: plugin.litNoteNotices,
+    });
     this.setPlaceholder("Search papers by what they found, title, author, or citekey...");
     this.setInstructions([
       { command: "↵", purpose: "open in Zotero" },
@@ -50,7 +44,12 @@ export class PaperSearchModal extends SuggestModal<SearchModalItem> {
     ]);
   }
 
-  async onOpen() {
+  /** Obsidian's internal suggestion list (not in its typings); every use goes through chooserView's fallbacks. */
+  private chooser(): ChooserLike | undefined {
+    return (this as unknown as { chooser?: ChooserLike }).chooser;
+  }
+
+  onOpen() {
     super.onOpen();
 
     // Background ensureFresh check
@@ -63,41 +62,25 @@ export class PaperSearchModal extends SuggestModal<SearchModalItem> {
     }
 
     // Add status footer
-    const modalEl = this.modalEl;
-    this.footerEl = modalEl.createDiv({ cls: "paper-search-footer" });
+    this.footerEl = this.modalEl.createDiv({ cls: "paper-search-footer" });
     this.footerEl.style.fontSize = "0.8em";
     this.footerEl.style.color = "var(--text-muted)";
     this.footerEl.style.padding = "4px 8px";
 
     // Setup keyboard modifiers
-    this.scope.register(["Mod"], "Enter", (evt: KeyboardEvent) => {
-      evt.preventDefault();
-      const item = this.getSelectedItem();
-      const paper = item && this.paperOf(item);
-      if (paper) {
-        this.insertCitationAndEnsureNote(paper);
-        this.close();
-      }
-      return false;
-    });
+    this.onKey(["Mod"], (paper) => this.insertCitationAndEnsureNote(paper));
+    this.onKey(["Alt"], (paper) => this.openLiteratureNote(paper));
+    this.onKey(["Shift"], (paper) => this.selectInZotero(paper));
+  }
 
-    this.scope.register(["Alt"], "Enter", (evt: KeyboardEvent) => {
+  /** modifiers+Enter runs `action` on the selected paper and closes the modal. */
+  private onKey(modifiers: ("Mod" | "Alt" | "Shift")[], action: (paper: PaperMetadata) => unknown) {
+    this.scope.register(modifiers, "Enter", (evt: KeyboardEvent) => {
       evt.preventDefault();
-      const item = this.getSelectedItem();
-      const paper = item && this.paperOf(item);
+      const item = this.controller.selectedItem();
+      const paper = item && this.controller.paperOf(item);
       if (paper) {
-        this.openLiteratureNote(paper);
-        this.close();
-      }
-      return false;
-    });
-
-    this.scope.register(["Shift"], "Enter", (evt: KeyboardEvent) => {
-      evt.preventDefault();
-      const item = this.getSelectedItem();
-      const paper = item && this.paperOf(item);
-      if (paper) {
-        this.selectInZotero(paper);
+        action(paper);
         this.close();
       }
       return false;
@@ -106,117 +89,11 @@ export class PaperSearchModal extends SuggestModal<SearchModalItem> {
 
   onClose() {
     super.onClose();
-    this.jobs.cancel();
-  }
-
-  paperOf(item: SearchModalItem): PaperMetadata | null {
-    if (item.isLoadingRow) return null;
-    if (item.livePaper) return item.livePaper;
-    if (item.paperIndex === undefined) return null;
-    return this.plugin.indexStore.getIndex()?.papers[item.paperIndex] ?? null;
-  }
-
-  getSelectedItem(): SearchModalItem | null {
-    return (this as any).chooser?.values?.[(this as any).chooser?.selectedItem] || null;
-  }
-
-  updateFooter(msg: string) {
-    if (this.footerEl) {
-      this.footerEl.setText(msg);
-    }
+    this.controller.close();
   }
 
   getSuggestions(query: string): SearchModalItem[] {
-    const ix = this.plugin.indexStore.getIndex();
-    if (!ix || !this.plugin.indexStore.isReady()) {
-      return [{ isLoadingRow: true }];
-    }
-
-    // Typing or deleting whitespace cannot change the results: keep the list on screen (and any semantic merge on its
-    // way) instead of flashing back to keyword-only results until the merge lands again.
-    const key = semanticText(query);
-    if (key === this.shownKey && ix === this.shownIndex) return this.currentItems;
-    this.shownKey = key;
-    this.shownIndex = ix;
-    // Every new query supersedes the last one's jobs, even if it is too short to schedule a semantic merge itself.
-    const token = this.jobs.restart();
-
-    // 1. Instant keyword search
-    const kHits = keyword(ix, query, this.plugin.settings.limit);
-    this.lastKeywordHits = kHits;
-
-    const items: SearchModalItem[] = kHits.map((h) => ({
-      hit: h,
-      paperIndex: h.paper,
-    }));
-    this.currentItems = items;
-
-    // 2. Schedule debounced semantic search, and a lookup in Zotero for papers saved since the last build
-    this.scheduleSemanticSearch(query, ix, token);
-    this.scheduleLive(query, ix, token);
-
-    return items;
-  }
-
-  scheduleLive(query: string, ix: LoadedIndex, token: number) {
-    this.liveItems = [];
-    this.jobs.after(this.plugin.settings.debounceMs, async () => {
-      const found = await this.plugin.zotero.search(query, indexedKeys(ix));
-      if (!this.jobs.isCurrent(token) || found.length === 0) return;
-      this.liveItems = found.map((livePaper) => ({ livePaper }));
-      const items = [...this.currentItems.filter((it) => !it.livePaper), ...this.liveItems];
-      const selected = (this as any).chooser?.selectedItem ?? 0;
-      this.currentItems = items;
-      (this as any).chooser?.setSuggestions(items);
-      (this as any).chooser?.setSelectedItem(selected);
-    });
-  }
-
-  scheduleSemanticSearch(query: string, ix: LoadedIndex, token: number) {
-    if (!shouldRunSemantic(query, this.plugin.settings.minCharsSemantic) || !ix.vectors) {
-      return;
-    }
-    this.jobs.after(this.plugin.settings.debounceMs, () => this.runSemantic(query, ix, token));
-  }
-
-  async runSemantic(query: string, ix: LoadedIndex, token: number) {
-    if (!ix.vectors) return;
-
-    try {
-      const scores = await this.plugin.semanticScoresFor(ix, semanticText(query), ix.manifest.query_instruction);
-
-      if (!this.jobs.isCurrent(token)) {
-        return; // Stale response dropped
-      }
-
-      this.updateFooter("");
-
-      // Semantic search + Hybrid merge
-      // Merge over the full ranked lists, not the 12 shown while typing.
-      const mergedHits = hybridSearchFromScores(ix, query, scores, this.plugin.settings.limit);
-
-      const newItems: SearchModalItem[] = [
-        ...mergedHits.map((h) => ({ hit: h, paperIndex: h.paper })),
-        ...this.liveItems,
-      ];
-
-      // Maintain selection
-      const currentItem = this.getSelectedItem();
-      const prevPaper = currentItem?.paperIndex ?? null;
-
-      let newSelectedIdx = 0;
-      if (prevPaper !== null) {
-        const found = newItems.findIndex((it) => it.paperIndex === prevPaper);
-        if (found >= 0) newSelectedIdx = found;
-      }
-
-      this.currentItems = newItems;
-      (this as any).chooser?.setSuggestions(newItems);
-      (this as any).chooser?.setSelectedItem(newSelectedIdx);
-    } catch {
-      if (!this.jobs.isCurrent(token)) return;
-      this.updateFooter(`semantic off: ${embedderName(ix)} not reachable`);
-    }
+    return this.controller.getSuggestions(query);
   }
 
   renderSuggestion(item: SearchModalItem, el: HTMLElement) {
@@ -227,7 +104,7 @@ export class PaperSearchModal extends SuggestModal<SearchModalItem> {
       return;
     }
 
-    const paper = this.paperOf(item);
+    const paper = this.controller.paperOf(item);
     if (!paper) return;
     const hit = item.hit;
 
@@ -271,7 +148,7 @@ export class PaperSearchModal extends SuggestModal<SearchModalItem> {
   }
 
   onChooseSuggestion(item: SearchModalItem, _evt: MouseEvent | KeyboardEvent) {
-    const paper = this.paperOf(item);
+    const paper = this.controller.paperOf(item);
     if (!paper) return;
     const hit = item.hit;
 
@@ -292,23 +169,11 @@ export class PaperSearchModal extends SuggestModal<SearchModalItem> {
       editor.replaceRange(citation, editor.getCursor());
     }
 
-    await ensureLiteratureNote(
-      this.app.vault,
-      this.app.metadataCache,
-      paper,
-      this.plugin.settings,
-      { showNotice: (m) => new Notice(m), sessionNotices: this.plugin.litNoteNotices }
-    );
+    await this.controller.ensureNote(paper);
   }
 
   async openLiteratureNote(paper: PaperMetadata) {
-    const res = await ensureLiteratureNote(
-      this.app.vault,
-      this.app.metadataCache,
-      paper,
-      this.plugin.settings,
-      { showNotice: (m) => new Notice(m), sessionNotices: this.plugin.litNoteNotices }
-    );
+    const res = await this.controller.ensureNote(paper);
 
     if (res.file) {
       this.app.workspace.getLeaf().openFile(res.file);

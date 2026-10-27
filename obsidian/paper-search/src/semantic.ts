@@ -21,6 +21,9 @@ export interface SemanticScores {
   scores: Float64Array | null;
 }
 
+/** For an index whose manifest names no query instruction (every index the planner writes names one). */
+export const DEFAULT_QUERY_INSTRUCTION = "Given a query, retrieve relevant research papers";
+
 export function isPplx(ix: LoadedIndex): boolean {
   return ix.manifest?.backend === "pplx";
 }

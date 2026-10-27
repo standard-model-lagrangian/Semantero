@@ -23,7 +23,6 @@ function createDummyPaper(citekey: string, title: string, author = "Roth", year 
     abstract: `Abstract for ${citekey}`,
     journal: "Nature",
     doi: "10.1038/example",
-    source: "zotero",
     path: `storage/${citekey}.pdf`,
     tags: [],
     collections: [],

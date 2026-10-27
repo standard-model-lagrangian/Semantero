@@ -979,6 +979,72 @@ var IndexStore = class _IndexStore {
 // src/modal.ts
 var import_obsidian = require("obsidian");
 
+// src/vectors.ts
+function truncateAndNormalize(vec, targetDims) {
+  const out = new Float32Array(targetDims);
+  const n = Math.min(vec.length, targetDims);
+  let sumSq = 0;
+  for (let i = 0; i < n; i++) {
+    const v = vec[i];
+    out[i] = v;
+    sumSq += v * v;
+  }
+  const norm = Math.sqrt(sumSq);
+  if (norm > 0) {
+    for (let i = 0; i < targetDims; i++) {
+      out[i] /= norm;
+    }
+  }
+  return out;
+}
+
+// src/ollama.ts
+var DEFAULT_KEEP_ALIVE = "5m";
+function formatQuery(instruction, query) {
+  return instruction === void 0 ? query : `Instruct: ${instruction}
+Query: ${query}`;
+}
+async function embedQuery(requestUrl3, options) {
+  const formattedInput = formatQuery(options.instruction, options.query);
+  const endpoint = `${options.url.replace(/\/+$/, "")}/api/embed`;
+  const payload = {
+    model: options.model,
+    input: [formattedInput],
+    keep_alive: options.keepAlive ?? DEFAULT_KEEP_ALIVE,
+    truncate: true
+  };
+  const resp = await requestUrl3({
+    url: endpoint,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  const embeddings = resp.json?.embeddings;
+  if (!embeddings || embeddings.length === 0) {
+    throw new Error("No embeddings returned by Ollama");
+  }
+  const rawVec = embeddings[0];
+  const dims = options.dims ?? rawVec.length;
+  return truncateAndNormalize(rawVec, dims);
+}
+async function warmUp(requestUrl3, options) {
+  const endpoint = `${options.url.replace(/\/+$/, "")}/api/embed`;
+  const payload = {
+    model: options.model,
+    input: [""],
+    keep_alive: options.keepAlive ?? DEFAULT_KEEP_ALIVE
+  };
+  try {
+    await requestUrl3({
+      url: endpoint,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+  } catch {
+  }
+}
+
 // src/engine.ts
 function snippetFor(ix, hit, tokens) {
   if (hit.chunkIndex !== void 0 && hit.chunkIndex >= 0) return bestSnippet(ix.chunks[hit.chunkIndex].text, tokens).text;
@@ -1168,73 +1234,8 @@ function hybridSearchFromScores(ix, query, scores, limit) {
   return fillSnippets(ix, hybrid(kw, sem, limit), query);
 }
 
-// src/vectors.ts
-function truncateAndNormalize(vec, targetDims) {
-  const out = new Float32Array(targetDims);
-  const n = Math.min(vec.length, targetDims);
-  let sumSq = 0;
-  for (let i = 0; i < n; i++) {
-    const v = vec[i];
-    out[i] = v;
-    sumSq += v * v;
-  }
-  const norm = Math.sqrt(sumSq);
-  if (norm > 0) {
-    for (let i = 0; i < targetDims; i++) {
-      out[i] /= norm;
-    }
-  }
-  return out;
-}
-
-// src/ollama.ts
-var DEFAULT_KEEP_ALIVE = "5m";
-function formatQuery(instruction, query) {
-  return `Instruct: ${instruction}
-Query: ${query}`;
-}
-async function embedQuery(requestUrl3, options) {
-  const formattedInput = formatQuery(options.instruction, options.query);
-  const endpoint = `${options.url.replace(/\/+$/, "")}/api/embed`;
-  const payload = {
-    model: options.model,
-    input: [formattedInput],
-    keep_alive: options.keepAlive ?? DEFAULT_KEEP_ALIVE,
-    truncate: true
-  };
-  const resp = await requestUrl3({
-    url: endpoint,
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
-  });
-  const embeddings = resp.json?.embeddings;
-  if (!embeddings || embeddings.length === 0) {
-    throw new Error("No embeddings returned by Ollama");
-  }
-  const rawVec = embeddings[0];
-  const dims = options.dims ?? rawVec.length;
-  return truncateAndNormalize(rawVec, dims);
-}
-async function warmUp(requestUrl3, options) {
-  const endpoint = `${options.url.replace(/\/+$/, "")}/api/embed`;
-  const payload = {
-    model: options.model,
-    input: [""],
-    keep_alive: options.keepAlive ?? DEFAULT_KEEP_ALIVE
-  };
-  try {
-    await requestUrl3({
-      url: endpoint,
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
-  } catch {
-  }
-}
-
 // src/semantic.ts
+var DEFAULT_QUERY_INSTRUCTION = "Given a query, retrieve relevant research papers";
 function isPplx(ix) {
   return ix.manifest?.backend === "pplx";
 }
@@ -1293,6 +1294,166 @@ async function warmSemantic(requestUrl3, ix, ollamaUrl, keepAlive) {
   await warmUp(requestUrl3, { url: ollamaUrl, model: ix.manifest.model, keepAlive });
 }
 
+// src/cite.ts
+function findTrigger(lineText, ch, trigger = "@@") {
+  if (ch < trigger.length) return null;
+  const windowStart = Math.max(0, ch - 160);
+  const windowText = lineText.slice(windowStart, ch);
+  const relIdx = windowText.lastIndexOf(trigger);
+  if (relIdx === -1) return null;
+  const triggerStart = windowStart + relIdx;
+  const triggerEnd = triggerStart + trigger.length;
+  if (triggerStart > 0) {
+    const prevChar = lineText[triggerStart - 1];
+    const isWhitespace = /\s/.test(prevChar);
+    const isOpenPunctuation = prevChar === "(" || prevChar === "[" || prevChar === "{" || prevChar === '"' || prevChar === "'";
+    if (!isWhitespace && !isOpenPunctuation) {
+      return null;
+    }
+  }
+  const query = lineText.slice(triggerEnd, ch);
+  if (query.length > 120) return null;
+  if (query.includes("]]") || query.includes(trigger) || query.includes("	")) {
+    return null;
+  }
+  if (query.startsWith("  ")) {
+    return null;
+  }
+  return {
+    start: triggerStart,
+    end: ch,
+    query
+  };
+}
+function isExcludedContext(sections, line, lineText, ch) {
+  if (sections && sections.length > 0) {
+    for (const sec of sections) {
+      if (sec.position && line >= sec.position.start.line && line <= sec.position.end.line) {
+        const type = (sec.type || "").toLowerCase();
+        if (type === "code" || type === "math" || type === "frontmatter" || type === "yaml") {
+          return true;
+        }
+      }
+    }
+  }
+  const textBeforeCursor = lineText.slice(0, ch);
+  if (!/[`$]|\[\[/.test(textBeforeCursor)) {
+    return false;
+  }
+  let codeRun = 0;
+  let inSingleMath = false;
+  let inDoubleMath = false;
+  let openLinks = 0;
+  let i = 0;
+  while (i < textBeforeCursor.length) {
+    const c = textBeforeCursor[i];
+    if (c === "`" && !inSingleMath && !inDoubleMath) {
+      let run = 1;
+      while (textBeforeCursor[i + run] === "`") run++;
+      if (codeRun === 0) codeRun = run;
+      else if (run === codeRun) codeRun = 0;
+      i += run;
+      continue;
+    }
+    if (codeRun > 0) {
+      i++;
+      continue;
+    }
+    if (c === "\\") {
+      i += 2;
+      continue;
+    }
+    if (c === "$") {
+      if (textBeforeCursor[i + 1] === "$" && !inSingleMath) {
+        inDoubleMath = !inDoubleMath;
+        i += 2;
+        continue;
+      }
+      if (inSingleMath) {
+        inSingleMath = false;
+      } else if (!inDoubleMath) {
+        const next = lineText[i + 1];
+        if (next !== void 0 && !/[\s\d]/.test(next)) inSingleMath = true;
+      }
+      i++;
+      continue;
+    }
+    if (!inSingleMath && !inDoubleMath) {
+      if (c === "[" && textBeforeCursor[i + 1] === "[") {
+        openLinks++;
+        i += 2;
+        continue;
+      }
+      if (c === "]" && textBeforeCursor[i + 1] === "]" && openLinks > 0) {
+        openLinks--;
+        i += 2;
+        continue;
+      }
+    }
+    i++;
+  }
+  return codeRun > 0 || inSingleMath || inDoubleMath || openLinks > 0;
+}
+var DEFAULT_CITATION_FORMAT = "[[{{citekey}}]]";
+function formatCitation(format = DEFAULT_CITATION_FORMAT, citekey) {
+  if (!format.includes("{{citekey}}") && !format.includes("{{ citekey }}")) {
+    throw new Error(`Citation format must contain "{{citekey}}": ${format}`);
+  }
+  return format.replace(/\{\{\s*citekey\s*\}\}/g, citekey);
+}
+function citedKeys(noteText) {
+  const result = /* @__PURE__ */ new Set();
+  if (!noteText) return result;
+  let stripped = noteText.replace(/```[\s\S]*?```/g, " ");
+  stripped = stripped.replace(/`[^`\n]*`/g, " ");
+  const fmMatch = stripped.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (fmMatch) {
+    const fm = fmMatch[1];
+    const citekeyMatch = fm.match(/^citekey:\s*["']?([^\s"'\r\n]+)["']?/m);
+    if (citekeyMatch && citekeyMatch[1]) {
+      result.add(citekeyMatch[1].trim());
+    }
+  }
+  const wikiRegex = /\[\[([a-zA-Z0-9_.-]+)(?:\|[^\]\n]*)?\]\]/g;
+  let match;
+  while ((match = wikiRegex.exec(stripped)) !== null) {
+    if (match[1]) {
+      result.add(match[1].trim());
+    }
+  }
+  const bracketRegex = /\[([^\]\n]*@[a-zA-Z0-9_.-]+[^\]\n]*)\]/g;
+  while ((match = bracketRegex.exec(stripped)) !== null) {
+    const bracketContent = match[1];
+    const keyRegex = /@([a-zA-Z0-9_.-]+)/g;
+    let keyMatch;
+    while ((keyMatch = keyRegex.exec(bracketContent)) !== null) {
+      if (keyMatch[1]) {
+        result.add(keyMatch[1].trim());
+      }
+    }
+  }
+  return result;
+}
+
+// src/zotero.ts
+function selectItemUrl(itemKey) {
+  return `zotero://select/library/items/${itemKey}`;
+}
+function openPdfUrl(attachmentKey, page) {
+  const p = page && page > 0 ? Math.floor(page) : 1;
+  return `zotero://open-pdf/library/items/${attachmentKey}?page=${p}`;
+}
+function openAttachmentUrl(attachmentKey) {
+  return `zotero://open/library/items/${attachmentKey}`;
+}
+function hitUrl(paper, hit) {
+  const snapshots = paper.snapshots ?? [];
+  const attKey = hit?.attachmentKey || paper.pdfs?.[0]?.attachmentKey || snapshots[0]?.attachmentKey;
+  if (!attKey) return selectItemUrl(paper.key);
+  if (snapshots.some((s) => s.attachmentKey === attKey)) return openAttachmentUrl(attKey);
+  return openPdfUrl(attKey, hit?.attachmentKey ? hit.page : 1);
+}
+
 // src/rank.ts
 function shouldRunSemantic(query, minChars = 12) {
   if (semanticText(query).length >= minChars) {
@@ -1341,23 +1502,79 @@ var QueryJobs = class {
   }
 };
 
-// src/zotero.ts
-function selectItemUrl(itemKey) {
-  return `zotero://select/library/items/${itemKey}`;
+// src/zoterolive.ts
+var DEFAULT_ZOTERO_API = "http://localhost:23119/api";
+var MIN_LIVE_CHARS = 3;
+var LIVE_LIMIT = 3;
+var QUERY_PAGE = 25;
+var RETRY_MS = 6e4;
+function paperFromApiItem(item) {
+  const d = item?.data;
+  if (!d || typeof d.key !== "string") return null;
+  if (d.itemType === "attachment" || d.itemType === "note" || d.itemType === "annotation") return null;
+  const creators = Array.isArray(d.creators) ? d.creators : [];
+  const authors = creators.filter((c) => !c.creatorType || c.creatorType === "author").map((c) => (c.lastName || c.name || "").trim()).filter(Boolean);
+  const m = /\b(\d{4})\b/.exec(String(d.date ?? ""));
+  return {
+    key: d.key,
+    citekey: typeof d.citationKey === "string" ? d.citationKey : "",
+    title: d.title || "",
+    authors,
+    year: m ? Number(m[1]) : null,
+    journal: d.publicationTitle || null,
+    doi: d.DOI || null,
+    tags: Array.isArray(d.tags) ? d.tags.map((t) => t?.tag).filter(Boolean) : [],
+    collections: [],
+    abstract: d.abstractNote || null,
+    pdfs: [],
+    snapshots: []
+  };
 }
-function openPdfUrl(attachmentKey, page) {
-  const p = page && page > 0 ? Math.floor(page) : 1;
-  return `zotero://open-pdf/library/items/${attachmentKey}?page=${p}`;
-}
-function openAttachmentUrl(attachmentKey) {
-  return `zotero://open/library/items/${attachmentKey}`;
-}
-function hitUrl(paper, hit) {
-  const snapshots = paper.snapshots ?? [];
-  const attKey = hit?.attachmentKey || paper.pdfs?.[0]?.attachmentKey || snapshots[0]?.attachmentKey;
-  if (!attKey) return selectItemUrl(paper.key);
-  if (snapshots.some((s) => s.attachmentKey === attKey)) return openAttachmentUrl(attKey);
-  return openPdfUrl(attKey, hit?.attachmentKey ? hit.page : 1);
+var ZoteroLive = class {
+  downUntil = 0;
+  requestUrl;
+  baseUrl;
+  now;
+  constructor(requestUrl3, baseUrl = DEFAULT_ZOTERO_API, now = () => Date.now()) {
+    this.requestUrl = requestUrl3;
+    this.baseUrl = baseUrl;
+    this.now = now;
+  }
+  /** Papers matching `query` (Zotero's title/creator/year search) whose keys are not in `known`. Never throws. */
+  async search(query, known, limit = LIVE_LIMIT) {
+    const q = query.trim();
+    if (q.length < MIN_LIVE_CHARS || this.now() < this.downUntil) return [];
+    try {
+      const resp = await this.requestUrl({
+        // Most matches are already indexed and get dropped, so ask for a page of them.
+        url: `${this.baseUrl.replace(/\/+$/, "")}/users/0/items/top?q=${encodeURIComponent(q)}&limit=${QUERY_PAGE}`,
+        method: "GET"
+      });
+      if (resp.status !== 200 || !Array.isArray(resp.json)) {
+        this.downUntil = this.now() + RETRY_MS;
+        return [];
+      }
+      const out = [];
+      for (const item of resp.json) {
+        const p = paperFromApiItem(item);
+        if (p && !known.has(p.key)) out.push(p);
+        if (out.length >= limit) break;
+      }
+      return out;
+    } catch {
+      this.downUntil = this.now() + RETRY_MS;
+      return [];
+    }
+  }
+};
+var keySets = /* @__PURE__ */ new WeakMap();
+function indexedKeys(index) {
+  let s = keySets.get(index);
+  if (!s) {
+    s = new Set(index.papers.map((p) => p.key));
+    keySets.set(index, s);
+  }
+  return s;
 }
 
 // src/litnote.ts
@@ -1569,238 +1786,135 @@ async function ensureLiteratureNote(vault, metadataCache, paper, settings, optio
   }
 }
 
-// src/cite.ts
-function findTrigger(lineText, ch, trigger = "@@") {
-  if (ch < trigger.length) return null;
-  const windowStart = Math.max(0, ch - 160);
-  const windowText = lineText.slice(windowStart, ch);
-  const relIdx = windowText.lastIndexOf(trigger);
-  if (relIdx === -1) return null;
-  const triggerStart = windowStart + relIdx;
-  const triggerEnd = triggerStart + trigger.length;
-  if (triggerStart > 0) {
-    const prevChar = lineText[triggerStart - 1];
-    const isWhitespace = /\s/.test(prevChar);
-    const isOpenPunctuation = prevChar === "(" || prevChar === "[" || prevChar === "{" || prevChar === '"' || prevChar === "'";
-    if (!isWhitespace && !isOpenPunctuation) {
-      return null;
-    }
-  }
-  const query = lineText.slice(triggerEnd, ch);
-  if (query.length > 120) return null;
-  if (query.includes("]]") || query.includes(trigger) || query.includes("	")) {
-    return null;
-  }
-  if (query.startsWith("  ")) {
-    return null;
-  }
+// src/modalsearch.ts
+function chooserView(chooser, setFooter) {
   return {
-    start: triggerStart,
-    end: ch,
-    query
+    setSuggestions(items, selected) {
+      const c = chooser();
+      if (!c || typeof c.setSuggestions !== "function") return;
+      c.setSuggestions(items);
+      if (typeof c.setSelectedItem === "function") c.setSelectedItem(selected);
+      else c.selectedItem = selected;
+    },
+    selectedIndex: () => chooser()?.selectedItem ?? 0,
+    setFooter
   };
 }
-function isExcludedContext(sections, line, lineText, ch) {
-  if (sections && sections.length > 0) {
-    for (const sec of sections) {
-      if (sec.position && line >= sec.position.start.line && line <= sec.position.end.line) {
-        const type = (sec.type || "").toLowerCase();
-        if (type === "code" || type === "math" || type === "frontmatter" || type === "yaml") {
-          return true;
-        }
-      }
-    }
+var ModalSearchController = class {
+  indexStore;
+  semanticScores;
+  zotero;
+  settings;
+  view;
+  vault;
+  metadataCache;
+  showNotice;
+  sessionNotices;
+  /** The semantic merge and the Zotero lookup for the query on screen; a new query or closing drops them. */
+  jobs;
+  /** The rows on screen. */
+  items = [];
+  /** Rows from Zotero for the query on screen, kept below the index's own hits. */
+  liveItems = [];
+  /** The query on screen (as `semanticText`) and the index it was ranked on. */
+  shownKey = null;
+  shownIndex = null;
+  constructor(options) {
+    this.indexStore = options.indexStore;
+    this.semanticScores = options.semanticScores;
+    this.zotero = options.zotero;
+    this.settings = options.settings;
+    this.view = options.view;
+    this.vault = options.vault;
+    this.metadataCache = options.metadataCache ?? null;
+    this.showNotice = options.showNotice;
+    this.sessionNotices = options.sessionNotices;
+    this.jobs = new QueryJobs(options.setTimeoutFn, options.clearTimeoutFn);
   }
-  const textBeforeCursor = lineText.slice(0, ch);
-  if (!/[`$]|\[\[/.test(textBeforeCursor)) {
-    return false;
+  /** The modal closed: nothing scheduled runs, and nothing in flight touches the list. */
+  close() {
+    this.jobs.cancel();
   }
-  let codeRun = 0;
-  let inSingleMath = false;
-  let inDoubleMath = false;
-  let openLinks = 0;
-  let i = 0;
-  while (i < textBeforeCursor.length) {
-    const c = textBeforeCursor[i];
-    if (c === "`" && !inSingleMath && !inDoubleMath) {
-      let run = 1;
-      while (textBeforeCursor[i + run] === "`") run++;
-      if (codeRun === 0) codeRun = run;
-      else if (run === codeRun) codeRun = 0;
-      i += run;
-      continue;
-    }
-    if (codeRun > 0) {
-      i++;
-      continue;
-    }
-    if (c === "\\") {
-      i += 2;
-      continue;
-    }
-    if (c === "$") {
-      if (textBeforeCursor[i + 1] === "$" && !inSingleMath) {
-        inDoubleMath = !inDoubleMath;
-        i += 2;
-        continue;
-      }
-      if (inSingleMath) {
-        inSingleMath = false;
-      } else if (!inDoubleMath) {
-        const next = lineText[i + 1];
-        if (next !== void 0 && !/[\s\d]/.test(next)) inSingleMath = true;
-      }
-      i++;
-      continue;
-    }
-    if (!inSingleMath && !inDoubleMath) {
-      if (c === "[" && textBeforeCursor[i + 1] === "[") {
-        openLinks++;
-        i += 2;
-        continue;
-      }
-      if (c === "]" && textBeforeCursor[i + 1] === "]" && openLinks > 0) {
-        openLinks--;
-        i += 2;
-        continue;
-      }
-    }
-    i++;
+  paperOf(item) {
+    if (item.isLoadingRow) return null;
+    if (item.livePaper) return item.livePaper;
+    if (item.paperIndex === void 0) return null;
+    return this.indexStore.getIndex()?.papers[item.paperIndex] ?? null;
   }
-  return codeRun > 0 || inSingleMath || inDoubleMath || openLinks > 0;
-}
-var DEFAULT_CITATION_FORMAT = "[[{{citekey}}]]";
-function formatCitation(format = DEFAULT_CITATION_FORMAT, citekey) {
-  if (!format.includes("{{citekey}}") && !format.includes("{{ citekey }}")) {
-    throw new Error(`Citation format must contain "{{citekey}}": ${format}`);
+  selectedItem() {
+    return this.items[this.view.selectedIndex()] ?? null;
   }
-  return format.replace(/\{\{\s*citekey\s*\}\}/g, citekey);
-}
-function citedKeys(noteText) {
-  const result = /* @__PURE__ */ new Set();
-  if (!noteText) return result;
-  let stripped = noteText.replace(/```[\s\S]*?```/g, " ");
-  stripped = stripped.replace(/`[^`\n]*`/g, " ");
-  const fmMatch = stripped.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-  if (fmMatch) {
-    const fm = fmMatch[1];
-    const citekeyMatch = fm.match(/^citekey:\s*["']?([^\s"'\r\n]+)["']?/m);
-    if (citekeyMatch && citekeyMatch[1]) {
-      result.add(citekeyMatch[1].trim());
+  getSuggestions(query) {
+    const ix = this.indexStore.getIndex();
+    if (!ix || !this.indexStore.isReady()) return [{ isLoadingRow: true }];
+    const key = semanticText(query);
+    if (key === this.shownKey && ix === this.shownIndex) return this.items;
+    this.shownKey = key;
+    this.shownIndex = ix;
+    const token = this.jobs.restart();
+    this.liveItems = [];
+    this.items = keyword(ix, query, this.settings.limit).map((h) => ({ hit: h, paperIndex: h.paper }));
+    if (shouldRunSemantic(query, this.settings.minCharsSemantic) && ix.vectors) {
+      this.jobs.after(this.settings.debounceMs, () => this.runSemantic(query, ix, token));
     }
+    this.jobs.after(this.settings.debounceMs, () => this.runLive(query, ix, token));
+    return this.items;
   }
-  const wikiRegex = /\[\[([a-zA-Z0-9_.-]+)(?:\|[^\]\n]*)?\]\]/g;
-  let match;
-  while ((match = wikiRegex.exec(stripped)) !== null) {
-    if (match[1]) {
-      result.add(match[1].trim());
-    }
+  /** The literature note for `paper`, created from the template if it is missing. */
+  ensureNote(paper) {
+    return ensureLiteratureNote(this.vault, this.metadataCache, paper, this.settings, {
+      showNotice: this.showNotice,
+      sessionNotices: this.sessionNotices
+    });
   }
-  const bracketRegex = /\[([^\]\n]*@[a-zA-Z0-9_.-]+[^\]\n]*)\]/g;
-  while ((match = bracketRegex.exec(stripped)) !== null) {
-    const bracketContent = match[1];
-    const keyRegex = /@([a-zA-Z0-9_.-]+)/g;
-    let keyMatch;
-    while ((keyMatch = keyRegex.exec(bracketContent)) !== null) {
-      if (keyMatch[1]) {
-        result.add(keyMatch[1].trim());
-      }
-    }
+  async runLive(query, ix, token) {
+    const found = await this.zotero.search(query, indexedKeys(ix));
+    if (!this.jobs.isCurrent(token) || found.length === 0) return;
+    this.liveItems = found.map((livePaper) => ({ livePaper }));
+    this.show([...this.items.filter((it) => !it.livePaper), ...this.liveItems]);
   }
-  return result;
-}
-
-// src/zoterolive.ts
-var DEFAULT_ZOTERO_API = "http://localhost:23119/api";
-var MIN_LIVE_CHARS = 3;
-var LIVE_LIMIT = 3;
-var QUERY_PAGE = 25;
-var RETRY_MS = 6e4;
-function paperFromApiItem(item) {
-  const d = item?.data;
-  if (!d || typeof d.key !== "string") return null;
-  if (d.itemType === "attachment" || d.itemType === "note" || d.itemType === "annotation") return null;
-  const creators = Array.isArray(d.creators) ? d.creators : [];
-  const authors = creators.filter((c) => !c.creatorType || c.creatorType === "author").map((c) => (c.lastName || c.name || "").trim()).filter(Boolean);
-  const m = /\b(\d{4})\b/.exec(String(d.date ?? ""));
-  return {
-    key: d.key,
-    citekey: typeof d.citationKey === "string" ? d.citationKey : "",
-    title: d.title || "",
-    authors,
-    year: m ? Number(m[1]) : null,
-    journal: d.publicationTitle || null,
-    doi: d.DOI || null,
-    tags: Array.isArray(d.tags) ? d.tags.map((t) => t?.tag).filter(Boolean) : [],
-    collections: [],
-    abstract: d.abstractNote || null,
-    pdfs: [],
-    snapshots: []
-  };
-}
-var ZoteroLive = class {
-  downUntil = 0;
-  requestUrl;
-  baseUrl;
-  now;
-  constructor(requestUrl3, baseUrl = DEFAULT_ZOTERO_API, now = () => Date.now()) {
-    this.requestUrl = requestUrl3;
-    this.baseUrl = baseUrl;
-    this.now = now;
-  }
-  /** Papers matching `query` (Zotero's title/creator/year search) whose keys are not in `known`. Never throws. */
-  async search(query, known, limit = LIVE_LIMIT) {
-    const q = query.trim();
-    if (q.length < MIN_LIVE_CHARS || this.now() < this.downUntil) return [];
+  async runSemantic(query, ix, token) {
+    let scores;
     try {
-      const resp = await this.requestUrl({
-        // Most matches are already indexed and get dropped, so ask for a page of them.
-        url: `${this.baseUrl.replace(/\/+$/, "")}/users/0/items/top?q=${encodeURIComponent(q)}&limit=${QUERY_PAGE}`,
-        method: "GET"
-      });
-      if (resp.status !== 200 || !Array.isArray(resp.json)) {
-        this.downUntil = this.now() + RETRY_MS;
-        return [];
-      }
-      const out = [];
-      for (const item of resp.json) {
-        const p = paperFromApiItem(item);
-        if (p && !known.has(p.key)) out.push(p);
-        if (out.length >= limit) break;
-      }
-      return out;
+      scores = await this.semanticScores(ix, semanticText(query), ix.manifest?.query_instruction);
     } catch {
-      this.downUntil = this.now() + RETRY_MS;
-      return [];
+      if (this.jobs.isCurrent(token)) this.view.setFooter(`semantic off: ${embedderName(ix)} not reachable`);
+      return;
     }
+    if (!this.jobs.isCurrent(token)) return;
+    this.view.setFooter("");
+    const merged = hybridSearchFromScores(ix, query, scores, this.settings.limit);
+    this.show([...merged.map((h) => ({ hit: h, paperIndex: h.paper })), ...this.liveItems]);
+  }
+  /** Show `items`, keeping the selection on the same paper if it is still listed (else the first row). */
+  show(items) {
+    const before = this.selectedItem();
+    const prev = before ? this.paperOf(before)?.key : void 0;
+    const at = prev === void 0 ? -1 : items.findIndex((it) => this.paperOf(it)?.key === prev);
+    this.items = items;
+    this.view.setSuggestions(items, at === -1 ? 0 : at);
   }
 };
-var keySets = /* @__PURE__ */ new WeakMap();
-function indexedKeys(index) {
-  let s = keySets.get(index);
-  if (!s) {
-    s = new Set(index.papers.map((p) => p.key));
-    keySets.set(index, s);
-  }
-  return s;
-}
 
 // src/modal.ts
 var PaperSearchModal = class extends import_obsidian.SuggestModal {
   plugin;
-  /** The semantic merge and the Zotero lookup for the query on screen; a new query or closing drops them. */
-  jobs = new QueryJobs();
-  currentItems = [];
-  /** Rows from Zotero for the query on screen, kept below the index's own hits. */
-  liveItems = [];
+  controller;
   footerEl = null;
-  lastKeywordHits = [];
-  /** The query on screen (as `semanticText`) and the index it was ranked on. */
-  shownKey = null;
-  shownIndex = null;
   constructor(app, plugin) {
     super(app);
     this.plugin = plugin;
+    this.controller = new ModalSearchController({
+      indexStore: plugin.indexStore,
+      semanticScores: (ix, text, instruction) => plugin.semanticScoresFor(ix, text, instruction || DEFAULT_QUERY_INSTRUCTION),
+      zotero: plugin.zotero,
+      settings: plugin.settings,
+      view: chooserView(() => this.chooser(), (msg) => this.footerEl?.setText(msg)),
+      vault: app.vault,
+      metadataCache: app.metadataCache,
+      showNotice: (m) => new import_obsidian.Notice(m),
+      sessionNotices: plugin.litNoteNotices
+    });
     this.setPlaceholder("Search papers by what they found, title, author, or citekey...");
     this.setInstructions([
       { command: "\u21B5", purpose: "open in Zotero" },
@@ -1809,7 +1923,11 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
       { command: "\u21E7\u21B5", purpose: "select in Zotero" }
     ]);
   }
-  async onOpen() {
+  /** Obsidian's internal suggestion list (not in its typings); every use goes through chooserView's fallbacks. */
+  chooser() {
+    return this.chooser;
+  }
+  onOpen() {
     super.onOpen();
     this.plugin.indexStore.ensureFresh().catch(() => {
     });
@@ -1817,37 +1935,22 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
     if (ix?.manifest?.model) {
       warmSemantic(import_obsidian.requestUrl, ix, this.plugin.settings.ollamaUrl, DEFAULT_KEEP_ALIVE);
     }
-    const modalEl = this.modalEl;
-    this.footerEl = modalEl.createDiv({ cls: "paper-search-footer" });
+    this.footerEl = this.modalEl.createDiv({ cls: "paper-search-footer" });
     this.footerEl.style.fontSize = "0.8em";
     this.footerEl.style.color = "var(--text-muted)";
     this.footerEl.style.padding = "4px 8px";
-    this.scope.register(["Mod"], "Enter", (evt) => {
+    this.onKey(["Mod"], (paper) => this.insertCitationAndEnsureNote(paper));
+    this.onKey(["Alt"], (paper) => this.openLiteratureNote(paper));
+    this.onKey(["Shift"], (paper) => this.selectInZotero(paper));
+  }
+  /** modifiers+Enter runs `action` on the selected paper and closes the modal. */
+  onKey(modifiers, action) {
+    this.scope.register(modifiers, "Enter", (evt) => {
       evt.preventDefault();
-      const item = this.getSelectedItem();
-      const paper = item && this.paperOf(item);
+      const item = this.controller.selectedItem();
+      const paper = item && this.controller.paperOf(item);
       if (paper) {
-        this.insertCitationAndEnsureNote(paper);
-        this.close();
-      }
-      return false;
-    });
-    this.scope.register(["Alt"], "Enter", (evt) => {
-      evt.preventDefault();
-      const item = this.getSelectedItem();
-      const paper = item && this.paperOf(item);
-      if (paper) {
-        this.openLiteratureNote(paper);
-        this.close();
-      }
-      return false;
-    });
-    this.scope.register(["Shift"], "Enter", (evt) => {
-      evt.preventDefault();
-      const item = this.getSelectedItem();
-      const paper = item && this.paperOf(item);
-      if (paper) {
-        this.selectInZotero(paper);
+        action(paper);
         this.close();
       }
       return false;
@@ -1855,89 +1958,10 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
   }
   onClose() {
     super.onClose();
-    this.jobs.cancel();
-  }
-  paperOf(item) {
-    if (item.isLoadingRow) return null;
-    if (item.livePaper) return item.livePaper;
-    if (item.paperIndex === void 0) return null;
-    return this.plugin.indexStore.getIndex()?.papers[item.paperIndex] ?? null;
-  }
-  getSelectedItem() {
-    return this.chooser?.values?.[this.chooser?.selectedItem] || null;
-  }
-  updateFooter(msg) {
-    if (this.footerEl) {
-      this.footerEl.setText(msg);
-    }
+    this.controller.close();
   }
   getSuggestions(query) {
-    const ix = this.plugin.indexStore.getIndex();
-    if (!ix || !this.plugin.indexStore.isReady()) {
-      return [{ isLoadingRow: true }];
-    }
-    const key = semanticText(query);
-    if (key === this.shownKey && ix === this.shownIndex) return this.currentItems;
-    this.shownKey = key;
-    this.shownIndex = ix;
-    const token = this.jobs.restart();
-    const kHits = keyword(ix, query, this.plugin.settings.limit);
-    this.lastKeywordHits = kHits;
-    const items = kHits.map((h) => ({
-      hit: h,
-      paperIndex: h.paper
-    }));
-    this.currentItems = items;
-    this.scheduleSemanticSearch(query, ix, token);
-    this.scheduleLive(query, ix, token);
-    return items;
-  }
-  scheduleLive(query, ix, token) {
-    this.liveItems = [];
-    this.jobs.after(this.plugin.settings.debounceMs, async () => {
-      const found = await this.plugin.zotero.search(query, indexedKeys(ix));
-      if (!this.jobs.isCurrent(token) || found.length === 0) return;
-      this.liveItems = found.map((livePaper) => ({ livePaper }));
-      const items = [...this.currentItems.filter((it) => !it.livePaper), ...this.liveItems];
-      const selected = this.chooser?.selectedItem ?? 0;
-      this.currentItems = items;
-      this.chooser?.setSuggestions(items);
-      this.chooser?.setSelectedItem(selected);
-    });
-  }
-  scheduleSemanticSearch(query, ix, token) {
-    if (!shouldRunSemantic(query, this.plugin.settings.minCharsSemantic) || !ix.vectors) {
-      return;
-    }
-    this.jobs.after(this.plugin.settings.debounceMs, () => this.runSemantic(query, ix, token));
-  }
-  async runSemantic(query, ix, token) {
-    if (!ix.vectors) return;
-    try {
-      const scores = await this.plugin.semanticScoresFor(ix, semanticText(query), ix.manifest.query_instruction);
-      if (!this.jobs.isCurrent(token)) {
-        return;
-      }
-      this.updateFooter("");
-      const mergedHits = hybridSearchFromScores(ix, query, scores, this.plugin.settings.limit);
-      const newItems = [
-        ...mergedHits.map((h) => ({ hit: h, paperIndex: h.paper })),
-        ...this.liveItems
-      ];
-      const currentItem = this.getSelectedItem();
-      const prevPaper = currentItem?.paperIndex ?? null;
-      let newSelectedIdx = 0;
-      if (prevPaper !== null) {
-        const found = newItems.findIndex((it) => it.paperIndex === prevPaper);
-        if (found >= 0) newSelectedIdx = found;
-      }
-      this.currentItems = newItems;
-      this.chooser?.setSuggestions(newItems);
-      this.chooser?.setSelectedItem(newSelectedIdx);
-    } catch {
-      if (!this.jobs.isCurrent(token)) return;
-      this.updateFooter(`semantic off: ${embedderName(ix)} not reachable`);
-    }
+    return this.controller.getSuggestions(query);
   }
   renderSuggestion(item, el) {
     el.empty();
@@ -1945,7 +1969,7 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
       el.createDiv({ text: "Loading paper index\u2026", cls: "paper-search-loading" });
       return;
     }
-    const paper = this.paperOf(item);
+    const paper = this.controller.paperOf(item);
     if (!paper) return;
     const hit = item.hit;
     const row = el.createDiv({ cls: "paper-search-item" });
@@ -1981,7 +2005,7 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
     }
   }
   onChooseSuggestion(item, _evt) {
-    const paper = this.paperOf(item);
+    const paper = this.controller.paperOf(item);
     if (!paper) return;
     const hit = item.hit;
     window.open(hitUrl(paper, hit));
@@ -1997,22 +2021,10 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
       const citation = formatCitation(this.plugin.settings.citationFormat, paper.citekey);
       editor.replaceRange(citation, editor.getCursor());
     }
-    await ensureLiteratureNote(
-      this.app.vault,
-      this.app.metadataCache,
-      paper,
-      this.plugin.settings,
-      { showNotice: (m) => new import_obsidian.Notice(m), sessionNotices: this.plugin.litNoteNotices }
-    );
+    await this.controller.ensureNote(paper);
   }
   async openLiteratureNote(paper) {
-    const res = await ensureLiteratureNote(
-      this.app.vault,
-      this.app.metadataCache,
-      paper,
-      this.plugin.settings,
-      { showNotice: (m) => new import_obsidian.Notice(m), sessionNotices: this.plugin.litNoteNotices }
-    );
+    const res = await this.controller.ensureNote(paper);
     if (res.file) {
       this.app.workspace.getLeaf().openFile(res.file);
     }
@@ -2282,6 +2294,14 @@ var RelatedPapersController = class {
     }
     const seq = ++this.currentSeq;
     const pathAtStart = filePath;
+    const stillCurrent = () => {
+      if (seq !== this.currentSeq) return false;
+      if (this.activeFilePath !== pathAtStart) {
+        this.resetToEmpty();
+        return false;
+      }
+      return true;
+    };
     if (!this.indexStore.isReady()) {
       this.setState("index-loading");
       return;
@@ -2289,21 +2309,13 @@ var RelatedPapersController = class {
     this.setState("loading");
     if (this.indexStore.ensureFresh) {
       await this.indexStore.ensureFresh().catch(() => false);
-      if (seq !== this.currentSeq) return;
-      if (this.activeFilePath !== pathAtStart) {
-        this.resetToEmpty();
-        return;
-      }
+      if (!stillCurrent()) return;
     }
     try {
       const instruction = this.settings.relatedInstruction;
       const byScores = !!this.embedder.rowScores;
       const qVec = byScores ? null : await this.embedder.embedQuery(passage, instruction);
-      if (seq !== this.currentSeq) return;
-      if (this.activeFilePath !== pathAtStart) {
-        this.resetToEmpty();
-        return;
-      }
+      if (!stillCurrent()) return;
       const ix = this.indexStore.isReady() ? this.indexStore.getIndex() : null;
       if (!ix) {
         this.setState("index-loading");
@@ -2312,11 +2324,7 @@ var RelatedPapersController = class {
       let scores;
       if (byScores) {
         scores = await this.embedder.rowScores(passage, ix, instruction);
-        if (seq !== this.currentSeq) return;
-        if (this.activeFilePath !== pathAtStart) {
-          this.resetToEmpty();
-          return;
-        }
+        if (!stillCurrent()) return;
       } else {
         if (!qVec) {
           this.handleEmbedderDown();
@@ -2937,12 +2945,12 @@ var PaperSearchPlugin = class extends import_obsidian2.Plugin {
         return embedQuery(import_obsidian2.requestUrl, {
           url: this.settings.ollamaUrl,
           model: ix.manifest?.model || "qwen3-embedding:0.6b",
-          instruction: ix.manifest?.query_instruction || "Given a query, retrieve relevant research papers",
+          instruction: ix.manifest?.query_instruction || DEFAULT_QUERY_INSTRUCTION,
           query: queryText,
           dims: ix.dims
         });
       },
-      rowScores: (queryText, ix) => this.semanticScoresFor(ix, queryText, ix.manifest?.query_instruction || "Given a query, retrieve relevant research papers")
+      rowScores: (queryText, ix) => this.semanticScoresFor(ix, queryText, ix.manifest?.query_instruction || DEFAULT_QUERY_INSTRUCTION)
     };
     const suggestController = new InlineSuggestController({
       indexStore: this.indexStore,

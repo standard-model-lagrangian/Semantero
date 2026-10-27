@@ -183,6 +183,15 @@ export class RelatedPapersController {
 
     const seq = ++this.currentSeq;
     const pathAtStart = filePath;
+    /** False once a newer refresh started (drop this one), or the owner switched notes (also clear the panel). */
+    const stillCurrent = (): boolean => {
+      if (seq !== this.currentSeq) return false;
+      if (this.activeFilePath !== pathAtStart) {
+        this.resetToEmpty();
+        return false;
+      }
+      return true;
+    };
 
     // Still loading the index: say so, and don't blame Ollama or spend its notice.
     if (!this.indexStore.isReady()) {
@@ -195,11 +204,7 @@ export class RelatedPapersController {
     // Reads only manifest.json unless the index changed; at most once per 10 s.
     if (this.indexStore.ensureFresh) {
       await this.indexStore.ensureFresh().catch(() => false);
-      if (seq !== this.currentSeq) return;
-      if (this.activeFilePath !== pathAtStart) {
-        this.resetToEmpty();
-        return;
-      }
+      if (!stillCurrent()) return;
     }
 
     try {
@@ -208,11 +213,7 @@ export class RelatedPapersController {
       const qVec = byScores ? null : await this.embedder.embedQuery(passage, instruction);
 
       // Switching notes mid-refresh or older refresh arriving drops response (P3, P4)
-      if (seq !== this.currentSeq) return;
-      if (this.activeFilePath !== pathAtStart) {
-        this.resetToEmpty();
-        return;
-      }
+      if (!stillCurrent()) return;
 
       const ix = this.indexStore.isReady() ? this.indexStore.getIndex() : null;
       if (!ix) {
@@ -223,11 +224,7 @@ export class RelatedPapersController {
       let scores: ArrayLike<number> | null;
       if (byScores) {
         scores = await this.embedder.rowScores!(passage, ix, instruction);
-        if (seq !== this.currentSeq) return;
-        if (this.activeFilePath !== pathAtStart) {
-          this.resetToEmpty();
-          return;
-        }
+        if (!stillCurrent()) return;
       } else {
         if (!qVec) {
           this.handleEmbedderDown();

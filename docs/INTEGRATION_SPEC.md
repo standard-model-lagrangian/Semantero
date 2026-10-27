@@ -284,7 +284,7 @@ expect = ["glockerXXXX", "…"]                                # papers you'd wa
 | `src/cite.ts` | **new**: `findTrigger`, `isExcludedContext`, `formatCitation`, `citedKeys` | no |
 | `src/litnote.ts` | **new**: `findLiteratureNote`, `renderTemplate`, `planNote`, `ensureLiteratureNote(vaultLike, …)` | no (`VaultLike` interface) |
 | `src/passage.ts` | **new**: `extractPassage`, `cleanMarkdown` | no |
-| `src/modal.ts` | moved out of `main.ts`; thin view over the engine; new keys | yes |
+| `src/modal.ts` | moved out of `main.ts`; thin view over `ModalSearchController` (`src/modalsearch.ts`); new keys | yes |
 | `src/inline.ts` | **new**: `EditorSuggest` glue, `refreshSuggestions` adapter | yes |
 | `src/related.ts` | **new**: `ItemView` glue | yes |
 | `src/main.ts` | registration only; settings tab | yes |

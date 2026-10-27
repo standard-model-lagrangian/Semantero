@@ -6,13 +6,14 @@
   "type": "module",
   "scripts": {
     "test": "node --test test/*.test.ts",
-    "typecheck": "tsc --noEmit -p .",
+    "typecheck": "tsc --noEmit -p . && tsc --noEmit -p tsconfig.test.json",
     "build": "node build.mjs",
     "record": "node scripts/record-conformance.ts",
     "eval": "node scripts/eval.ts"
   },
   "license": "MIT",
   "devDependencies": {
+    "@types/node": "^26.6.5",
     "esbuild": "^0.25.0",
     "typescript": "^5.8.0"
   }

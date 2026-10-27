@@ -475,59 +475,9 @@ test("PF8 B9: Panel refresh end-to-end latency with warm Ollama", { skip: !proce
   const vecBuf = fs.readFileSync(path.join(dir, "vectors.f32"));
   const vectors = new Float32Array(vecBuf.buffer, vecBuf.byteOffset, vecBuf.byteLength / 4);
   const dims = manifest.dims;
-  const totalRows = manifest.total_rows;
-
-  const rowToChunk = new Int32Array(totalRows);
-  const rowToPaper = new Int32Array(totalRows);
-  const rowIsAbstract = new Uint8Array(totalRows);
-  const paperAbstractRow = new Int32Array(papers.length).fill(-1);
-  const paperChunkRows: Int32Array[] = new Array(papers.length);
-  const chunkRowsMap = new Map<number, number[]>();
-
-  for (let p = 0; p < papers.length; p++) {
-    chunkRowsMap.set(p, []);
-    if (papers[p].abstract_row !== undefined && papers[p].abstract_row !== null) {
-      const r = papers[p].abstract_row!;
-      if (r >= 0 && r < totalRows) {
-        paperAbstractRow[p] = r;
-        rowToPaper[r] = p;
-        rowToChunk[r] = -1;
-        rowIsAbstract[r] = 1;
-      }
-    }
-  }
-
-  for (let c = 0; c < chunks.length; c++) {
-    const chunk = chunks[c];
-    if (chunk.row !== undefined && chunk.row >= 0 && chunk.row < totalRows) {
-      const r = chunk.row;
-      const p = chunk.paperIndex;
-      rowToChunk[r] = c;
-      rowToPaper[r] = p;
-      rowIsAbstract[r] = 0;
-      chunkRowsMap.get(p)?.push(r);
-    }
-  }
-
-  for (let p = 0; p < papers.length; p++) {
-    paperChunkRows[p] = new Int32Array(chunkRowsMap.get(p) || []);
-  }
-
-  const bm25 = new BM25Index(papers, chunks);
-  const loadedIndex = {
-    manifest,
-    papers,
-    chunks,
-    vectors,
-    dims,
-    totalRows,
-    rowToChunk,
-    rowToPaper,
-    rowIsAbstract,
-    paperAbstractRow,
-    paperChunkRows,
-    bm25,
-  };
+  // Built as the plugin loads an index (this used to be hand-rolled from fields papers.json doesn't have, abstract_row
+  // and chunk.paperIndex, so it ran on an index with no abstract rows and every chunk on paper 0).
+  const loadedIndex = IndexStore.precomputeIndex(manifest, papers, chunks, vectors, dims, 1);
 
   const { RelatedPapersController } = await import("../src/related.ts");
   const { FakeVault } = await import("./fakes.ts");

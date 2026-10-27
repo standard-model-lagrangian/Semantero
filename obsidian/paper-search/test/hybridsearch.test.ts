@@ -3,7 +3,10 @@ import assert from "node:assert";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { keyword, semantic, hybrid, hybridSearch, type LoadedIndex } from "../src/engine.ts";
+import { keyword, semantic, hybrid, hybridSearch, rowScores, type LoadedIndex } from "../src/engine.ts";
+import { ModalSearchController, type ModalSearchItem } from "../src/modalsearch.ts";
+import { InlineSuggestController, type SuggestionItem } from "../src/inline.ts";
+import { FakeClock, FakeVault } from "./fakes.ts";
 import { IndexStore } from "../src/indexstore.ts";
 import { buildSyntheticIndex } from "../scripts/make-synthetic-index.ts";
 
@@ -58,11 +61,56 @@ test("HS2 keyword/semantic with snippets:false skip snippet work but keep rankin
   assert.ok(bare.every((h) => h.snippet === ""));
 });
 
-test("HS3 the modal and @@ suggestions use hybridSearch(FromScores), not a merge of truncated lists", () => {
-  const src = path.join(import.meta.dirname, "..", "src");
-  for (const f of ["modal.ts", "inline.ts"]) {
-    const code = fs.readFileSync(path.join(src, f), "utf8");
-    assert.ok(/hybridSearch(FromScores)?\(/.test(code), `${f} should call hybridSearch or hybridSearchFromScores`);
-    assert.ok(!/\bhybrid\(/.test(code), `${f} still merges with hybrid() directly`);
+/** Runs the debounced work of a controller to completion: timers, then the replies they await. */
+async function settle(clock: FakeClock) {
+  clock.runAll();
+  for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
+}
+
+test("HS3 the search modal and @@ show the merge over the full lists (hybridSearch), not a merge of truncated ones", async () => {
+  const ix = loadIndex();
+  const r = rng(5);
+  const N = ix.papers.length;
+  const store = { isReady: () => true, getIndex: () => ix };
+  let differsFromTruncated = 0;
+  for (const q of queries(ix).slice(0, 15)) {
+    const qVec = new Float32Array(ix.dims).map(() => r());
+    const want = hybridSearch(ix, q, qVec, 12).map((h) => h.paper);
+    const truncated = hybrid(keyword(ix, q, 12), semantic(ix, qVec, q, { limit: 12 }), 12).map((h) => h.paper);
+    if (truncated.join() !== want.join()) differsFromTruncated++;
+
+    // the modal
+    const clock = new FakeClock();
+    let shown: ModalSearchItem[] = [];
+    const modal = new ModalSearchController({
+      indexStore: store,
+      semanticScores: async (index) => rowScores(index, qVec),
+      zotero: { search: async () => [] },
+      settings: { limit: 12, debounceMs: 200, minCharsSemantic: 1 },
+      view: { setSuggestions: (items) => (shown = items), selectedIndex: () => 0, setFooter: () => {} },
+      vault: new FakeVault(),
+      setTimeoutFn: (fn, ms) => clock.setTimeout(fn, ms),
+      clearTimeoutFn: (id) => clock.clearTimeout(id),
+    });
+    modal.getSuggestions(q);
+    await settle(clock);
+    assert.deepStrictEqual(shown.map((it) => it.paperIndex), want, `modal order for "${q}"`);
+
+    // @@
+    const iclock = new FakeClock();
+    const values: SuggestionItem[] = [];
+    const suggest = { suggestions: { values, selectedItem: 0, setSuggestions(items: SuggestionItem[]) { this.values = items; } } };
+    const inline = new InlineSuggestController({
+      indexStore: store,
+      embedder: { embedQuery: async () => qVec, rowScores: async (_t, index) => rowScores(index, qVec) },
+      vault: new FakeVault(),
+      settings: { inlineLimit: 12, minCharsSemantic: 1, createLiteratureNotes: false },
+      setTimeoutFn: (fn, ms) => iclock.setTimeout(fn, ms),
+      clearTimeoutFn: (id) => iclock.clearTimeout(id),
+    });
+    await inline.getSuggestions(q, suggest);
+    await settle(iclock);
+    assert.deepStrictEqual(suggest.suggestions.values.map((it) => it.paper?.key), want.map((p) => ix.papers[p].key), `@@ order for "${q}"`);
   }
+  assert.ok(differsFromTruncated > 0, "fixture too small to show truncation");
 });

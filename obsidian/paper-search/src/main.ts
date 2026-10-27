@@ -16,7 +16,7 @@ import { checkHotkeyConflict } from "./hotkey.ts";
 import { formatCitation, DEFAULT_CITATION_FORMAT } from "./cite.ts";
 import { DEFAULT_RELATED_MIN_SCORE } from "./related.ts";
 import { embedQuery } from "./ollama.ts";
-import { semanticScores } from "./semantic.ts";
+import { DEFAULT_QUERY_INSTRUCTION, semanticScores } from "./semantic.ts";
 import type { LoadedIndex } from "./engine.ts";
 import { createPaperSearchSuggestClass, InlineSuggestController } from "./inline.ts";
 import { createRelatedPapersViewClass, RelatedPapersController } from "./related.ts";
@@ -114,13 +114,13 @@ export default class PaperSearchPlugin extends Plugin {
         return embedQuery(requestUrl, {
           url: this.settings.ollamaUrl,
           model: ix.manifest?.model || "qwen3-embedding:0.6b",
-          instruction: ix.manifest?.query_instruction || "Given a query, retrieve relevant research papers",
+          instruction: ix.manifest?.query_instruction || DEFAULT_QUERY_INSTRUCTION,
           query: queryText,
           dims: ix.dims,
         });
       },
       rowScores: (queryText: string, ix: LoadedIndex) =>
-        this.semanticScoresFor(ix, queryText, ix.manifest?.query_instruction || "Given a query, retrieve relevant research papers"),
+        this.semanticScoresFor(ix, queryText, ix.manifest?.query_instruction || DEFAULT_QUERY_INSTRUCTION),
     };
 
     const suggestController = new InlineSuggestController({

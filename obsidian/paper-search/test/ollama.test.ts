@@ -65,3 +65,15 @@ test("keep_alive defaults to 5 minutes when not given (the model's process holds
   assert.strictEqual(DEFAULT_KEEP_ALIVE, "5m");
   assert.deepStrictEqual(bodies.map((b) => b.keep_alive), ["5m", "5m"]);
 });
+
+test("without an instruction the query is embedded as it is (eval-related --no-instruction), not as 'Instruct: undefined'", async () => {
+  const bodies: { input: string[] }[] = [];
+  const fake = async (p: { body?: string }) => {
+    assert.ok(p.body);
+    bodies.push(JSON.parse(p.body));
+    return { status: 200, json: { embeddings: [[1, 0]] } };
+  };
+  await embedQuery(fake, { url: "http://x", model: "m", query: "viscoelastic hydrogels" });
+  assert.deepStrictEqual(bodies[0].input, ["viscoelastic hydrogels"]);
+  assert.strictEqual(formatQuery(undefined, "q"), "q");
+});

@@ -10,7 +10,8 @@ export type RequestUrlFn = (params: {
 export interface EmbedQueryOptions {
   url: string;
   model: string;
-  instruction: string;
+  /** Omitted: the query is embedded as it is (as the planner embeds documents). */
+  instruction?: string;
   query: string;
   keepAlive?: string;
   dims?: number;
@@ -26,8 +27,8 @@ export interface WarmUpOptions {
  * pop-up warms the model when it opens, so a short hold costs little. */
 export const DEFAULT_KEEP_ALIVE = "5m";
 
-export function formatQuery(instruction: string, query: string): string {
-  return `Instruct: ${instruction}\nQuery: ${query}`;
+export function formatQuery(instruction: string | undefined, query: string): string {
+  return instruction === undefined ? query : `Instruct: ${instruction}\nQuery: ${query}`;
 }
 
 export async function embedQuery(

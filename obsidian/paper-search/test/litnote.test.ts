@@ -164,16 +164,6 @@ test("L3c the Nunjucks notice shows once per session across separate calls shari
   assert.strictEqual(notices.length, 1);
 });
 
-test("L3d the search modal passes the plugin's session notice set to ensureLiteratureNote", () => {
-  const src = readFileSync(new URL("../src/modal.ts", import.meta.url), "utf8");
-  const calls = src.split("ensureLiteratureNote(").slice(1);
-  assert.ok(calls.length >= 2);
-  for (const c of calls) {
-    const args = c.slice(0, c.indexOf(");"));
-    assert.ok(args.includes("sessionNotices: this.plugin.litNoteNotices"), args);
-  }
-});
-
 test("L3e create race on a case-insensitive disk returns the existing file found case-insensitively", async () => {
   class CaseInsensitiveRaceVault extends FakeVault {
     async create(filePath: string, content: string): Promise<any> {

@@ -18,6 +18,7 @@ import { BM25Index, type PaperMetadata } from "../src/bm25.ts";
 
 function createDummyPaper(citekey: string, title: string, author = "Roth", year = 2023): PaperMetadata {
   return {
+    key: `KEY_${citekey}`,
     citekey,
     title,
     authors: [author],
@@ -25,7 +26,6 @@ function createDummyPaper(citekey: string, title: string, author = "Roth", year 
     abstract: `Abstract for ${citekey}`,
     journal: "Nature",
     doi: "10.1038/example",
-    source: "zotero",
     path: `storage/${citekey}.pdf`,
     tags: [],
     collections: [],
@@ -82,7 +82,7 @@ class FakeIndexStore {
     return new Uint8Array([1, 1, 1]);
   }
   getPaperChunkRows(): Int32Array[] | null {
-    return [[0], [1], [2]];
+    return [new Int32Array([0]), new Int32Array([1]), new Int32Array([2])];
   }
 }
 

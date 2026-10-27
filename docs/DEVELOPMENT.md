@@ -76,7 +76,7 @@ make ci            # the same without the Swift suite: what GitHub Actions runs
 |---|---|
 | `make test-py` / `test-ts` / `test-launcher` / `test-swift` | One suite. `test-launcher` sets `TZ=UTC` (note dates are local-time) |
 | `make test-swift-tsan` | Swift suite under Thread Sanitizer (actors, reload races) |
-| `make lint`, `make typecheck` | ruff; `tsc --noEmit` in both TS packages |
+| `make lint`, `make typecheck` | ruff; `tsc --noEmit` in both TS packages, over `src/` and (via `tsconfig.test.json`) `test/` and `scripts/` |
 | `make build` | Rebuild the plugin's `main.js` |
 | `cd launcher-core && npm run build` | Rebuild `dist/ranker.js`. The build fails if Node built-ins, `console.` or `TextDecoder` slip in: JavaScriptCore's bare context has none |
 | `make fixtures` | Rebuild `launcher-core/test/fixtures/notes_small/` from `tests/fixtures/notes/vault_small/` with the fake embedder |
