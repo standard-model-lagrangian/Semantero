@@ -284,7 +284,8 @@ class TestZotwatch(unittest.TestCase):
 
         self.assertEqual(pl["Label"], "com.planner.zotero-watch")
         self.assertIn("WatchPaths", pl)
-        self.assertEqual(len(pl["WatchPaths"]), 2)
+        self.assertEqual(len(pl["WatchPaths"]), 3)
+        self.assertTrue(any(w.endswith("zotero.sqlite-wal") for w in pl["WatchPaths"]))
         self.assertGreaterEqual(pl["ThrottleInterval"], 10)
         self.assertIn("watch-run", pl["ProgramArguments"])
         self.assertIn("logs/zotero-watch.log", pl["StandardOutPath"])
@@ -341,21 +342,19 @@ class TestZotwatch(unittest.TestCase):
             self.assertFalse(res.ok)
             self.assertIn("launchctl bootstrap", res.message)
 
-        # 2. Watch log has 3 consecutive build failed -> warning
-        log_dir = Path(__file__).parent.parent / "logs"
+        # 2. Watch log has 3 consecutive build failed -> warning. A log in a scratch root: the real
+        # logs/zotero-watch.log belongs to the running watcher (this test used to overwrite and delete it).
+        log_dir = self.tmp_path / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
-        log_file = log_dir / "zotero-watch.log"
-        log_file.write_text("zotero watch: build failed (1)\nzotero watch: build failed (2)\nzotero watch: build failed (3)\n")
+        (log_dir / "zotero-watch.log").write_text(
+            "zotero watch: build failed (1)\nzotero watch: build failed (2)\nzotero watch: build failed (3)\n")
 
-        with patch("subprocess.run") as mock_run:
+        with patch("subprocess.run") as mock_run, patch("planner.health.ROOT", self.tmp_path):
             mock_run.return_value = MagicMock(returncode=0)
             res = health.check_zotero_watch(self.cfg)
             self.assertIsNotNone(res)
             self.assertFalse(res.ok)
             self.assertIn("3 consecutive failed builds", res.message)
-
-        # Clean up log file
-        log_file.unlink(missing_ok=True)
 
     # W10 morning job and watcher at once: one builds, other busy, index consistent
     def test_w10_concurrent_watcher_and_morning(self):
@@ -427,6 +426,36 @@ class TestZotwatch(unittest.TestCase):
         state = json.loads((self.data_dir / "search" / "state.json").read_text())
         self.assertEqual(state.get("fingerprint"), zotwatch.compute_fingerprint(self.zotero_dir))
         self.assertTrue((self.data_dir / "search" / "vectors.f32").exists())
+
+    # W15 Zotero runs in WAL mode with an exclusive lock: changes not yet checkpointed into zotero.sqlite must still
+    # be seen (regression: ?immutable=1 and a copy of zotero.sqlite alone both missed them, for hours)
+    def test_w15_sees_changes_still_in_the_write_ahead_log(self):
+        from planner import zotlib
+        db = self.zotero_dir / "zotero.sqlite"
+        before_fp = zotwatch.compute_fingerprint(self.zotero_dir)
+        before = {p.key for p in zotlib.read_library(self.zotero_dir)}
+        self.assertIn("KEY0001", before)
+
+        zotero = sqlite3.connect(db)   # plays Zotero: stays open, holds the lock, never checkpoints
+        try:
+            zotero.execute("PRAGMA journal_mode=WAL")
+            zotero.execute("PRAGMA locking_mode=EXCLUSIVE")
+            zotero.execute("PRAGMA wal_autocheckpoint=0")
+            zotero.execute("INSERT INTO deletedItems (itemID, dateDeleted) VALUES (1, '2026-10-27 09:23:15')")
+            zotero.commit()
+            wal = self.zotero_dir / "zotero.sqlite-wal"
+            self.assertGreater(wal.stat().st_size, 0)
+            with self.assertRaises(sqlite3.OperationalError):   # why the readers copy instead of opening in place
+                sqlite3.connect(f"file:{db}?mode=ro", uri=True).execute("SELECT COUNT(*) FROM items").fetchone()
+
+            self.assertNotEqual(zotwatch.compute_fingerprint(self.zotero_dir), before_fp)
+            after = {p.key for p in zotlib.read_library(self.zotero_dir)}
+            self.assertEqual(before - after, {"KEY0001"})
+            # The quiet wait goes by the log, which is what Zotero writes
+            os.utime(db, (time.time() - 100, time.time() - 100))
+            self.assertFalse(zotwatch.wait_for_quiet(db, quiet_s=30, max_wait_s=0, sleep_fn=lambda s: None))
+        finally:
+            zotero.close()
 
     # W13 a library change is published keyword-only first (citable before embedding), then embedded
     def test_w13_keyword_index_published_before_embedding(self):

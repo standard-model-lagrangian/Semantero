@@ -742,10 +742,11 @@ except Exception:
     <key>WatchPaths</key>
     <array>
         <string>$zotero_dir/zotero.sqlite</string>
+        <string>$zotero_dir/zotero.sqlite-wal</string>
         <string>$zotero_dir/storage</string>
     </array>
     <key>ThrottleInterval</key>
-    <integer>30</integer>
+    <integer>10</integer>
     <!-- Hourly retry for a keyword-only index; exits after a fingerprint check otherwise. -->
     <key>StartInterval</key>
     <integer>3600</integer>

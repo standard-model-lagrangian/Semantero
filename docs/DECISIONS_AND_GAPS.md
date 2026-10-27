@@ -467,3 +467,18 @@ real chunks), and citing needs none of it. Changes:
   is off or Zotero is closed, a failed request stops lookups for a minute. Setting: "Ask Zotero for new papers".
 - Watcher log lines carry a timestamp and the build's duration, so the next measurement can be end to end.
 
+### New papers invisible until a Zotero checkpoint (27 Oct 2026)
+
+A paper added at 09:23 (Reavette et al.) was in neither the plugin nor the launcher 20 minutes later. Zotero runs in WAL
+mode with an exclusive lock: the item was in `zotero.sqlite-wal` (modified 09:39) while `zotero.sqlite` was last written
+at 08:30. The fingerprint read the database with `?immutable=1`, which ignores the log, and `read_library` copied
+`zotero.sqlite` alone, so both saw the library as of 08:30 (496 items instead of 501), and launchd watched only
+`zotero.sqlite`, which doesn't change until a checkpoint. Opening it in place (`?mode=ro`) fails with "database is
+locked". Fix: `zotlib.open_snapshot` copies the log and the database into a temporary folder (log before and after, retried
+if it moved) and opens the copy, which replays the log; the fingerprint and `read_library` both use it. The watcher's
+`WatchPaths` and quiet wait include `zotero.sqlite-wal`. Each copy is ~5 MB (about 10 ms). Test W15 plays Zotero
+(WAL, exclusive lock, no checkpoint) and fails on the old code.
+
+Also: test W9 wrote three fake "build failed" lines into the real `logs/zotero-watch.log` and then deleted it, so every
+`make check` erased the watcher's log; it now uses a scratch root.
+

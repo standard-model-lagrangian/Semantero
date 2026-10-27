@@ -7,7 +7,7 @@ from pathlib import Path
 
 from . import searchindex
 from .searchindex import search_lock, load_json, write_json
-from .zotlib import attachment_path
+from .zotlib import attachment_path, db_files, open_snapshot
 
 
 # Seconds zotero.sqlite must sit unmodified before a build. Zotero writes a new item, its attachment and any
@@ -26,72 +26,75 @@ def compute_fingerprint(zotero_dir: Path | str) -> str | None:
         return None
 
     try:
-        # read-only URI via ?immutable=1
-        conn = sqlite3.connect(f"file:{db_path.resolve().as_posix()}?immutable=1", uri=True)
-        cur = conn.cursor()
-
-        # 1. number of regular items not in the trash
-        cur.execute("""
-            SELECT COUNT(*) FROM items
-            WHERE itemID NOT IN (SELECT itemID FROM deletedItems)
-              AND itemTypeID NOT IN (
-                  SELECT itemTypeID FROM itemTypes
-                  WHERE typeName IN ('attachment', 'note', 'annotation')
-              )
-        """)
-        regular_count = cur.fetchone()[0]
-
-        # 2. max(clientDateModified) over items
-        cur.execute("""
-            SELECT MAX(clientDateModified) FROM items
-            WHERE itemID NOT IN (SELECT itemID FROM deletedItems)
-        """)
-        max_client_date = cur.fetchone()[0] or ""
-
-        # 3. number of PDF and web-snapshot attachments
-        cur.execute("""
-            SELECT COUNT(*) FROM itemAttachments
-            WHERE itemID NOT IN (SELECT itemID FROM deletedItems)
-              AND contentType IN ('application/pdf', 'text/html')
-        """)
-        att_count = cur.fetchone()[0]
-
-        # 4. sorted list of (path, mtime, size) for each PDF or snapshot attachment
-        cur.execute("""
-            SELECT i.key, a.path
-            FROM itemAttachments a
-            JOIN items i ON a.itemID = i.itemID
-            WHERE a.contentType IN ('application/pdf', 'text/html')
-              AND a.itemID NOT IN (SELECT itemID FROM deletedItems)
-        """)
-        pdf_rows = cur.fetchall()
-        conn.close()
-
-        pdf_stats: list[tuple[str, int, int]] = []
-        for att_key, path_str in pdf_rows:
-            full_path = attachment_path(zotero_dir, att_key, path_str)
-            if full_path is None:
-                continue
-
-            if full_path.exists():
-                stat = full_path.stat()
-                pdf_stats.append((str(full_path), stat.st_mtime_ns, stat.st_size))
-            else:
-                pdf_stats.append((str(full_path), 0, 0))
-
-        pdf_stats.sort(key=lambda x: x[0])
-
-        hasher = hashlib.sha256()
-        hasher.update(f"reg:{regular_count}".encode())
-        hasher.update(f"max_date:{max_client_date}".encode())
-        hasher.update(f"att:{att_count}".encode())
-        for p, m, s in pdf_stats:
-            hasher.update(f"{p}:{m}:{s}".encode())
-
-        return hasher.hexdigest()
+        with open_snapshot(zotero_dir) as conn:
+            return _fingerprint(conn, zotero_dir)
     except Exception as e:
         log(f"sqlite unreadable ({e})")
         return None
+
+
+def _fingerprint(conn: sqlite3.Connection, zotero_dir: Path) -> str:
+    """Items, edits and every PDF/snapshot attachment's path, size and mtime."""
+    cur = conn.cursor()
+
+    # 1. number of regular items not in the trash
+    cur.execute("""
+        SELECT COUNT(*) FROM items
+        WHERE itemID NOT IN (SELECT itemID FROM deletedItems)
+          AND itemTypeID NOT IN (
+              SELECT itemTypeID FROM itemTypes
+              WHERE typeName IN ('attachment', 'note', 'annotation')
+          )
+    """)
+    regular_count = cur.fetchone()[0]
+
+    # 2. max(clientDateModified) over items
+    cur.execute("""
+        SELECT MAX(clientDateModified) FROM items
+        WHERE itemID NOT IN (SELECT itemID FROM deletedItems)
+    """)
+    max_client_date = cur.fetchone()[0] or ""
+
+    # 3. number of PDF and web-snapshot attachments
+    cur.execute("""
+        SELECT COUNT(*) FROM itemAttachments
+        WHERE itemID NOT IN (SELECT itemID FROM deletedItems)
+          AND contentType IN ('application/pdf', 'text/html')
+    """)
+    att_count = cur.fetchone()[0]
+
+    # 4. sorted list of (path, mtime, size) for each PDF or snapshot attachment
+    cur.execute("""
+        SELECT i.key, a.path
+        FROM itemAttachments a
+        JOIN items i ON a.itemID = i.itemID
+        WHERE a.contentType IN ('application/pdf', 'text/html')
+          AND a.itemID NOT IN (SELECT itemID FROM deletedItems)
+    """)
+    pdf_rows = cur.fetchall()
+
+    pdf_stats: list[tuple[str, int, int]] = []
+    for att_key, path_str in pdf_rows:
+        full_path = attachment_path(zotero_dir, att_key, path_str)
+        if full_path is None:
+            continue
+
+        if full_path.exists():
+            stat = full_path.stat()
+            pdf_stats.append((str(full_path), stat.st_mtime_ns, stat.st_size))
+        else:
+            pdf_stats.append((str(full_path), 0, 0))
+
+    pdf_stats.sort(key=lambda x: x[0])
+
+    hasher = hashlib.sha256()
+    hasher.update(f"reg:{regular_count}".encode())
+    hasher.update(f"max_date:{max_client_date}".encode())
+    hasher.update(f"att:{att_count}".encode())
+    for p, m, s in pdf_stats:
+        hasher.update(f"{p}:{m}:{s}".encode())
+
+    return hasher.hexdigest()
 
 
 def ollama_up(ollama_url: str, timeout: float = 2.0) -> bool:
@@ -122,8 +125,8 @@ def wait_for_quiet(
     while True:
         if not db_path.exists():
             return False
-        stat = db_path.stat()
-        mtime = stat.st_mtime
+        # Zotero writes to the write-ahead log; zotero.sqlite itself changes only at a checkpoint.
+        mtime = max(f.stat().st_mtime for f in db_files(db_path.parent) if f.exists())
         now = time_fn()
         age = now - mtime
         if age >= quiet_s:

@@ -16,6 +16,8 @@
     <key>WatchPaths</key>
     <array>
         <string>/Users/frederick/Zotero/zotero.sqlite</string>
+        <!-- Zotero runs in WAL mode: a new item changes only zotero.sqlite-wal until a checkpoint. -->
+        <string>/Users/frederick/Zotero/zotero.sqlite-wal</string>
         <string>/Users/frederick/Zotero/storage</string>
     </array>
     <!-- launchd starts the job at most this often; a run that only fingerprints takes well under a second. -->

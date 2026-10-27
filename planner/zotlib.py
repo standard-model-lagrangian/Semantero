@@ -3,8 +3,53 @@ import shutil
 import sqlite3
 import tempfile
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
+
+
+def db_files(zotero_dir: Path) -> list[Path]:
+    """zotero.sqlite and its write-ahead log. Zotero runs in WAL mode: new items sit in zotero.sqlite-wal, often for
+    hours, until a checkpoint copies them into zotero.sqlite, so anything that watches or reads the library needs both."""
+    return [zotero_dir / "zotero.sqlite", zotero_dir / "zotero.sqlite-wal"]
+
+
+def _stamp(p: Path) -> tuple[int, int] | None:
+    try:
+        st = p.stat()
+        return st.st_mtime_ns, st.st_size
+    except FileNotFoundError:
+        return None
+
+
+@contextmanager
+def open_snapshot(zotero_dir: Path | str) -> Iterator[sqlite3.Connection]:
+    """A connection to a private copy of the library, write-ahead log included. Zotero holds the database in
+    exclusive locking mode, so it can't be opened in place: `?immutable=1` reads only zotero.sqlite and misses
+    everything since the last checkpoint. The log is copied before and after the database and the copy retried if it
+    moved, so a checkpoint during the copy can't pair an old log with a newer database."""
+    zotero_dir = Path(zotero_dir).expanduser()
+    db, wal = db_files(zotero_dir)
+    if not db.exists():
+        raise FileNotFoundError(f"Zotero database not found: {db}")
+    with tempfile.TemporaryDirectory(prefix="planner-zotero-") as tmp:
+        copy_db, copy_wal = Path(tmp) / db.name, Path(tmp) / wal.name
+        for attempt in range(3):
+            copy_wal.unlink(missing_ok=True)
+            before = _stamp(wal)
+            if before is not None:
+                shutil.copyfile(wal, copy_wal)
+            shutil.copyfile(db, copy_db)
+            if _stamp(wal) == before:
+                break
+            time.sleep(0.2 * (attempt + 1))
+        # Read-write on purpose: opening the copy replays its log into it (read-only can't without a -shm file).
+        conn = sqlite3.connect(copy_db)
+        try:
+            yield conn
+        finally:
+            conn.close()
 
 
 @dataclass
@@ -106,28 +151,9 @@ def _extract_year(date_str: str | None) -> int | None:
 
 
 def read_library(zotero_dir: Path | str) -> list[Paper]:
-    """Read regular items from Zotero library via a temporary copy of zotero.sqlite."""
+    """Read regular items from Zotero library via a private copy (open_snapshot)."""
     zotero_dir = Path(zotero_dir).expanduser()
-    db_path = zotero_dir / "zotero.sqlite"
-    if not db_path.exists():
-        raise FileNotFoundError(f"Zotero database not found: {db_path}")
-
-    # Copy to temporary file; retry once after 2s if copy fails
-    tmp_file = tempfile.NamedTemporaryFile(suffix=".sqlite", delete=False)
-    tmp_path = Path(tmp_file.name)
-    tmp_file.close()
-
-    try:
-        try:
-            shutil.copy2(db_path, tmp_path)
-        except Exception:
-            time.sleep(2.0)
-            try:
-                shutil.copy2(db_path, tmp_path)
-            except Exception as e2:
-                raise RuntimeError(f"Failed to copy {db_path} to temporary file: {e2}") from e2
-
-        conn = sqlite3.connect(f"file:{tmp_path.resolve()}?mode=ro", uri=True)
+    with open_snapshot(zotero_dir) as conn:
         cur = conn.cursor()
 
         # 1. Excluded types
@@ -148,7 +174,6 @@ def read_library(zotero_dir: Path | str) -> list[Paper]:
         ]
 
         if not regular_items:
-            conn.close()
             return []
 
         # 4. Field IDs mapping
@@ -222,8 +247,6 @@ def read_library(zotero_dir: Path | str) -> list[Paper]:
                     PdfAttachment(attachmentKey=att_key, path=full_path, file=attachment_file(att_key, path_str))
                 )
 
-        conn.close()
-
         papers: list[Paper] = []
         for item_id, key in regular_items:
             fdata = item_data_by_id.get(item_id, {})
@@ -259,7 +282,3 @@ def read_library(zotero_dir: Path | str) -> list[Paper]:
             )
 
         return papers
-
-    finally:
-        if tmp_path.exists():
-            tmp_path.unlink()
