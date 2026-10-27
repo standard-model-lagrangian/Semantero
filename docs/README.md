@@ -11,6 +11,7 @@ and number the tests that pin each behaviour. Where an implementation differs fr
 | Try other embedding models in the real plugin and app (Qwen3-Embedding 0.6B vs pplx-embed-v2-late) and switch between them | [EMBED_INSTALLS.md](EMBED_INSTALLS.md); pplx internals: [pplx/README.md](../pplx/README.md) |
 | Check the plugin by hand | [MANUAL_CHECKS.md](MANUAL_CHECKS.md) |
 | Check the launcher by hand | [macos/CHECK.md](../macos/CHECK.md) |
+| Find known maintenance debt worth paying off (open items from the October 2026 code review) | [REVIEW_2026-10.md](REVIEW_2026-10.md) |
 
 ## Design records
 
