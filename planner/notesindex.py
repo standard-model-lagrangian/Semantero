@@ -19,7 +19,6 @@ from .config import SearchSettings
 from .indexfiles import building, compute_content_hash, embed_texts, publish
 from .indexfiles import manifest as index_manifest
 from .store import load_json, write_json
-from .vault import DAILY_RE
 
 CHUNKER = "md-headings-v1"
 DEFAULTS = {
@@ -128,6 +127,9 @@ def scan(vault: Path, excludes: list[re.Pattern]) -> tuple[list[tuple[str, Path]
             files.append((rel, abs_path))
     files.sort(key=lambda t: t[0])
     return files, excluded
+
+
+DAILY_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})\.md$")   # a daily note: YYYY-MM-DD.md in the daily folder
 
 
 def note_key(rel: str) -> str:

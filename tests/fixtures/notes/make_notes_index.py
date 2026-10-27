@@ -51,9 +51,7 @@ def main():
         for name in ("papers.json", "manifest.json"):
             shutil.copy(PAPERS / name, data / "search" / name)
         cfg = Config(
-            vault=vault, daily_dir=vault, data_dir=data, models={}, extract={}, brief={},
-            reviews_dir=vault / "Reviews", daily_template=vault / "Templates/Daily.md", schedule={}, threads={},
-            search={"model": "qwen3-embedding:0.6b", "dims": 8,
+            vault=vault, daily_dir=vault, data_dir=data, search={"model": "qwen3-embedding:0.6b", "dims": 8,
                     "query_instruction": "Given a description of what a paper found or showed, retrieve that paper"},
             notes={"exclude": [*notesindex.DEFAULTS["exclude"], "Private/**"]},
         )

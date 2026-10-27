@@ -167,8 +167,7 @@ if __name__ == "__main__":
 class TestSearchSettings(unittest.TestCase):
     def cfg(self, search: dict) -> config.Config:
         v = Path("/tmp/v")
-        return config.Config(vault=v, daily_dir=v, data_dir=v / ".planner", models={}, extract={}, brief={},
-                             reviews_dir=v, daily_template=v / "t.md", schedule={}, threads={}, search=search)
+        return config.Config(vault=v, daily_dir=v, data_dir=v / ".planner", search=search)
 
     def test_an_empty_search_section_gets_every_default(self):
         s = config.SearchSettings.of(self.cfg({}))

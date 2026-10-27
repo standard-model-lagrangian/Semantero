@@ -99,7 +99,7 @@ browser ── http://127.0.0.1:8765 ──► server.ts (Node 26, runs .ts nati
 
 **llama-server lifecycle:** started by whichever client first needs it (bench server, indexer), bound to 127.0.0.1 only, with a pidfile in `~/Library/Caches/semantero-bench/`. An idle timer stops it after 5 minutes without a request, mirroring Ollama's `keep_alive`. A launchd job is not needed for the bench.
 
-**Isolation from the two setups:** the runtime path (`llamaserver.py`, `build_index.py`, `server.ts`, `maxsim.ts`) uses only the standard library and Node. Torch lives only in `bench/convert/.venv`, used once for the conversion and the parity check, and never enters the main venv, whose only dependency stays `anthropic`. `make check` runs the bench's Node unit tests, which need no models, and nothing else. The Obsidian-only setup is unaffected.
+**Isolation from the two setups:** the runtime path (`llamaserver.py`, `build_index.py`, `server.ts`, `maxsim.ts`) uses only the standard library and Node. Torch lives only in `bench/convert/.venv`, used once for the conversion and the parity check, and never enters the main venv, which stays standard-library only. `make check` runs the bench's Node unit tests, which need no models, and nothing else. The Obsidian-only setup is unaffected.
 
 ### Keeping the token store small
 

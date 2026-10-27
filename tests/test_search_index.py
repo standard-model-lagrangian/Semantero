@@ -421,13 +421,6 @@ class TestSearchIndex(unittest.TestCase):
             vault=self.vault_dir,
             daily_dir=self.vault_dir,
             data_dir=self.data_dir,
-            models={},
-            extract={},
-            brief={},
-            reviews_dir=self.vault_dir / "Reviews",
-            daily_template=self.vault_dir / "Daily.md",
-            schedule={},
-            threads={},
             search={
                 "zotero_dir": str(self.zotero_dir),
                 "model": "qwen3-embedding:0.6b",
@@ -1029,13 +1022,6 @@ class TestCliAndDoctor(unittest.TestCase):
             vault=self.vault_dir,
             daily_dir=self.vault_dir,
             data_dir=self.data_dir,
-            models={"extract": "mock:model"},
-            extract={"thread_window_days": 21},
-            brief={"slip_window_notes": 6, "slip_min": 3, "collapsed": True},
-            reviews_dir=self.vault_dir / "Reviews",
-            daily_template=self.template_path,
-            schedule={"day_starts_hour": 4},
-            threads={"file": "Threads.md", "active_days": 14, "quiet_days": 60, "lines_per_thread": 6},
             search={"model": "qwen3-embedding:0.6b", "dims": 1024, "zotero_dir": str(FIXTURES_DIR)},
         )
 
@@ -1055,27 +1041,6 @@ class TestCliAndDoctor(unittest.TestCase):
         self.assertIn("PDFs with no text (1)", out.getvalue())
         self.assertIn("scan2020:ATT9", out.getvalue())
         self.assertNotIn("Keyword-only", out.getvalue())
-
-    # 29. Morning search failure is a warning, not a crash
-    @patch("planner.searchindex.build_index", side_effect=RuntimeError("Search index builder failed"))
-    @patch("planner.__main__.online", return_value=True)
-    def test_morning_search_failure_is_a_warning_not_a_crash(self, mock_online, mock_build):
-        import argparse
-        from planner import __main__ as main_mod
-        from planner import vault
-
-        today_date = vault.logical_today(self.cfg.schedule.get("day_starts_hour", 4))
-        today = (self.vault_dir / f"{today_date.isoformat()}.md")
-        today.write_text("Flow\n- task 1\n")
-
-        # Run cmd_morning
-        main_mod.cmd_morning(self.cfg, argparse.Namespace(force=True))
-
-        # Check brief was written
-        note_content = today.read_text()
-        self.assertIn("%% planner:start %%", note_content)
-        # Warning text appears in the note
-        self.assertIn("Search index couldn't be updated", note_content)
 
     # 30. Doctor flags stale or mismatched index
     def test_doctor_flags_stale_or_mismatched_index(self):
@@ -1157,22 +1122,19 @@ class TestCliAndDoctor(unittest.TestCase):
         finally:
             shutil.rmtree(tmp_dir)
 
-    # 33. Doctor search_only runs only search-relevant checks
-    def test_doctor_search_only(self):
+    # 33. Doctor runs the search, watcher and launcher checks
+    def test_doctor_checks(self):
         from planner import health
         with patch("subprocess.run") as mock_run, patch("shutil.which") as mock_which:
             mock_which.return_value = "/opt/homebrew/bin/pdftotext"
             mock_run.return_value = MagicMock(returncode=0, stdout="NAME\nqwen3-embedding:0.6b\n")
-            results = health.run(self.cfg, [], online=False, search_only=True)
+            results = health.run(self.cfg)
             names = [r.name for r in results]
             # Should have vault access, python env, search index, search tools, zotero watch
             self.assertIn("vault access", names)
             self.assertIn("search tools", names)
             self.assertIn("zotero watch", names)
-            # Should NOT have LLM endpoint or planner job checks
-            self.assertNotIn("launchd jobs", names)
-            self.assertNotIn("anthropic SDK", names)
-            self.assertNotIn("extract model", names)
+            self.assertIn("launcher app", names)
 
 
 if __name__ == "__main__":
@@ -1232,9 +1194,7 @@ class TestPaperFilePaths(unittest.TestCase):
         data_dir = vault / ".planner"
         data_dir.mkdir(parents=True)
         return Config(
-            vault=vault, daily_dir=vault, data_dir=data_dir, models={}, extract={}, brief={},
-            reviews_dir=vault / "Reviews", daily_template=vault / "Daily.md", schedule={}, threads={},
-            search={"zotero_dir": str(self.zotero_dir), "model": "m", "dims": 8},
+            vault=vault, daily_dir=vault, data_dir=data_dir, search={"zotero_dir": str(self.zotero_dir), "model": "m", "dims": 8},
         )
 
     def _fake_embed(self, texts, **kw):

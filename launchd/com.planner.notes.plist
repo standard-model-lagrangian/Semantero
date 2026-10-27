@@ -2,34 +2,33 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <!-- Keeps the notes index (<vault>/.planner/notes) fresh for the launcher: every 5 minutes and at login.
+         Exits at once when the notes index is off or nothing changed. Installed by `make install-global`. -->
     <key>Label</key>
-    <string>com.planner.weekly</string>
+    <string>com.planner.notes</string>
     <key>ProgramArguments</key>
     <array>
         <string>/bin/zsh</string>
         <string>__REPO__/bin/planner-run.sh</string>
-        <string>weekly</string>
+        <string>notes</string>
+        <string>tick</string>
     </array>
     <key>WorkingDirectory</key>
     <string>__REPO__</string>
-    <!-- Sundays 21:00, after most done sections are written. If asleep, runs on wake; a Monday catch-up still reviews the week just gone. -->
-    <key>StartCalendarInterval</key>
-    <dict>
-        <key>Weekday</key>
-        <integer>0</integer>
-        <key>Hour</key>
-        <integer>21</integer>
-        <key>Minute</key>
-        <integer>0</integer>
-    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StartInterval</key>
+    <integer>300</integer>
+    <key>ProcessType</key>
+    <string>Background</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>PYTHONUNBUFFERED</key>
         <string>1</string>
     </dict>
     <key>StandardOutPath</key>
-    <string>__REPO__/logs/weekly.log</string>
+    <string>__REPO__/logs/notes.log</string>
     <key>StandardErrorPath</key>
-    <string>__REPO__/logs/weekly.log</string>
+    <string>__REPO__/logs/notes.log</string>
 </dict>
 </plist>

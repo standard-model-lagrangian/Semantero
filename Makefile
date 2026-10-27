@@ -42,10 +42,11 @@ install-app: app
 	cp -R "macos/build/Semantero.app" /Applications/
 	@echo "installed to /Applications; open it once so macOS registers the Spotlight action"
 
-# The global setup in one go: notes index (must be enabled in config.local.toml first) + the Semantero app.
+# The global setup in one go: notes index (must be enabled in config.local.toml first), its 5-minute job, the Semantero app.
 install-global:
 	@$(PY) -c "import sys; sys.path.insert(0, '.'); from planner import config, notesindex; sys.exit(0 if notesindex.notes_enabled(config.load()) else 'The notes index is off. Add to config.local.toml:\n  [notes]\n  enabled = true\n  exclude = [\"Templates/**\", \"Threads.md\", \"Zotero Template.md\", \"Zotero Citation Template.md\"]  # + your private notes\nSee docs/INSTALL.md (Global setup).')"
 	$(PY) -m planner notes index
+	bash bin/install-launchd.sh com.planner.notes
 	$(MAKE) install-app
 	@echo "Global setup done. Open Semantero once (allow Documents access), then press ⌥Space."
 

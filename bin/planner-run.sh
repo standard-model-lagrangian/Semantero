@@ -1,7 +1,7 @@
 #!/bin/zsh
-# launchd entrypoint. Runs the planner with the project venv; if the venv is broken (e.g. Homebrew
-# removed the Python it was built on), falls back to any Python 3.11+ so the morning brief still
-# appears with a rebuild warning. If no Python works at all, posts one macOS notification per day.
+# launchd entrypoint for the indexers (watcher, notes job). Runs them with the project venv; if the venv is broken
+# (e.g. Homebrew removed the Python it was built on), falls back to any Python 3.11+ so the indexes stay fresh and
+# `doctor` says to rebuild. If no Python works at all, posts one macOS notification per day.
 ROOT="${0:A:h:h}"
 cd "$ROOT" || exit 1
 
@@ -25,6 +25,6 @@ mkdir -p "$ROOT/logs"
 STAMP="$ROOT/logs/.notified-$(date +%F)"
 if [[ ! -e "$STAMP" ]]; then
   touch "$STAMP"
-  osascript -e 'display notification "No usable Python for the planner, so no brief today. Rebuild the .venv (see logs/morning.log)." with title "Planner"'
+  osascript -e 'display notification "No usable Python for the Semantero indexers. Rebuild the .venv (see logs/notes.log)." with title "Semantero"'
 fi
 exit 1

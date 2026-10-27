@@ -1,6 +1,6 @@
 #!/bin/bash
 # Installs one launchd job from its template in launchd/ and (re)loads it:
-#   bin/install-launchd.sh com.planner.morning
+#   bin/install-launchd.sh com.planner.notes
 #   bin/install-launchd.sh com.planner.zotero-watch ~/Zotero
 #   bin/install-launchd.sh --print <label> [zotero dir]     (prints the filled-in plist, installs nothing)
 # Templates hold __REPO__ (this checkout), __HOME__ and __ZOTERO__ (the Zotero data folder: the second argument,

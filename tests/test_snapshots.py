@@ -101,9 +101,7 @@ class TestSnapshotIndexing(unittest.TestCase):
             sp.mkdir(parents=True)
             (sp / fname).write_bytes((FIXTURES_DIR / "sample.pdf").read_bytes())
         self.cfg = Config(
-            vault=vault_dir, daily_dir=vault_dir, data_dir=self.data_dir, models={}, extract={}, brief={},
-            reviews_dir=vault_dir / "Reviews", daily_template=vault_dir / "Daily.md", schedule={}, threads={},
-            search={"zotero_dir": str(self.zotero_dir), "dims": 8, "chunk_words": 300,
+            vault=vault_dir, daily_dir=vault_dir, data_dir=self.data_dir, search={"zotero_dir": str(self.zotero_dir), "dims": 8, "chunk_words": 300,
                     "chunk_overlap_words": 50, "max_chunks_per_paper": 150},
         )
 

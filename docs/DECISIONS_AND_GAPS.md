@@ -76,7 +76,7 @@ All execution speed budgets specified in `INTEGRATION_SPEC.md` were benchmarked 
 - **1b Zotero Watcher & Launchd (`planner/zotwatch.py`):**
   - Fingerprint (read-only `?immutable=1` sqlite URI): count of regular items not in the trash, `max(clientDateModified)`, count of attachments, and the sorted (PDF path, mtime, size) list. Stored as `fingerprint` in `.planner/search/state.json`, only after a successful build; `search index` rebuilds keep the key.
   - Quiet period: waits until `zotero.sqlite` has not been modified for 8 s (`quiet_s`, 20 s until 27 Oct), checking every 5 s, for at most 600 s (`max_wait_s`); otherwise logs `gave up waiting`.
-  - Advisory lock: non-blocking `search_lock(cfg, blocking=False)` on `.planner/search.lock`, shared with the morning job's `search index`. If busy, exits 0 with `"busy"`.
+  - Advisory lock: non-blocking `search_lock(cfg, blocking=False)` on `.planner/search.lock`, shared with a manual `planner search index`. If busy, exits 0 with `"busy"`.
   - Loop limit: up to 3 rounds if changes occur while indexing.
   - CLI command: `planner search watch-run` for launchd execution.
   - Launchd plist: `launchd/com.planner.zotero-watch.plist` with `WatchPaths` on `~/Zotero/zotero.sqlite` and `ThrottleInterval = 10` (30 until 27 Oct).
@@ -215,7 +215,7 @@ Other S1 fixes: JSON is decoded natively in Swift and passed as strings (the JS 
 - Daily-note title wins over the first H1 (frontmatter `title` wins over both). A note counts as `daily` only if its folder is `daily_folder` (the vault root today).
 - Frontmatter parser is minimal (scalars, `[a, b]`, `- item` lists). "Malformed" = a line that is not `key: value`, a list item or an indented continuation, or an unclosed `[` / quote; the whole block is then body text.
 - Tags must start with a letter (`#3d-culture` is not a tag; Obsidian agrees); aliases are folded into `tags` so they are searchable.
-- The tick runs the notes index after the morning work on **every** 5-minute launchd run (also when the day's run was skipped, offline, etc.) via `finally`, non-blocking lock. A failed run is logged; the "⚠ Setup" warning comes from `planner doctor`'s notes check (missing, >1 day old, model/dims mismatch, degraded >1 day, bad glob), which the morning run already includes. `notes_tick_warning` only decides whether the log line says "warning".
+- The notes job (`planner notes tick`, launchd `com.planner.notes`) runs the notes index every 5 minutes with a non-blocking lock. A failed run is logged; `planner doctor`'s notes check reports problems (missing, >1 day old, model/dims mismatch, degraded >1 day, bad glob). `notes_tick_warning` only decides whether the log line says "warning".
 - A Ollama outage retries on every tick (one attempt, no backoff).
 - `doctor`: "launcher app not installed" is an informational note on an OK check (`Result(ok=True, message=…)`); the login-item registration is **not** checked (no cheap API).
 - Literature notes match by frontmatter `citekey` or by file name. Your notes named like `LeSavage 2022 Next generation cancer organoids.md` do **not** match a citekey, so today only 1 of your notes is collapsed into its paper.
@@ -308,7 +308,7 @@ records + packed text 16 MB, notes 3 MB, other JS ~2 MB; the rest is the Swift/S
 | Job | Before | After | Fix |
 |---|---|---|---|
 | `search index` with nothing changed (daily, and on Zotero changes) | 0.62 s, 768 MB peak | **0.05 s, 34 MB** (a full reconcile, at least weekly: 0.21 s, 400 MB) | (1) the watcher's library fingerprint (items, edits, every attachment's path/size/mtime; 0.05 s) now short-circuits `build_index` itself when it matches the last successful build, the index isn't degraded and model/dims/chunker match; a full reconcile still runs if the last one is over 7 days old, in case an edit didn't bump `clientDateModified`. (2) the reconcile itself: cached vectors were Python float lists (~32 bytes a number) and the vector file was held 4×; now zero-copy `memoryview` slices, `array.fromfile`, `frombytes(view.cast("B"))`, hashing in place |
-| 5-minute morning tick | 0.38 s | 0.07 s, 31 MB | the paper index's fingerprint shortcut |
+| 5-minute notes tick | 0.38 s | 0.07 s, 31 MB | the paper index's fingerprint shortcut |
 | `search stats` | 0.12 s, 213 MB | 0.05 s, 33 MB | chunk count from the manifest instead of loading every chunk |
 | 5-minute tick, notes index no-op, watcher no-op | < 0.4 s, ~28 MB | unchanged | already cheap |
 
@@ -349,7 +349,7 @@ plugin and app (`planner profile list|build|use`, `profiles.toml`, `<data_dir>/p
   (`/rowscores`, checked against the loaded `content_hash`) and rank them with the existing row-score paths:
   `hybridSearchFromScores` / `semanticFromRowScores` in the plugin, `hybridFromRowScores` in the app (now on `Ranker`).
 - **Scores:** pplx returns MaxSim / query tokens. `relatedMinScore` stays at its 0.6B calibration for every profile.
-- **numpy** is a dependency of `pplxd` only, in its own venv; the main venv still has only `anthropic`, and the
+- **numpy** is a dependency of `pplxd` only, in its own venv; the main venv has no third-party packages, and the
   service's tests run under `make test-pplx` (skipped when that venv is missing).
 - **Build cost** dominates: on the M4, Ollama embeds the 4B at ~45–65 s per batch of 32 chunks (~4 h for the library),
   the 8B slower. Builds run one at a time.

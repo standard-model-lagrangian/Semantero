@@ -190,10 +190,7 @@ class NotesCase(unittest.TestCase):
         (self.data_dir / "search" / "papers.json").write_text(json.dumps(papers))
         (self.data_dir / "search" / "manifest.json").write_text(json.dumps({"content_hash": "abc"}))
         self.cfg = Config(
-            vault=self.vault, daily_dir=self.vault, data_dir=self.data_dir, models={}, extract={}, brief={},
-            reviews_dir=self.vault / "Reviews", daily_template=self.vault / "Templates/Daily.md",
-            schedule={}, threads={},
-            search={"model": "qwen3-embedding:0.6b", "dims": 8, "batch_size": 32},
+            vault=self.vault, daily_dir=self.vault, data_dir=self.data_dir, search={"model": "qwen3-embedding:0.6b", "dims": 8, "batch_size": 32},
             notes={"exclude": [*notesindex.DEFAULTS["exclude"], "Private/**"]},
         )
         self.notes_dir = self.data_dir / "notes"
@@ -551,10 +548,9 @@ class TestUnreadableVault(NotesCase):
 
     def test_tick_logs_vault_unreadable_without_raising(self):
         from planner import __main__ as main
-        with patch.object(main, "_morning"), \
-                patch.object(notesindex, "build_index", side_effect=notesindex.VaultUnreadable("no access")), \
+        with patch.object(notesindex, "build_index", side_effect=notesindex.VaultUnreadable("no access")), \
                 patch("builtins.print") as pr:
-            main.cmd_morning(self.cfg, type("A", (), {"force": False})())
+            main.notes_tick(self.cfg)
         self.assertTrue(any("no access" in str(c) for c in pr.call_args_list))
 
 
@@ -568,33 +564,28 @@ class TestShippedConfig(unittest.TestCase):
 
 class TestTickAndDoctor(NotesCase):
     # 32
-    def test_tick_runs_notes_index_after_daily_work_and_swallows_failure(self):
+    def test_tick_runs_the_notes_index_without_blocking_and_swallows_failure(self):
         from planner import __main__ as main
-        order = []
-        with patch.object(main, "_morning", side_effect=lambda *a, **k: order.append("morning")), \
-                patch.object(notesindex, "build_index",
-                                    side_effect=lambda *a, **k: (order.append("notes"), {"changed": False})[1]):
-            main.cmd_morning(self.cfg, type("A", (), {"force": False})())
-        self.assertEqual(order, ["morning", "notes"])
+        with patch.object(notesindex, "build_index", return_value={"changed": False}) as b:
+            main.notes_tick(self.cfg)
+        b.assert_called_once_with(self.cfg, blocking=False)
 
-        with patch.object(main, "_morning"), \
-                patch.object(notesindex, "build_index", side_effect=RuntimeError("kaboom")):
-            main.cmd_morning(self.cfg, type("A", (), {"force": False})())  # does not raise
+        with patch.object(notesindex, "build_index", side_effect=RuntimeError("kaboom")):
+            main.notes_tick(self.cfg)  # does not raise
 
     def test_tick_skipped_when_notes_not_configured(self):
         from planner import __main__ as main
         self.cfg.notes = {}
-        with patch.object(main, "_morning"), patch.object(notesindex, "build_index") as b:
-            main.cmd_morning(self.cfg, type("A", (), {"force": False})())
+        with patch.object(notesindex, "build_index") as b:
+            main.notes_tick(self.cfg)
         b.assert_not_called()
 
     # 33
     def test_tick_skips_when_notes_lock_busy(self):
         from planner import __main__ as main
-        with patch.object(main, "_morning"), \
-                patch.object(notesindex, "build_index", side_effect=BlockingIOError("busy")), \
+        with patch.object(notesindex, "build_index", side_effect=BlockingIOError("busy")), \
                 patch("builtins.print") as pr:
-            main.cmd_morning(self.cfg, type("A", (), {"force": False})())
+            main.notes_tick(self.cfg)
         self.assertFalse(any("failed" in str(c) for c in pr.call_args_list))
 
     # 34

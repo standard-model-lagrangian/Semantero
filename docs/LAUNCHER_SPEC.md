@@ -340,10 +340,10 @@ Changing `model` or `dims` in `[search]`, or the `chunker` name, forces a full n
 | `planner notes index [--full]` | Build or update; prints counts, time, notes embedded, notes skipped |
 | `planner notes stats` | Notes per kind, chunks, literature notes matched, excluded count, model, age, degraded |
 
-- **Tick:** every 5-minute `planner morning` check runs `notes index` after its own work, with a non-blocking lock.
+- **Tick:** the launchd job `com.planner.notes` runs `planner notes tick` every 5 minutes, with a non-blocking lock.
   - **Lock busy:** skip.
   - **Ollama down:** keyword-only fallback (`degraded: true`; the next run embeds what's missing).
-  - **Any other failure:** logged, never raised. It becomes a `⚠ Setup:` warning only if the index is more than a day old.
+  - **Any other failure:** logged, never raised; `planner doctor` reports an index more than a day old.
 - **Doctor** (`planner doctor`, `doctor --search`):
   - the notes index exists and is less than 1 day old;
   - `model` and `dims` match `[search]`;

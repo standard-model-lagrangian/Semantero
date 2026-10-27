@@ -95,7 +95,7 @@ hybrid(keywordHits, semanticHits, limit, k = 60): Hit[]                 // RRF, 
 - Runs `bin/planner-run.sh search watch-run`, logging to `logs/zotero-watch.log`.
 
 **`planner search watch-run`** does this, in order:
-1. **Lock.** Take a non-blocking `fcntl.flock` on `.planner/search.lock`. The morning job's `search index` uses the same lock. If the lock is held, log `busy` and exit 0. Whoever holds the lock re-checks the fingerprint before releasing it (step 6), so a change made in between isn't lost.
+1. **Lock.** Take a non-blocking `fcntl.flock` on `.planner/search.lock`. A manual `planner search index` uses the same lock. If the lock is held, log `busy` and exit 0. Whoever holds the lock re-checks the fingerprint before releasing it (step 6), so a change made in between isn't lost.
 2. **Wait for Zotero to go quiet.** Wait until `zotero.sqlite` hasn't been modified for `quiet_s` (default 8 s; 20 s until 27 Oct 2026), checking every 5 s, for at most `max_wait_s` (600 s). If it never goes quiet, log `gave up waiting` and exit 0; the next trigger or the morning run catches up.
 3. **Fingerprint** (read-only via the `?immutable=1` URI, about 25 MB):
    - number of regular items not in the trash;
@@ -389,7 +389,7 @@ Python tests use `unittest` and temporary directories, as now. TypeScript tests 
 - **W9 doctor:**
   - watch job not loaded → fail, with the `launchctl bootstrap` command;
   - 3 consecutive `build failed` lines in the log → warning.
-- **W10 morning job and watcher at once:** both call into the lock (two subprocesses on the fixture). Exactly one build happens, the other logs `busy`, and the index stays consistent (checked with SEARCH_SPEC test 20).
+- **W10 a manual build and the watcher at once:** both call into the lock (two subprocesses on the fixture). Exactly one build happens, the other logs `busy`, and the index stays consistent (checked with SEARCH_SPEC test 20).
 
 **Literature notes: `test/litnote.test.ts`** (fake vault)
 - **L1 existing note by file name:**
@@ -499,7 +499,7 @@ Python tests use `unittest` and temporary directories, as now. TypeScript tests 
 | Index rebuilt while Obsidian is open | X2, X3 |
 | Zotero busy importing (many writes) | W4, W6 |
 | PDF arrives after the item | N4, W2 |
-| Morning job and watcher at the same time | N5, W10 |
+| A manual build and the watcher at the same time | N5, W10 |
 | Ollama stopped or model unloaded | W5, I7, P8 |
 | Existing note with different case or different name | L1, L2 |
 | Your template uses features we don't support | L7 |

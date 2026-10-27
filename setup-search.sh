@@ -536,10 +536,10 @@ cmd_setup() {
         success "Using existing .venv"
     fi
 
-    # Ensure pip packages if requirements exist (optional SDK dependencies for weekly review)
+    # Python dependencies, if any (today: none beyond the standard library)
     if [[ -f "$SCRIPT_DIR/requirements.txt" ]]; then
         "$SCRIPT_DIR/.venv/bin/pip" install -q -r "$SCRIPT_DIR/requirements.txt" \
-            || warn "Could not install requirements.txt (the weekly review needs it; search does not)"
+            || warn "Could not install requirements.txt"
     fi
 
     # 3. Poppler / pdftotext

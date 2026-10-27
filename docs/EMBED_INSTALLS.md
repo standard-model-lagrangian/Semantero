@@ -25,7 +25,7 @@ After `use`:
 - **Semantero** reloads by itself within a few seconds (it watches `.planner/`).
 - **Obsidian** picks up the new index the next time you open the search pop-up or the Related panel refreshes; if a
   view looks stale, run "Reload app without saving" once.
-- The Zotero watcher, the 5-minute notes tick and the morning run keep the **live** profile up to date with its own
+- The Zotero watcher, and the 5-minute notes job keep the **live** profile up to date with its own
   model. The others wait as they were; `use` catches a profile up (only new or changed texts are embedded).
 
 Switch to the other one with `planner profile use qwen3-0.6b` or `planner profile use pplx-v2-late`.

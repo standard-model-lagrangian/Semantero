@@ -111,6 +111,6 @@ def named_lock(cfg, filename: str, timeout: float = 60.0, blocking: bool = True)
 
 @contextmanager
 def search_lock(cfg, timeout: float = 60.0, blocking: bool = True):
-    """The paper index's lock, also taken by the watcher and the morning job's `search index`."""
+    """The paper index's lock, taken by every build: the watcher's and `planner search index`."""
     with named_lock(cfg, "search.lock", timeout, blocking) as f:
         yield f

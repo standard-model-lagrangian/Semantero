@@ -12,8 +12,6 @@ Semantero is one repository with two ways to use it. Pick one; you can switch la
 | Setup time | ~5 minutes of your time, plus the model download and the first index running on their own (see [tier 1](#tier-1-paper-search-in-obsidian)) | ~5 more minutes (longer if you also download Xcode) |
 | Code used | `planner/` (paper index, watcher), `obsidian/paper-search/` | also `planner/notesindex.py`, `launcher-core/`, `macos/` |
 
-The planner (daily brief, weekly review) is a separate, optional add-on for either setup: [tier 4](#tier-4-the-planner-daily-brief-threads-weekly-review).
-
 ### Obsidian only
 
 ```bash
@@ -55,8 +53,7 @@ notes and `planner doctor` doesn't expect a notes index. You don't need Xcode or
    ```
 
 5. Allow **Documents** access when asked; allow **Accessibility** the first time you press ⌘↵. Then press **⌥Space**.
-6. Keep the notes index fresh: the planner's 5-minute job does it if you use the planner; otherwise run
-   `.venv/bin/python -m planner notes index` when you like, or schedule `bin/planner-run.sh notes index` with launchd
+6. `make install-global` also installed `com.planner.notes`, which keeps the notes index fresh every 5 minutes
    (see [tier 2](#tier-2-notes-index)).
 
 Details: [tier 2](#tier-2-notes-index) (notes index) and [tier 3](#tier-3-the-launcher-app-semanteroapp) (the app).
@@ -73,17 +70,16 @@ Details: [tier 2](#tier-2-notes-index) (notes index) and [tier 3](#tier-3-the-la
 
 ## The pieces in detail (tiers)
 
-Tier 1 is the **Obsidian only** setup; tiers 1–3 are **Global**; tier 4 (the planner) is optional for either.
+Tier 1 is the **Obsidian only** setup; tiers 1–3 are **Global**.
 
 | Tier | What you get | Runs where | Needs |
 |---|---|---|---|
 | **1. Paper search in Obsidian** | `⌘⇧0` search pop-up over your Zotero library, `@@` inline citations, literature notes, related-papers panel; index kept fresh by a background watcher | Obsidian plugin + `com.planner.zotero-watch` and `com.planner.pplxd` (launchd) | Zotero, Obsidian, Homebrew, Python 3.11+, poppler, uv (or Ollama with `--model qwen`) |
-| **2. Notes index** | Your vault's Markdown notes searchable too (the index the launcher uses) | `planner notes index` | Tier 1's Python setup |
+| **2. Notes index** | Your vault's Markdown notes searchable too (the index the launcher uses) | `com.planner.notes` (launchd, every 5 min) | Tier 1's Python setup |
 | **3. Launcher app** | **⌥Space from any app** → glass panel over papers *and* notes; open, paste the PDF into Mail/Teams/LLMs, copy citations, drag files; Spotlight entries and a Spotlight action | `Semantero.app` (menu bar) | Tiers 1–2, Command Line Tools (full Xcode optional), Node + npm |
-| **4. Planner** (owner's setup) | Daily brief in today's note, `Threads.md`, weekly review, evening reminder | `com.planner.morning` (every 5 min), `com.planner.weekly` (launchd) | Tier 1's Python, API keys (Groq, Anthropic) |
 
 Everything runs locally. Setup downloads the embedding model once (Hugging Face, GitHub for llama.cpp); after that the
-only network calls are the planner's model calls (tier 4) and the embedding service on `127.0.0.1`.
+only network calls go to the embedding service on `127.0.0.1`.
 
 ## Tools, and which tier needs them
 
@@ -94,7 +90,7 @@ only network calls are the planner's model calls (tier 4) and the embedding serv
 | [Zotero](https://www.zotero.org) | 7 | 1+ | `brew install --cask zotero` | Data folder `~/Zotero` by default. Read-only to semantero: it never writes to `zotero.sqlite` or `storage/` |
 | [Better BibTeX](https://retorque.re/zotero-better-bibtex/) | current | 1+ | Zotero → Tools → Plugins → install from file | Citekeys for `[[citekey]]` links and literature notes. `setup-search.sh` warns if your library has none |
 | [Obsidian](https://obsidian.md) | 1.x | 1+ | `brew install --cask obsidian` | An existing vault. Default `~/Documents/Obsidian Vault` |
-| Python | 3.11+ (3.15 here) | 1+ | `brew install python` | Standard library only, plus `anthropic` for tier 4. The setup script makes `.venv` |
+| Python | 3.11+ (3.15 here) | 1+ | `brew install python` | Standard library only. The setup script makes `.venv` |
 | poppler (`pdftotext`) | current | 1+ | `brew install poppler` | PDF text extraction |
 | [uv](https://docs.astral.sh/uv/) + pplx-embed-v2-late | uv current; model and llama.cpp pinned | 1+ (default model) | `brew install uv`; the setup script does the rest | Semantic search (the default). The script downloads the converted model once from [Semantero's GitHub release](https://github.com/standard-model-lagrangian/Semantero/releases/tag/pplx-v2-late-q8_0-7bba8e7) into `~/Library/Application Support/Semantero/` (~550 MB, checked against `pplx/model.sha256`) and runs it as `com.planner.pplxd`. Apple silicon only. Without it everything falls back to keyword search and fills in vectors once it's running |
 | [Ollama](https://ollama.com) + `qwen3-embedding:0.6b` | current | 1+ (`--model qwen`) | `brew install ollama && brew services start ollama && ollama pull qwen3-embedding:0.6b` | The lighter alternative (~600 MB), and the fallback if the pplx setup fails |
@@ -102,7 +98,6 @@ only network calls are the planner's model calls (tier 4) and the embedding serv
 | Xcode (full app) | 26 or later (27.1 here) | 3 (optional), contributors | Mac App Store | Only for: the Spotlight "Search Everything" action (`appintentsmetadataprocessor`), the Swift test suite, and an easy stable signature. Then `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` |
 | Node.js + npm | 26 (26.4 here) | 3, and contributors | `brew install node` | Builds `launcher-core/dist/ranker.js` (the app's ranking engine) and runs the TypeScript tests. Older Node versions are untested |
 | Apple ID in Xcode (free "Personal Team") | — | 3 (recommended, needs Xcode) | Xcode → Settings → Accounts → **+** | A stable signature, so macOS remembers the app's permissions across rebuilds |
-| Groq and Anthropic API keys | — | 4 | their consoles | In `secrets.toml` (git-ignored, `chmod 600`) |
 
 > **Path gotcha.** If you clone into a folder whose name has spaces or a trailing space, always quote it. The owner's
 > checkout is `"…/productivity work "` (trailing space).
@@ -179,9 +174,8 @@ Then:
 .venv/bin/python -m planner notes stats     # notes per kind, literature notes matched, excluded count, age
 ```
 
-**Keeping it fresh.** If you run the planner (tier 4), its 5-minute launchd tick updates the notes index after its own
-work. Without the planner there is no notes job yet, so run `planner notes index` when you want, or add your own
-launchd job running `bin/planner-run.sh notes index` every few minutes. A run with nothing changed takes milliseconds
+**Keeping it fresh.** The launchd job `com.planner.notes` (installed by `make install-global`, or
+`bin/install-launchd.sh com.planner.notes`) updates the notes index every 5 minutes. A run with nothing changed takes milliseconds
 and writes nothing; merely touching a note doesn't rewrite the index.
 
 Safety behaviour you can rely on:
@@ -252,41 +246,16 @@ permissions). The hands-on checklist is [`macos/CHECK.md`](../macos/CHECK.md).
 
 ---
 
-## Tier 4: the planner (daily brief, threads, weekly review)
-
-This is the owner's daily-notes workflow ([SPEC.md](SPEC.md)). It writes into your daily notes, so read the spec first.
-
-```bash
-cp secrets.example.toml secrets.toml && chmod 600 secrets.toml   # add GROQ_API_KEY and ANTHROPIC_API_KEY
-.venv/bin/pip install -r requirements.txt                       # anthropic SDK
-.venv/bin/python -m planner doctor                              # every check, with its fix
-```
-
-Daily notes are `YYYY-MM-DD.md` at the vault root, from `Templates/Daily.md` (see [SPEC.md](SPEC.md)).
-
-The launchd jobs in `launchd/` are templates; `bin/install-launchd.sh` fills in your checkout's paths, writes the job
-to `~/Library/LaunchAgents/` and loads it:
-
-```bash
-bin/install-launchd.sh com.planner.morning
-bin/install-launchd.sh com.planner.weekly
-```
-
-The morning job runs every 5 minutes. It does the day's work once, on the first run after 04:00 while online, and
-updates the notes index on every run. Logs go to `logs/morning.log` and `logs/weekly.log`.
-
----
-
 ## Uninstalling
 
 | Piece | How |
 |---|---|
 | Launcher | First menu bar → Settings… → untick the three Spotlight boxes → Save (this removes its Spotlight entries). Then Quit, and `rm -rf "/Applications/Semantero.app" ~/Library/Application\ Support/Semantero\ Search`; `defaults delete dev.semantero.app` |
 | Watcher | `./setup-search.sh stop` and `rm ~/Library/LaunchAgents/com.planner.zotero-watch.plist` |
+| Notes job | `launchctl bootout gui/$(id -u)/com.planner.notes`, then `rm ~/Library/LaunchAgents/com.planner.notes.plist` |
 | pplx model and service | See [EMBED_INSTALLS.md → Removing](EMBED_INSTALLS.md#removing) |
-| Planner jobs | `launchctl bootout gui/$(id -u)/com.planner.morning` (and `.weekly`), then remove the plists |
 | Plugin | Disable it in Obsidian, then delete `<vault>/.obsidian/plugins/semantero` |
-| Indexes and state | `<vault>/.planner/` (indexes, sidecars, state). Your notes are not touched |
+| Indexes | `<vault>/.planner/` (the paper and notes indexes). Your notes are not touched |
 
 ---
 

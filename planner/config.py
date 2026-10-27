@@ -10,15 +10,8 @@ ROOT = Path(__file__).resolve().parent.parent
 @dataclass
 class Config:
     vault: Path
-    daily_dir: Path
-    data_dir: Path
-    models: dict
-    extract: dict
-    brief: dict
-    reviews_dir: Path
-    daily_template: Path
-    schedule: dict
-    threads: dict
+    daily_dir: Path    # daily notes (YYYY-MM-DD.md) live here; the notes index marks them as kind "daily"
+    data_dir: Path     # the indexes: <vault>/.planner/{search,notes}
     search: dict = field(default_factory=dict)
     notes: dict = field(default_factory=dict)
     profiles_path: Path = ROOT / "profiles.toml"   # embedding profiles (planner/profiles.py), next to config.toml
@@ -73,13 +66,6 @@ def load(path: Path = ROOT / "config.toml") -> Config:
         vault=vault,
         daily_dir=vault / raw.get("daily_folder", ""),
         data_dir=vault / raw.get("data_dir", ".planner"),
-        models=raw["models"],
-        extract=raw.get("extract", {}),
-        brief=raw.get("brief", {}),
-        reviews_dir=vault / raw.get("reviews_folder", "Reviews"),
-        daily_template=vault / raw.get("daily_template", "Templates/Daily.md"),
-        schedule=raw.get("schedule", {}),
-        threads=raw.get("threads", {}),
         search=raw.get("search", {}),
         notes=raw.get("notes", {}),
         profiles_path=path.parent / "profiles.toml",

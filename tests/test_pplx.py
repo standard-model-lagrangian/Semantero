@@ -100,9 +100,7 @@ class TestManifestBackend(unittest.TestCase):
         self.tmp.cleanup()
 
     def cfg(self, search):
-        return Config(vault=self.vault, daily_dir=self.vault, data_dir=self.vault / ".planner", models={}, extract={},
-                      brief={}, reviews_dir=self.vault / "Reviews", daily_template=self.vault / "Templates/Daily.md",
-                      schedule={}, threads={}, search=search, notes={})
+        return Config(vault=self.vault, daily_dir=self.vault, data_dir=self.vault / ".planner", search=search, notes={})
 
     def fake(self, texts, **k):
         return [[1.0] + [0.0] * (k["dims"] - 1) for _ in texts]
@@ -122,9 +120,7 @@ class TestManifestBackend(unittest.TestCase):
 class TestDoctor(unittest.TestCase):
     def cfg(self):
         v = Path(tempfile.mkdtemp())
-        return Config(vault=v, daily_dir=v, data_dir=v / ".planner", models={}, extract={}, brief={}, reviews_dir=v,
-                      daily_template=v / "t.md", schedule={}, threads={},
-                      search={"model": "pplx-x", "dims": 128, "backend": "pplx", "pplx_url": "http://127.0.0.1:9"}, notes={})
+        return Config(vault=v, daily_dir=v, data_dir=v / ".planner", search={"model": "pplx-x", "dims": 128, "backend": "pplx", "pplx_url": "http://127.0.0.1:9"}, notes={})
 
     @patch("shutil.which", return_value="/opt/homebrew/bin/pdftotext")
     def test_pplx_profile_checks_the_service_not_ollama(self, _):
@@ -274,8 +270,7 @@ class TestService(ServiceCase):
     def make(self, model="pplx-test"):
         vault = self.tmp / "vault"
         (vault / ".planner").mkdir(parents=True)
-        cfg = Config(vault=vault, daily_dir=vault, data_dir=vault / ".planner", models={}, extract={}, brief={},
-                     reviews_dir=vault, daily_template=vault / "t.md", schedule={}, threads={}, search={}, notes={})
+        cfg = Config(vault=vault, daily_dir=vault, data_dir=vault / ".planner", search={}, notes={})
         with patch.object(pplxd, "cache_dir", return_value=self.tmp / "cache"):
             svc = pplxd.Service(cfg, model, llama=self.llama, encoder=self.enc)
         return cfg, svc

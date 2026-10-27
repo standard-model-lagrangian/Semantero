@@ -1,1 +1,1 @@
-anthropic>=0.40.0
+# The indexers use only the Python standard library. (The pplx service has its own: pplx/requirements-pplxd.txt.)

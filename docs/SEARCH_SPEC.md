@@ -2,7 +2,7 @@
 
 Find a paper in your Zotero library from inside Obsidian by typing what it found or showed, with results updating as you type. You don't need to remember the methods, the title or the authors.
 
-Status: implemented; kept as the design record. Companion to [SPEC.md](SPEC.md) (the planner). Same repository, same rules: see [AGENTS.md](../AGENTS.md).
+Status: implemented; kept as the design record. Rules for changes: see [AGENTS.md](../AGENTS.md).
 
 ## Principles
 
@@ -50,7 +50,7 @@ Status: implemented; kept as the design record. Companion to [SPEC.md](SPEC.md) 
 ```
 
 Why it's split this way:
-- **Indexing is Python.** It belongs with Semantero, uses the existing config, runs from the morning job, and needs no new Python dependency: vectors are written with the standard library's `array('f')`.
+- **Indexing is Python.** It belongs with Semantero, uses the existing config, runs from the watcher, and needs no Python dependency: vectors are written with the standard library's `array('f')`.
 - **Ranking is TypeScript, inside the plugin.** That means no extra background service to keep alive. A few thousand vectors fit in memory, and comparing against all of them takes a few milliseconds in JS.
 - **The ranking core (`rank.ts`, `bm25.ts`, `text.ts`) has no Obsidian imports.** Node 26 runs `.ts` files directly, so it's tested with `node --test` and reused by the evaluation command.
 
@@ -175,8 +175,6 @@ keep_alive = "30m"
 | `planner search index [--full] [--limit N]` | Build or update the index; prints counts, time, and PDFs with no text. |
 | `planner search stats` | Papers, chunks, PDFs with no text, papers with no abstract, model, age. |
 
-**Morning job:** after the brief and `Threads.md`, run `search index` and catch every failure. A failure becomes a `⚠ Setup:` warning and never blocks the brief.
-
 **Doctor checks** (no model calls):
 - the index exists and is less than 3 days old;
 - the manifest's `model` and `dims` match `config.toml`;
@@ -286,8 +284,7 @@ Python tests use `unittest` with temporary directories, as `tests/test_r1.py` do
 27. `test_paper_without_abstract_embeds_title_and_chunks`
 28. `test_paper_without_pdf_has_abstract_row_only`
 
-**CLI, morning job and doctor**
-29. `test_morning_search_failure_is_a_warning_not_a_crash`: an `index` that raises → the brief is still written, and the warning text appears in it.
+**CLI and doctor**
 30. `test_doctor_flags_stale_or_mismatched_index`: the index is 4 days old → fail; the manifest model differs from config → fail, naming `planner search index --full`.
 31. `test_doctor_flags_missing_ollama_model_and_pdftotext`
 
@@ -395,7 +392,7 @@ Each phase ends with its tests green and a commit.
 | 2 | `embed`, `searchindex`, CLI | Py 14–28 | First real index built with `0.6b` |
 | 3 | `text`, `bm25`, `vectors`, `rank`, `ollama`, `eval.ts` | TS 1–22 | Keyword baseline and `0.6b`/`4b` results in hand; **model chosen** |
 | 4 | `main.ts` UI, settings, symlink install | CHECK.md | You use it for a week |
-| 5 | Morning job hook, doctor checks; reranker or highlights only if the evaluation says so | Py 29–31 (+ new) | Acceptance table met |
+| 5 | Doctor checks; reranker or highlights only if the evaluation says so | Py 30–31 (+ new) | Acceptance table met |
 | later | Same pop-up for vault notes (heading chunks, `obsidian://` links); "related papers" sidebar for the open note; vectors reused for clustering and theme drift | | |
 
 ## Rules

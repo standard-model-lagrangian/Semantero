@@ -46,13 +46,6 @@ class TestZotwatch(unittest.TestCase):
             vault=self.vault_dir,
             daily_dir=self.vault_dir,
             data_dir=self.data_dir,
-            models={},
-            extract={},
-            brief={},
-            reviews_dir=self.vault_dir / "Reviews",
-            daily_template=self.vault_dir / "Daily.md",
-            schedule={},
-            threads={},
             search={
                 "zotero_dir": str(self.zotero_dir),
                 "model": "qwen3-embedding:0.6b",
@@ -356,8 +349,8 @@ class TestZotwatch(unittest.TestCase):
             self.assertFalse(res.ok)
             self.assertIn("3 consecutive failed builds", res.message)
 
-    # W10 morning job and watcher at once: one builds, other busy, index consistent
-    def test_w10_concurrent_watcher_and_morning(self):
+    # W10 a manual build and the watcher at once: one builds, other busy, index consistent
+    def test_w10_concurrent_watcher_and_build(self):
         import fcntl
         # Run searchindex.build_index and zotwatch.watch_run concurrently
         # Lock acquired by searchindex

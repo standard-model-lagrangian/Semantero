@@ -145,19 +145,6 @@ Step by step for both, switching between them, and uninstalling: **[docs/INSTALL
 
 </details>
 
-<details>
-<summary><b>Bonus: the planner</b> (optional, uses cloud models)</summary>
-
-<br>
-
-The repo started as a planning layer over messy Obsidian daily notes, and that part is still here as an add-on. Each
-morning it pulls structure out of yesterday's free-text note, writes a collapsible brief into today's note and keeps a
-`Threads.md` timeline of your projects; on Sundays it writes a weekly review with a few questions for you. This part
-does call LLM APIs (Groq daily with a local Ollama fallback, Claude weekly) and is entirely separate from the search.
-Design: [docs/SPEC.md](docs/SPEC.md). Setup: [docs/INSTALL.md](docs/INSTALL.md#tier-4-the-planner-daily-brief-threads-weekly-review).
-
-</details>
-
 ## Repository layout
 
 ```

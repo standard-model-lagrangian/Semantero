@@ -16,7 +16,7 @@ override anything here. To install, see [INSTALL.md](INSTALL.md).
                                                                        │   Semantero.app  macos/  (Swift, JavaScriptCore)
  vault/**/*.md ─► mdtext ─► notesindex ─► <vault>/.planner/notes/ ─────┘        │
                                   ▲    (same format, one entry per note)        ├─► panel (⌥Space), actions, clipboard
-       morning tick (launchd) ────┘                                             ├─► Core Spotlight entries
+  notes job (launchd, 5 min) ─────┘                                             ├─► Core Spotlight entries
                                                                                 └─► App Intents ("Search Everything")
  embed.py ─► the live profile's embedder ◄── query embedding from the plugin and the app
              pplxd (127.0.0.1:11435, pplx-embed-v2-late, the default) or Ollama (127.0.0.1:11434, qwen3-embedding:0.6b)
@@ -38,7 +38,7 @@ tests.
 
 | Path | Language | What | Tests | Build artefact (committed) |
 |---|---|---|---|---|
-| `planner/` | Python 3.11+, stdlib (+ `anthropic`) | CLI `python -m planner …`: planner, paper index, notes index, watcher, doctor | `tests/` (`unittest`) | — |
+| `planner/` | Python 3.11+, stdlib only | CLI `python -m planner …`: paper index, notes index, watcher, embedding profiles, doctor | `tests/` (`unittest`) | — |
 | `obsidian/paper-search/` | TypeScript (Node 26 runs `.ts` directly) | Obsidian plugin + the shared ranking core | `test/*.test.ts` (`node --test`) | `main.js` |
 | `launcher-core/` | TypeScript, no Node/DOM APIs in `src/` | Merges papers + notes, builds `ResultVM`s; JavaScriptCore API `globalThis.semantero` | `test/*.test.ts`, `conformance/cases.json` | `dist/ranker.js` |
 | `macos/` | Swift 6.2 package, no dependencies | `SemanteroKit` (all logic, testable), `Semantero` (the app), `SemanteroBench` (benchmarks) | `Tests/SemanteroKitTests` (Swift Testing); `make app-selftest` | `macos/build/` (git-ignored) |
@@ -51,7 +51,7 @@ tests.
 | | Obsidian only | Global |
 |---|---|---|
 | Config | `config.toml` as shipped (`[notes] enabled = false`) | `config.local.toml`: `[notes] enabled = true` + `exclude` |
-| Python | `searchindex`, `zotlib`, `pdftext`, `htmltext`, `zotwatch`, `embed`; `planner doctor --search` | also `mdtext`, `notesindex`; the morning tick's `_notes_tick`; doctor's notes and launcher-app checks (both silent when notes are off) |
+| Python | `searchindex`, `zotlib`, `pdftext`, `htmltext`, `zotwatch`, `embed`; `planner doctor` | also `mdtext`, `notesindex`; the notes job (`planner notes tick`, `com.planner.notes`); doctor's notes and launcher-app checks (both silent when notes are off) |
 | TypeScript | `obsidian/paper-search` | also `launcher-core` (imports the plugin's core) |
 | Swift | — | `macos/` |
 | Install | `./setup-search.sh` | `make install-global` |
@@ -124,8 +124,7 @@ and `SettingsEffect.between` (what must be redone when it changes), then to `Set
 `SettingsEffectTests`.
 
 **Changing the Python CLI or launchd behaviour:** anything run by the 5-minute tick must never raise (log instead)
-and must take a non-blocking lock. Health problems surface through `planner doctor` checks (`planner/health.py`), which
-the morning brief shows as `⚠ Setup:` lines.
+and must take a non-blocking lock. Health problems surface through `planner doctor` checks (`planner/health.py`).
 
 ## Testing strategy
 
@@ -152,7 +151,7 @@ the morning brief shows as `⚠ Setup:` lines.
 | `semantero-bench` (`swift run -c release semantero-bench --vault …`; sign it with the JIT entitlement first, see `macos/scripts/bench.sh`) | default: load/keyword/hybrid timings for options A and B. `--heapprobe` (live heap, objects by type, footprint over idle time), `--notesprobe` (notes-only reload cost), `--parseprobe` (JSON.parse/string costs), `--dropprobe <debug bundle>` (heap owned by each engine part), `--memprobe`, `--jsprobe`, `--jsprobe2 <bundle>` |
 | `SEMANTERO_VAULT=<dir> SEMANTERO_NO_HOTKEY=1` | Run a build of the app against another vault (e.g. a copy of the indexes) without touching the installed app's hotkey or settings |
 | `footprint <pid>` / `vmmap -summary <pid>` | The real memory figure (`ps` RSS counts reclaimable pages) |
-| `planner notes stats`, `planner search stats`, `planner doctor --search` | Index contents, age, health |
+| `planner notes stats`, `planner search stats`, `planner doctor` | Index contents, age, health |
 
 ## Gotchas (each one cost time)
 
@@ -194,4 +193,4 @@ the morning brief shows as `⚠ Setup:` lines.
 2. For launcher changes: `make app-selftest`, then the relevant rows of `macos/CHECK.md` on the installed app.
 3. Record decisions, measurements and deviations from the spec in [DECISIONS_AND_GAPS.md](DECISIONS_AND_GAPS.md).
 4. Never commit personal data: no real note titles or vault contents in docs, fixtures or tests. Personal config goes
-   in `config.local.toml` and `secrets.toml` (both git-ignored).
+   in `config.local.toml` (git-ignored).
