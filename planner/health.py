@@ -14,7 +14,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from . import embed
-from .config import ROOT
+from .config import ROOT, SearchSettings
 from .llm import OPENAI_COMPAT, SECRETS, LLMError, list_models
 
 from .vault import future_notes, logical_today
@@ -192,8 +192,8 @@ def check_search_index(cfg) -> Result | None:
         return Result("search index", False, f"Failed to read search manifest: {e}. Run: planner search index --full")
 
     # Check model & dims
-    cfg_model = cfg.search.get("model", "qwen3-embedding:0.6b")
-    cfg_dims = int(cfg.search.get("dims", 1024))
+    s = SearchSettings.of(cfg)
+    cfg_model, cfg_dims = s.model, s.dims
     idx_model = manifest.get("model")
     idx_dims = manifest.get("dims")
 
@@ -206,7 +206,7 @@ def check_search_index(cfg) -> Result | None:
 
     missing = manifest.get("missing_vectors", 0)
     if missing:
-        name, start = embed.service(cfg.search)
+        name, start = embed.service(SearchSettings.of(cfg).backend)
         return Result(
             "search index",
             False,
@@ -248,8 +248,8 @@ def check_notes_index(cfg) -> Result | None:
         manifest = json.loads(manifest_path.read_text())
     except Exception as e:
         return Result("notes index", False, f"Failed to read notes manifest: {e}. Run: planner notes index --full")
-    cfg_model = cfg.search.get("model", "qwen3-embedding:0.6b")
-    cfg_dims = int(cfg.search.get("dims", 1024))
+    s = SearchSettings.of(cfg)
+    cfg_model, cfg_dims = s.model, s.dims
     if manifest.get("model") != cfg_model or manifest.get("dims") != cfg_dims:
         return Result(
             "notes index", False,
@@ -260,7 +260,7 @@ def check_notes_index(cfg) -> Result | None:
     except (TypeError, ValueError):
         age = None
     if age is not None and age > timedelta(days=1) and manifest.get("degraded"):
-        name, start = embed.service(cfg.search)
+        name, start = embed.service(SearchSettings.of(cfg).backend)
         return Result(
             "notes index", False,
             f"Notes index has been degraded for over a day: semantic search is off for "
@@ -287,10 +287,11 @@ def check_search_tools(cfg) -> Result | None:
     if not shutil.which("pdftotext"):
         return Result("search tools", False, "pdftotext is not on PATH. Fix: brew install poppler")
 
-    model = cfg.search.get("model", "qwen3-embedding:0.6b")
-    if cfg.search.get("backend") == "pplx":
+    s = SearchSettings.of(cfg)
+    model = s.model
+    if s.backend == "pplx":
         from . import pplx
-        h = pplx.health(cfg.search.get("pplx_url", "http://127.0.0.1:11435"))
+        h = pplx.health(s.pplx_url)
         if h is None:
             return Result("search tools", False, "The pplx service (com.planner.pplxd) is not running. Fix: bash pplx/install-service.sh")
         if h.get("model") != model:

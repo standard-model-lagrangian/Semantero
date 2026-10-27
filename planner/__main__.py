@@ -517,7 +517,7 @@ def cmd_search(cfg, args):
             if res.get("changed", True):
                 print(f"Indexed {res['papers']} papers ({res['chunks']} chunks) in {res['elapsed']:.1f}s")
             if res.get("missing_vectors"):
-                name, _ = embed.service(cfg.search)
+                name, _ = embed.service(config.SearchSettings.of(cfg).backend)
                 print(f"Keyword-only for {res['missing_vectors']} texts: {name} was unavailable. "
                       "The watcher embeds them within the hour once it is running.")
             if res["no_text_pdfs"]:
@@ -549,7 +549,7 @@ def cmd_notes(cfg, args):
         else:
             print(f"notes index: no changes ({res['elapsed']:.1f}s)")
         if res["missing_vectors"]:
-            name, _ = embed.service(cfg.search)
+            name, _ = embed.service(config.SearchSettings.of(cfg).backend)
             print(f"Keyword-only for {res['missing_vectors']} texts: {name} was unavailable. "
                   "The next tick embeds them once it is running.")
         for item in res["skipped"]:

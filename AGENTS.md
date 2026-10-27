@@ -73,6 +73,7 @@ Decisions log: [docs/DECISIONS_AND_GAPS.md](docs/DECISIONS_AND_GAPS.md). Manual 
 ```
 planner/                __main__ (CLI), extract, threads, fixes, stats, brief, weekly, health, llm, vault, config
                         store.py (atomic JSON/text writes, index folder swaps, locks)
+                        indexfiles.py (what both index builders share: build folder, embed with fallback, manifest, publish)
                         searchindex.py (Zotero index builder), htmltext.py (snapshot text), zotwatch.py (incremental watcher)
                         mdtext.py (Markdown cleaning/sections/chunks), notesindex.py (vault notes index)
                         profiles.py (embedding profiles), pplx.py (pplx client, stdlib), pplxd.py (pplx service, numpy)

@@ -5,9 +5,9 @@ import urllib.error
 import urllib.request
 
 
-def service(search: dict) -> tuple[str, str]:
-    """(name, how to start it) for the embedding service the [search] settings use, for messages to the owner."""
-    if search.get("backend", "ollama") == "pplx":
+def service(backend: str) -> tuple[str, str]:
+    """(name, how to start it) for an embedding backend ([search] backend), for messages to the owner."""
+    if backend == "pplx":
         return "the pplx service", "bash pplx/install-service.sh"
     return "Ollama", "brew services start ollama"
 

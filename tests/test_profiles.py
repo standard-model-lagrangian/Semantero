@@ -162,3 +162,22 @@ class TestStatus(ProfileTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSearchSettings(unittest.TestCase):
+    def cfg(self, search: dict) -> config.Config:
+        v = Path("/tmp/v")
+        return config.Config(vault=v, daily_dir=v, data_dir=v / ".planner", models={}, extract={}, brief={},
+                             reviews_dir=v, daily_template=v / "t.md", schedule={}, threads={}, search=search)
+
+    def test_an_empty_search_section_gets_every_default(self):
+        s = config.SearchSettings.of(self.cfg({}))
+        self.assertEqual((s.model, s.dims, s.backend), ("qwen3-embedding:0.6b", 1024, "ollama"))
+        self.assertEqual(s.zotero_dir, Path("~/Zotero").expanduser())
+
+    def test_given_values_win_and_are_normalised(self):
+        s = config.SearchSettings.of(self.cfg({"model": "m", "dims": "8", "zotero_dir": "~/Z", "backend": "pplx",
+                                               "label": "ignored: not a search setting"}))
+        self.assertEqual((s.model, s.dims, s.backend), ("m", 8, "pplx"))
+        self.assertEqual(s.zotero_dir, Path.home() / "Z")
+        self.assertEqual(s.embed_kwargs()["backend"], "pplx")

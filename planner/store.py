@@ -42,12 +42,6 @@ def write_json(path: Path, data) -> None:
     write_text(path, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
 
 
-def fsync_files(directory: Path, names: list[str]) -> None:
-    for fn in names:
-        with open(directory / fn, "rb") as f:
-            os.fsync(f.fileno())
-
-
 def atomic_swap(tmp_dir: Path, final_dir: Path, old_dir: Path) -> None:
     """Move a fully written tmp_dir into place: old aside, new in, old deleted. Between the two renames no live folder
     exists; `recover_swap` undoes a crash in that gap."""

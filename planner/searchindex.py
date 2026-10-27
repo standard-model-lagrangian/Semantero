@@ -1,30 +1,16 @@
+"""The paper index: Zotero's library (items, PDFs, web snapshots) as <data_dir>/search/ (format: docs/SEARCH_SPEC.md)."""
 import array
 import hashlib
-import json
-import os
-import shutil
 import time
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from . import embed, htmltext, pdftext, zotlib
-from .store import atomic_swap, fsync_files, load_json, recover_swap, search_lock, write_json
-
-
-def append_vector(out: array.array, vec) -> None:
-    """Append one vector: a memoryview of float32s (reused from the previous index) is copied as raw bytes."""
-    if isinstance(vec, memoryview):
-        out.frombytes(vec.cast("B"))
-    else:
-        out.extend(vec)
-
-
-def compute_content_hash(papers_data: list[dict], chunks_data: list[dict], vector_bytes: bytes) -> str:
-    hasher = hashlib.sha256()
-    hasher.update(json.dumps(papers_data, sort_keys=True, ensure_ascii=False).encode("utf-8"))
-    hasher.update(json.dumps(chunks_data, sort_keys=True, ensure_ascii=False).encode("utf-8"))
-    hasher.update(hashlib.sha256(vector_bytes).digest())
-    return hasher.hexdigest()
+from . import htmltext, pdftext, zotlib
+from .config import SearchSettings
+from .indexfiles import append_vector, building, compute_content_hash, embed_texts, publish
+from .indexfiles import manifest as index_manifest
+from .store import load_json, write_json
 
 
 def get_stats(cfg) -> dict:
@@ -33,8 +19,7 @@ def get_stats(cfg) -> dict:
     papers_path = search_dir / "papers.json"
     chunks_path = search_dir / "chunks.json"
 
-    zotero_dir = Path(cfg.search.get("zotero_dir", "~/Zotero")).expanduser()
-    model = cfg.search.get("model", "qwen3-embedding:0.6b")
+    s = SearchSettings.of(cfg)
 
     if manifest_path.exists():
         manifest = load_json(manifest_path, {})
@@ -71,15 +56,15 @@ def get_stats(cfg) -> dict:
             "chunks": len(chunks),
             "no_text_pdfs": no_text_pdfs,
             "no_abstract": no_abstract_count,
-            "model": manifest.get("model", model),
-            "dims": manifest.get("dims", cfg.search.get("dims", 1024)),
+            "model": manifest.get("model", s.model),
+            "dims": manifest.get("dims", s.dims),
             "age": age_str,
             "built_at": built_at_str,
             "content_hash": manifest.get("content_hash"),
         }
     else:
         try:
-            raw_papers = zotlib.read_library(zotero_dir)
+            raw_papers = zotlib.read_library(s.zotero_dir)
             papers_count = len(raw_papers)
             no_abstract_count = sum(1 for p in raw_papers if not p.abstract)
         except Exception:
@@ -92,8 +77,8 @@ def get_stats(cfg) -> dict:
             "chunks": 0,
             "no_text_pdfs": [],
             "no_abstract": no_abstract_count,
-            "model": model,
-            "dims": cfg.search.get("dims", 1024),
+            "model": s.model,
+            "dims": s.dims,
             "age": "no index",
             "built_at": None,
             "content_hash": None,
@@ -115,9 +100,11 @@ def print_stats(cfg):
 
 
 RECONCILE_EVERY = timedelta(days=7)
+# v2: web snapshots (text/html attachments) are chunked too, with page 0
+CHUNKER = "pages-v2"
 
 
-def _unchanged_result(search_dir: Path, state, fingerprint, model, dims, chunker, t0) -> dict | None:
+def _unchanged_result(search_dir: Path, state, fingerprint, s: SearchSettings, t0) -> dict | None:
     """The no-change result when the library fingerprint matches the last successful build, else None. A full
     reconcile still runs at least weekly (`reconciled_at`), in case an edit didn't bump Zotero's clientDateModified."""
     if not fingerprint or not isinstance(state, dict) or state.get("fingerprint") != fingerprint:
@@ -127,7 +114,8 @@ def _unchanged_result(search_dir: Path, state, fingerprint, model, dims, chunker
             return None
     except ValueError:
         return None
-    if state.get("degraded") or state.get("model") != model or state.get("dims") != dims or state.get("chunker") != chunker:
+    if (state.get("degraded") or state.get("model") != s.model or state.get("dims") != s.dims
+            or state.get("chunker") != CHUNKER):
         return None
     manifest = load_json(search_dir / "manifest.json")
     if not isinstance(manifest, dict) or not manifest.get("zotero_storage") or manifest.get("missing_vectors"):
@@ -140,6 +128,146 @@ def _unchanged_result(search_dir: Path, state, fingerprint, model, dims, chunker
         "papers": manifest.get("papers", len(papers)), "chunks": manifest.get("chunks", 0), "elapsed": time.time() - t0,
         "no_text_pdfs": no_text, "changed": False, "content_hash": manifest.get("content_hash"), "missing_vectors": 0,
     }
+
+
+@dataclass
+class _Cache:
+    """Vectors the previous build already computed, reusable when it used the same model, dims and chunker."""
+    manifest: dict | None = None
+    abstracts: dict = field(default_factory=dict)     # sha256(title + abstract) -> vector (list, or a view into vecs)
+    attachments: dict = field(default_factory=dict)   # attachmentKey -> {mtime, size, pages, hasText, chunks}
+    vecs: array.array | None = None                   # the previous vectors.f32; the views above point into it
+
+
+def _previous_build(search_dir: Path, state, s: SearchSettings) -> _Cache:
+    cache = _Cache(manifest=load_json(search_dir / "manifest.json"))
+    if not (state and state.get("model") == s.model and state.get("dims") == s.dims and state.get("chunker") == CHUNKER):
+        return cache
+    vec_file = search_dir / "vectors.f32"
+    if vec_file.exists():
+        cache.vecs = array.array("f")
+        with open(vec_file, "rb") as vf:
+            cache.vecs.fromfile(vf, vec_file.stat().st_size // cache.vecs.itemsize)
+    chunks_by_row = {c["row"]: c for c in load_json(search_dir / "chunks.json", []) if isinstance(c, dict) and "row" in c}
+
+    # Zero-copy views into the previous vectors, not lists of Python floats (~32 bytes a number: a no-op build held
+    # ~770 MB) or array slices (a second copy of the file).
+    view = memoryview(cache.vecs) if cache.vecs is not None else None
+    def row_vec(row: int):
+        start, end = row * s.dims, (row + 1) * s.dims
+        return view[start:end] if view is not None and end <= len(cache.vecs) else None
+
+    for sha, val in state.get("abstracts", {}).items():
+        if isinstance(val, list):
+            cache.abstracts[sha] = val
+        elif isinstance(val, int) and (v := row_vec(val)) is not None:
+            cache.abstracts[sha] = v
+
+    for att_key, att_info in state.get("attachments", {}).items():
+        chunks: list[dict] = []
+        for c_item in att_info.get("chunks", []):
+            if isinstance(c_item, dict) and "vec" in c_item:
+                chunks.append(c_item)
+                continue
+            v = row_vec(c_item) if isinstance(c_item, int) and c_item in chunks_by_row else None
+            if v is None:
+                break   # one unusable chunk: the attachment is extracted and embedded again
+            chunks.append({"page": chunks_by_row[c_item]["page"], "text": chunks_by_row[c_item]["text"], "vec": v})
+        else:
+            cache.attachments[att_key] = {"mtime": att_info.get("mtime", 0), "size": att_info.get("size", 0),
+                                          "pages": att_info.get("pages", 0), "hasText": att_info.get("hasText", True),
+                                          "chunks": chunks}
+    return cache
+
+
+@dataclass
+class _Scan:
+    """The library against the cache: what each paper has, and the texts that still need a vector."""
+    abstract_sha: list[str | None] = field(default_factory=list)     # per paper; None without title or abstract
+    attachment_chunks: dict = field(default_factory=dict)            # attachmentKey -> [{"page", "text", "vec"}]
+    pending_abstracts: list[tuple[str, str]] = field(default_factory=list)   # (sha, text)
+    pending_chunks: list[tuple[str, int, str]] = field(default_factory=list)  # (attachmentKey, chunk index, text)
+
+    @property
+    def pending_texts(self) -> list[str]:
+        return [t for _, t in self.pending_abstracts] + [t for _, _, t in self.pending_chunks]
+
+
+def _scan(papers: list, cache: _Cache, s: SearchSettings) -> _Scan:
+    scan = _Scan()
+    pending_shas: set[str] = set()
+    for p in papers:
+        abstract_text = f"{p.title}\n\n{p.abstract}" if p.abstract else p.title
+        sha = hashlib.sha256(abstract_text.encode("utf-8")).hexdigest() if abstract_text else None
+        scan.abstract_sha.append(sha)
+        if sha and sha not in cache.abstracts and sha not in pending_shas:
+            pending_shas.add(sha)
+            scan.pending_abstracts.append((sha, abstract_text))
+
+        for att in p.attachments():
+            if not att.path.exists():
+                # Missing file: indexed with 0 chunks, not cached as no-text, retried on the next run
+                att.hasText, att.pages = True, 0
+                scan.attachment_chunks[att.attachmentKey] = []
+                continue
+            st = att.path.stat()
+            cached = cache.attachments.get(att.attachmentKey)
+            if cached and cached.get("mtime") == st.st_mtime_ns and cached.get("size") == st.st_size:
+                att.pages, att.hasText = cached.get("pages", 0), cached.get("hasText", True)
+                scan.attachment_chunks[att.attachmentKey] = cached.get("chunks", [])
+                continue
+            extractor = htmltext if isinstance(att, zotlib.SnapshotAttachment) else pdftext
+            att.hasText, att.pages, extracted = extractor.extract_chunks(
+                att.path, chunk_words=s.chunk_words, chunk_overlap_words=s.chunk_overlap_words,
+                max_chunks=s.max_chunks_per_paper)
+            chunks = [{"page": ch.page, "text": ch.text, "vec": None} for ch in extracted]
+            scan.pending_chunks += [(att.attachmentKey, i, c["text"]) for i, c in enumerate(chunks)]
+            scan.attachment_chunks[att.attachmentKey] = chunks
+    return scan
+
+
+def _layout(papers: list, scan: _Scan, abstracts: dict):
+    """Compact rows: every vector that exists gets the next row, in paper order. Returns papers.json, chunks.json, the
+    vectors and the state's row maps (an attachment is cached only once all its chunks have vectors)."""
+    papers_data: list[dict] = []
+    chunks_data: list[dict] = []
+    vectors = array.array("f")
+    state_abstracts: dict[str, int] = {}
+    state_attachments: dict[str, dict] = {}
+    for p in papers:
+        for att in p.attachments():
+            chunks = scan.attachment_chunks.get(att.attachmentKey, [])
+            if not att.path.exists() or (att.hasText and chunks and any(c.get("vec") is None for c in chunks)):
+                continue
+            st = att.path.stat()
+            state_attachments[att.attachmentKey] = {"mtime": st.st_mtime_ns, "size": st.st_size, "pages": att.pages,
+                                                    "hasText": att.hasText, "chunks": []}
+
+    row = 0
+    for p_idx, p in enumerate(papers):
+        sha = scan.abstract_sha[p_idx]
+        abstract_row = None
+        if sha is not None and abstracts.get(sha) is not None:
+            abstract_row = row
+            append_vector(vectors, abstracts[sha])
+            state_abstracts[sha] = row
+            row += 1
+        papers_data.append(p.to_dict(abstract_row=abstract_row))
+
+        for att in p.attachments():
+            if not att.path.exists():
+                continue
+            for chunk in scan.attachment_chunks.get(att.attachmentKey, []):
+                ch_row = None
+                if chunk.get("vec") is not None:
+                    ch_row = row
+                    append_vector(vectors, chunk["vec"])
+                    if att.attachmentKey in state_attachments:
+                        state_attachments[att.attachmentKey]["chunks"].append(row)
+                    row += 1
+                chunks_data.append({"paper": p_idx, "attachmentKey": att.attachmentKey, "page": chunk["page"],
+                                    "text": chunk["text"], "row": ch_row})
+    return papers_data, chunks_data, vectors, state_abstracts, state_attachments
 
 
 def build_index(
@@ -161,388 +289,77 @@ def build_index(
     if allow_fallback is None:
         allow_fallback = (embed_fn is None)
     t0 = time.time()
+    s = SearchSettings.of(cfg)
 
-    search_dir = cfg.data_dir / "search"
-    tmp_dir = cfg.data_dir / "search.tmp"
-    old_dir = cfg.data_dir / "search.old"
+    with building(cfg, "search", "search.lock", timeout=lock_timeout) as dirs:
+        # The watcher records its Zotero fingerprint in state.json; keep it across rebuilds.
+        old_state = load_json(dirs.live / "state.json") if dirs.live.exists() else None
+        watcher_fingerprint = old_state.get("fingerprint") if isinstance(old_state, dict) else None
 
-    model = cfg.search.get("model", "qwen3-embedding:0.6b")
-    dims = int(cfg.search.get("dims", 1024))
-    query_instruction = cfg.search.get(
-        "query_instruction",
-        "Given a description of what a paper found or showed, retrieve that paper",
-    )
-    # v2: web snapshots (text/html attachments) are chunked too, with page 0
-    chunker = "pages-v2"
-    chunk_words = int(cfg.search.get("chunk_words", 300))
-    chunk_overlap_words = int(cfg.search.get("chunk_overlap_words", 50))
-    max_chunks_per_paper = int(cfg.search.get("max_chunks_per_paper", 150))
-    batch_size = int(cfg.search.get("batch_size", 32))
-    keep_alive = cfg.search.get("keep_alive", "5m")
-    ollama_url = cfg.search.get("ollama_url", "http://localhost:11434")
-    backend = cfg.search.get("backend", "ollama")   # "pplx": the pplx-embed-v2-late profile (planner/pplx.py)
-    pplx_url = cfg.search.get("pplx_url", "http://127.0.0.1:11435")
-    zotero_dir = Path(cfg.search.get("zotero_dir", "~/Zotero")).expanduser()
+        # Cheap no-op check (0.05 s, ~30 MB) before the full reconcile (~0.2 s, ~400 MB): the library fingerprint
+        # covers items, edits and every attachment's path, size and mtime. Recorded after each successful build.
+        fingerprint = zotlib.compute_fingerprint(s.zotero_dir) if limit is None else None
+        if not full and limit is None:
+            shortcut = _unchanged_result(dirs.live, old_state, fingerprint, s, t0)
+            if shortcut is not None:
+                print(f"search index: no changes ({shortcut['elapsed']:.1f}s, fingerprint)")
+                return shortcut
 
-    with search_lock(cfg, timeout=lock_timeout, blocking=True):
-        recover_swap(search_dir, old_dir)
-        # Clean tmp dir before starting
-        if tmp_dir.exists():
-            shutil.rmtree(tmp_dir)
+        cache = _previous_build(dirs.live, old_state, s) if not full and dirs.live.exists() else _Cache()
+        papers = zotlib.read_library(s.zotero_dir)
+        if limit is not None:
+            papers = papers[:limit]
+        scan = _scan(papers, cache, s)
 
-        try:
-            prev_manifest = None
-            prev_state = None
-            prev_vecs: array.array | None = None
-            prev_chunks_by_row: dict[int, dict] = {}
+        pending_texts = scan.pending_texts
+        embed_succeeded = True
+        if pending_texts:
+            new_vecs = None if keyword_only else embed_texts(
+                pending_texts, s, embed_fn=embed_fn, allow_fallback=allow_fallback, label="search index")
+            embed_succeeded = new_vecs is not None
+            if embed_succeeded:
+                vecs = iter(new_vecs)
+                for sha, _ in scan.pending_abstracts:
+                    cache.abstracts[sha] = next(vecs)
+                for att_key, i, _ in scan.pending_chunks:
+                    scan.attachment_chunks[att_key][i]["vec"] = next(vecs)
 
-            # The watcher records its Zotero fingerprint in state.json; keep it across rebuilds.
-            old_state = load_json(search_dir / "state.json") if search_dir.exists() else None
-            watcher_fingerprint = old_state.get("fingerprint") if isinstance(old_state, dict) else None
+        papers_data, chunks_data, all_vectors, state_abstracts, state_attachments = _layout(papers, scan, cache.abstracts)
+        # hashed in place: tobytes() was another copy of the whole file
+        content_hash = compute_content_hash(papers_data, chunks_data, memoryview(all_vectors))
+        no_text_pdfs = [
+            f"{p['citekey']}:{pdf['attachmentKey']}"
+            for p, orig_p in zip(papers_data, papers)
+            for pdf, orig_pdf in zip(p["pdfs"], orig_p.pdfs)
+            if orig_pdf.path.exists() and not pdf["hasText"]
+        ]
+        # Texts still without a vector: everything pending when embedding failed (cached ones are reused).
+        missing_vectors = 0 if embed_succeeded else len(pending_texts)
+        result = {"papers": len(papers_data), "chunks": len(chunks_data), "no_text_pdfs": no_text_pdfs,
+                  "content_hash": content_hash, "missing_vectors": missing_vectors}
 
-            # Cheap no-op check (0.05 s, ~30 MB) before the full reconcile (~0.2 s, ~400 MB): the library fingerprint
-            # covers items, edits and every attachment's path, size and mtime. Recorded after each successful build.
-            fingerprint = None
-            if limit is None:
-                fingerprint = zotlib.compute_fingerprint(zotero_dir)
-            if not full and limit is None:
-                shortcut = _unchanged_result(search_dir, old_state, fingerprint, model, dims, chunker, t0)
-                if shortcut is not None:
-                    print(f"search index: no changes ({shortcut['elapsed']:.1f}s, fingerprint)")
-                    return shortcut
-
-            if not full and search_dir.exists():
-                prev_manifest = load_json(search_dir / "manifest.json")
-                state_data = old_state
-                if (
-                    state_data
-                    and state_data.get("model") == model
-                    and state_data.get("dims") == dims
-                    and state_data.get("chunker") == chunker
-                ):
-                    prev_state = state_data
-                    vec_file = search_dir / "vectors.f32"
-                    if vec_file.exists():
-                        arr = array.array("f")
-                        with open(vec_file, "rb") as vf:
-                            arr.fromfile(vf, vec_file.stat().st_size // arr.itemsize)
-                        prev_vecs = arr
-                    for c in load_json(search_dir / "chunks.json", []):
-                        if isinstance(c, dict) and "row" in c:
-                            prev_chunks_by_row[c["row"]] = c
-
-            prev_view = memoryview(prev_vecs) if prev_vecs is not None else None
-            cached_abstracts: dict[str, list[float]] = {}
-            cached_attachments: dict[str, dict] = {}
-            if prev_state:
-                for sha, val in prev_state.get("abstracts", {}).items():
-                    if isinstance(val, list):
-                        cached_abstracts[sha] = val
-                    elif isinstance(val, int) and prev_vecs is not None:
-                        start = val * dims
-                        end = start + dims
-                        if end <= len(prev_vecs):
-                            # zero-copy views into the previous vectors, not lists of Python floats (~32 bytes a number:
-                            # a no-op build held ~770 MB) or array slices (a second copy of the file)
-                            cached_abstracts[sha] = prev_view[start:end]
-
-                for att_key, att_info in prev_state.get("attachments", {}).items():
-                    resolved_chunks: list[dict] = []
-                    valid_att = True
-                    for c_item in att_info.get("chunks", []):
-                        if isinstance(c_item, dict) and "vec" in c_item:
-                            resolved_chunks.append(c_item)
-                        elif isinstance(c_item, int) and prev_vecs is not None and c_item in prev_chunks_by_row:
-                            start = c_item * dims
-                            end = start + dims
-                            if end <= len(prev_vecs):
-                                c_meta = prev_chunks_by_row[c_item]
-                                resolved_chunks.append({
-                                    "page": c_meta["page"],
-                                    "text": c_meta["text"],
-                                    "vec": prev_view[start:end],
-                                })
-                            else:
-                                valid_att = False
-                                break
-                        else:
-                            valid_att = False
-                            break
-                    if valid_att:
-                        cached_attachments[att_key] = {
-                            "mtime": att_info.get("mtime", 0),
-                            "size": att_info.get("size", 0),
-                            "pages": att_info.get("pages", 0),
-                            "hasText": att_info.get("hasText", True),
-                            "chunks": resolved_chunks,
-                        }
-
-            # Read library
-            papers = zotlib.read_library(zotero_dir)
-            if limit is not None:
-                papers = papers[:limit]
-
-            # Scan what needs embedding
-            pending_abs_texts: list[str] = []
-            pending_abstract_shas: list[str] = []
-            pending_chunk_texts: list[str] = []
-            pending_chunk_keys: list[tuple[str, int]] = []  # (attachmentKey, chunk_index)
-
-            paper_abstract_info: list[tuple[str, str, str | None]] = []  # (paper_key, title, sha or None)
-            paper_attachment_chunks: dict[str, list[dict]] = {}  # att_key -> list of {"page": ..., "text": ..., "vec": ...}
-
-            for p in papers:
-                abstract_text = f"{p.title}\n\n{p.abstract}" if p.abstract else p.title
-                if abstract_text:
-                    sha = hashlib.sha256(abstract_text.encode("utf-8")).hexdigest()
-                    paper_abstract_info.append((p.key, p.title, sha))
-                    if sha not in cached_abstracts and sha not in pending_abstract_shas:
-                        pending_abs_texts.append(abstract_text)
-                        pending_abstract_shas.append(sha)
-                else:
-                    paper_abstract_info.append((p.key, p.title, None))
-
-                for pdf in p.attachments():
-                    if not pdf.path.exists():
-                        # Missing PDF: indexed with 0 chunks, not cached as no-text
-                        pdf.hasText = True
-                        pdf.pages = 0
-                        paper_attachment_chunks[pdf.attachmentKey] = []
-                        continue
-
-                    stat = pdf.path.stat()
-                    mtime = stat.st_mtime_ns
-                    size = stat.st_size
-
-                    cached_att = cached_attachments.get(pdf.attachmentKey)
-                    if cached_att and cached_att.get("mtime") == mtime and cached_att.get("size") == size:
-                        pdf.pages = cached_att.get("pages", 0)
-                        pdf.hasText = cached_att.get("hasText", True)
-                        paper_attachment_chunks[pdf.attachmentKey] = cached_att.get("chunks", [])
-                    else:
-                        extractor = htmltext if isinstance(pdf, zotlib.SnapshotAttachment) else pdftext
-                        has_text, num_pages, extracted = extractor.extract_chunks(
-                            pdf.path,
-                            chunk_words=chunk_words,
-                            chunk_overlap_words=chunk_overlap_words,
-                            max_chunks=max_chunks_per_paper,
-                        )
-                        pdf.pages = num_pages
-                        pdf.hasText = has_text
-                        chunks_list: list[dict] = []
-                        for ch in extracted:
-                            chunk_idx = len(chunks_list)
-                            chunks_list.append({"page": ch.page, "text": ch.text, "vec": None})
-                            pending_chunk_texts.append(ch.text)
-                            pending_chunk_keys.append((pdf.attachmentKey, chunk_idx))
-                        paper_attachment_chunks[pdf.attachmentKey] = chunks_list
-
-            pending_texts = pending_abs_texts + pending_chunk_texts
-            embed_succeeded = True
-            if pending_texts and keyword_only:
-                embed_succeeded = False
-            elif pending_texts:
-                if allow_fallback:
-                    try:
-                        if embed_fn:
-                            new_vecs = embed_fn(pending_texts, dims=dims)
-                        else:
-                            new_vecs = embed.embed(
-                                pending_texts,
-                                model=model,
-                                dims=dims,
-                                batch_size=batch_size,
-                                keep_alive=keep_alive,
-                                ollama_url=ollama_url,
-                                backend=backend,
-                                pplx_url=pplx_url,
-                            )
-                    except Exception as e:
-                        print(f"search index: embedding unavailable ({e}); falling back to keyword-only index", flush=True)
-                        embed_succeeded = False
-                        new_vecs = None
-                else:
-                    if embed_fn:
-                        new_vecs = embed_fn(pending_texts, dims=dims)
-                    else:
-                        new_vecs = embed.embed(
-                            pending_texts,
-                            model=model,
-                            dims=dims,
-                            batch_size=batch_size,
-                            keep_alive=keep_alive,
-                            ollama_url=ollama_url,
-                            backend=backend,
-                            pplx_url=pplx_url,
-                        )
-
-                if embed_succeeded and new_vecs is not None:
-                    vec_idx = 0
-                    for sha in pending_abstract_shas:
-                        cached_abstracts[sha] = new_vecs[vec_idx]
-                        vec_idx += 1
-                    for att_key, chunk_idx in pending_chunk_keys:
-                        paper_attachment_chunks[att_key][chunk_idx]["vec"] = new_vecs[vec_idx]
-                        vec_idx += 1
-
-            # Now assign compact rows and build papers_data, chunks_data, all_vectors
-            papers_data: list[dict] = []
-            chunks_data: list[dict] = []
-            all_vectors = array.array("f")
-            current_row = 0
-
-            state_abstracts: dict[str, int] = {}
-            state_attachments: dict[str, dict] = {}
-            for p in papers:
-                for pdf in p.attachments():
-                    if not pdf.path.exists():
-                        # Do not cache missing PDFs in state_attachments so next run retries
-                        continue
-                    chunks = paper_attachment_chunks.get(pdf.attachmentKey, [])
-                    # If this PDF has text, only cache in state_attachments if all chunks were embedded
-                    if pdf.hasText and chunks and not all(c.get("vec") is not None for c in chunks):
-                        continue
-                    stat = pdf.path.stat()
-                    state_attachments[pdf.attachmentKey] = {
-                        "mtime": stat.st_mtime_ns,
-                        "size": stat.st_size,
-                        "pages": pdf.pages,
-                        "hasText": pdf.hasText,
-                        "chunks": [],
-                    }
-
-            for p_idx, p in enumerate(papers):
-                _, _, sha = paper_abstract_info[p_idx]
-                if sha is not None and sha in cached_abstracts and cached_abstracts[sha] is not None:
-                    abstract_row = current_row
-                    abstract_vec = cached_abstracts[sha]
-                    append_vector(all_vectors, abstract_vec)
-                    state_abstracts[sha] = abstract_row
-                    current_row += 1
-                else:
-                    abstract_row = None
-
-                papers_data.append(p.to_dict(abstract_row=abstract_row))
-
-                for pdf in p.attachments():
-                    if not pdf.path.exists():
-                        continue
-                    for chunk in paper_attachment_chunks.get(pdf.attachmentKey, []):
-                        if chunk.get("vec") is not None:
-                            ch_row = current_row
-                            append_vector(all_vectors, chunk["vec"])
-                            if pdf.attachmentKey in state_attachments:
-                                state_attachments[pdf.attachmentKey]["chunks"].append(ch_row)
-                            current_row += 1
-                        else:
-                            ch_row = None
-                        chunks_data.append({
-                            "paper": p_idx,
-                            "attachmentKey": pdf.attachmentKey,
-                            "page": chunk["page"],
-                            "text": chunk["text"],
-                            "row": ch_row,
-                        })
-
-            # Compute content_hash
-            vec_bytes = memoryview(all_vectors)  # hashed in place: tobytes() was another copy of the whole file
-            content_hash = compute_content_hash(papers_data, chunks_data, vec_bytes)
-
-            no_text_pdfs = [
-                f"{p['citekey']}:{pdf['attachmentKey']}"
-                for p, orig_p in zip(papers_data, papers)
-                for pdf, orig_pdf in zip(p["pdfs"], orig_p.pdfs)
-                if orig_pdf.path.exists() and not pdf["hasText"]
-            ]
-
-            # Texts still without a vector: everything pending when embedding failed (cached ones are reused).
-            missing_vectors = 0 if embed_succeeded else len(pending_texts)
-
-            # Check if this is a no-op run (a failed retry that reproduces the same keyword-only index is one too)
-            old_content_hash = prev_manifest.get("content_hash") if prev_manifest else None
-            nothing_new = len(pending_texts) == 0 or not embed_succeeded
-            has_storage_field = bool(prev_manifest and prev_manifest.get("zotero_storage"))
-            if (
-                not full and nothing_new and has_storage_field
-                and old_content_hash is not None and content_hash == old_content_hash
-            ):
-                if fingerprint is not None and not missing_vectors and isinstance(old_state, dict):
-                    # nothing changed: record the fingerprint and the reconcile, so the next runs can shortcut
-                    write_json(search_dir / "state.json", {**old_state, "fingerprint": fingerprint,
-                                                           "reconciled_at": datetime.now().isoformat(timespec="seconds")})
-                elapsed = time.time() - t0
-                print(f"search index: no changes ({elapsed:.1f}s)")
-                return {
-                    "papers": len(papers_data),
-                    "chunks": len(chunks_data),
-                    "elapsed": elapsed,
-                    "no_text_pdfs": no_text_pdfs,
-                    "changed": False,
-                    "content_hash": content_hash,
-                    "missing_vectors": missing_vectors,
-                }
-
-            # Build manifest
-            manifest_data = {
-                "format": 1,
-                "built_at": datetime.now().strftime("%Y-%m-%dT%H:%M"),
-                "model": model,
-                "dims": dims,
-                "query_instruction": query_instruction,
-                "chunker": chunker,
-                "zotero_storage": str(zotero_dir / "storage"),
-                "papers": len(papers_data),
-                "chunks": len(chunks_data),
-                "content_hash": content_hash,
-                "missing_vectors": missing_vectors,
-            }
-            if backend != "ollama":
-                manifest_data["backend"] = backend   # readers score rows through that backend's service, at backend_url
-                manifest_data["backend_url"] = pplx_url
-
-            # Build compact state.json (row indices only, vectors live in vectors.f32)
-            state_data = {
-                "model": model,
-                "dims": dims,
-                "chunker": chunker,
-                "abstracts": state_abstracts,
-                "attachments": state_attachments,
-            }
-            if fingerprint is not None or watcher_fingerprint is not None:
-                state_data["fingerprint"] = fingerprint or watcher_fingerprint
-            state_data["reconciled_at"] = datetime.now().isoformat(timespec="seconds")
-            if missing_vectors:
-                # Tells the watcher to retry once the embedding service is back, even if Zotero hasn't changed.
-                state_data["degraded"] = True
-
-            # Write files to search.tmp
-            tmp_dir.mkdir(parents=True, exist_ok=True)
-            write_json(tmp_dir / "manifest.json", manifest_data)
-            write_json(tmp_dir / "papers.json", papers_data)
-            write_json(tmp_dir / "chunks.json", chunks_data)
-            write_json(tmp_dir / "state.json", state_data)
-
-            vec_path = tmp_dir / "vectors.f32"
-            with open(vec_path, "wb") as f:
-                all_vectors.tofile(f)
-                f.flush()
-                os.fsync(f.fileno())
-
-            fsync_files(tmp_dir, ["manifest.json", "papers.json", "chunks.json", "state.json"])
-            atomic_swap(tmp_dir, search_dir, old_dir)
-
+        # A no-op run (a failed retry that reproduces the same keyword-only index is one too) writes nothing new.
+        prev = cache.manifest
+        if (not full and (not pending_texts or not embed_succeeded) and prev and prev.get("zotero_storage")
+                and prev.get("content_hash") is not None and content_hash == prev.get("content_hash")):
+            if fingerprint is not None and not missing_vectors and isinstance(old_state, dict):
+                # nothing changed: record the fingerprint and the reconcile, so the next runs can shortcut
+                write_json(dirs.live / "state.json", {**old_state, "fingerprint": fingerprint,
+                                                      "reconciled_at": datetime.now().isoformat(timespec="seconds")})
             elapsed = time.time() - t0
-            return {
-                "papers": len(papers_data),
-                "chunks": len(chunks_data),
-                "elapsed": elapsed,
-                "no_text_pdfs": no_text_pdfs,
-                "changed": True,
-                "content_hash": content_hash,
-                "missing_vectors": missing_vectors,
-            }
+            print(f"search index: no changes ({elapsed:.1f}s)")
+            return {**result, "elapsed": elapsed, "changed": False}
 
-        except Exception:
-            if tmp_dir.exists():
-                shutil.rmtree(tmp_dir)
-            raise
+        manifest = index_manifest(s, chunker=CHUNKER, zotero_storage=str(s.zotero_dir / "storage"),
+                                  papers=len(papers_data), chunks=len(chunks_data), content_hash=content_hash,
+                                  missing_vectors=missing_vectors)
+        # Compact state.json: row indices only, the vectors live in vectors.f32
+        state = {"model": s.model, "dims": s.dims, "chunker": CHUNKER, "abstracts": state_abstracts,
+                 "attachments": state_attachments}
+        if fingerprint is not None or watcher_fingerprint is not None:
+            state["fingerprint"] = fingerprint or watcher_fingerprint
+        state["reconciled_at"] = datetime.now().isoformat(timespec="seconds")
+        if missing_vectors:
+            state["degraded"] = True   # the watcher retries once the embedding service is back, even with no change
+        publish(dirs, manifest, papers_data, chunks_data, state, all_vectors)
+        return {**result, "elapsed": time.time() - t0, "changed": True}

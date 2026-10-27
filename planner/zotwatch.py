@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 from . import searchindex
+from .config import SearchSettings
 from .store import load_json, search_lock, write_json
 from .zotlib import compute_fingerprint, db_files
 
@@ -28,10 +29,11 @@ def ollama_up(ollama_url: str, timeout: float = 2.0) -> bool:
 
 def embedder_up(cfg) -> tuple[str, bool]:
     """(name, answering) for the configured embedding service: pplxd for the pplx profile, else Ollama."""
-    if cfg.search.get("backend", "ollama") == "pplx":
+    s = SearchSettings.of(cfg)
+    if s.backend == "pplx":
         from . import pplx
-        return "pplx", pplx.health(cfg.search.get("pplx_url", "http://127.0.0.1:11435")) is not None
-    return "Ollama", ollama_up(cfg.search.get("ollama_url", "http://localhost:11434"))
+        return "pplx", pplx.health(s.pplx_url) is not None
+    return "Ollama", ollama_up(s.ollama_url)
 
 
 def wait_for_quiet(
@@ -66,7 +68,7 @@ def watch_run(
     time_fn=time.time,
     sleep_fn=time.sleep,
 ) -> int:
-    zotero_dir = Path(cfg.search.get("zotero_dir", "~/Zotero")).expanduser()
+    zotero_dir = SearchSettings.of(cfg).zotero_dir
     db_path = zotero_dir / "zotero.sqlite"
 
     if not db_path.exists():

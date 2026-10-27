@@ -909,7 +909,7 @@ class TestSearchIndex(unittest.TestCase):
             self.assertEqual(vecs2[r * dims * 4 : (r + 1) * dims * 4], chunk_bytes_map[r])
 
     def test_n3_content_hash_stability_and_sensitivity(self):
-        from planner.searchindex import compute_content_hash
+        from planner.indexfiles import compute_content_hash
 
         papers = [{"title": "Paper 1", "abstractRow": 0}]
         chunks = [{"paper": 0, "row": 1, "text": "Chunk text"}]

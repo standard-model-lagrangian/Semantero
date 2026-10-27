@@ -1,7 +1,7 @@
 import json
 import sys
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -22,6 +22,37 @@ class Config:
     search: dict = field(default_factory=dict)
     notes: dict = field(default_factory=dict)
     profiles_path: Path = ROOT / "profiles.toml"   # embedding profiles (planner/profiles.py), next to config.toml
+
+
+@dataclass(frozen=True)
+class SearchSettings:
+    """[search] with its defaults filled in: what the index builders, the watcher and the health checks read. The one
+    place the defaults live (config.toml ships the same values; a profile in profiles.toml overrides them)."""
+    zotero_dir: Path = Path("~/Zotero")
+    model: str = "qwen3-embedding:0.6b"
+    dims: int = 1024                  # Matryoshka-style truncation, then re-normalise
+    query_instruction: str = "Given a description of what a paper found or showed, retrieve that paper"
+    chunk_words: int = 300
+    chunk_overlap_words: int = 50
+    max_chunks_per_paper: int = 150
+    batch_size: int = 32
+    keep_alive: str = "5m"            # Ollama unloads the model this long after the last embedding
+    backend: str = "ollama"           # "pplx": the pplx-embed-v2-late profile (planner/pplx.py, planner/pplxd.py)
+    ollama_url: str = "http://localhost:11434"
+    pplx_url: str = "http://127.0.0.1:11435"
+
+    @classmethod
+    def of(cls, cfg: "Config") -> "SearchSettings":
+        given = {f.name: cfg.search[f.name] for f in fields(cls) if f.name in cfg.search}
+        s = cls(**given)
+        ints = {n: int(getattr(s, n)) for n in ("dims", "chunk_words", "chunk_overlap_words", "max_chunks_per_paper",
+                                                 "batch_size")}
+        return replace(s, **ints, zotero_dir=Path(s.zotero_dir).expanduser())
+
+    def embed_kwargs(self) -> dict:
+        """The keyword arguments embed.embed needs to reach this profile's model."""
+        return {"model": self.model, "dims": self.dims, "batch_size": self.batch_size, "keep_alive": self.keep_alive,
+                "ollama_url": self.ollama_url, "backend": self.backend, "pplx_url": self.pplx_url}
 
 
 def load(path: Path = ROOT / "config.toml") -> Config:

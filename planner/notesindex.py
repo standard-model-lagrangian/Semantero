@@ -9,14 +9,16 @@ import hashlib
 import json
 import os
 import re
-import shutil
 import time
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from . import embed, mdtext
-from .searchindex import compute_content_hash
-from .store import atomic_swap, fsync_files, load_json, named_lock, recover_swap, write_json
+from . import mdtext
+from .config import SearchSettings
+from .indexfiles import building, compute_content_hash, embed_texts, publish
+from .indexfiles import manifest as index_manifest
+from .store import load_json, write_json
 from .vault import DAILY_RE
 
 CHUNKER = "md-headings-v1"
@@ -138,6 +140,129 @@ def _sha(text: str) -> str:
 
 # ── build ──────────────────────────────────────────────────────────────────────
 
+def _signature(cfg, files: list[tuple[str, Path]], ns: dict, s: SearchSettings) -> str:
+    """Everything a build depends on, cheaply: each note's path, mtime and size, the paper index (literature notes
+    are matched against it), the model and the settings. Unchanged means nothing to do."""
+    stats_sig = []
+    for rel, p in files:
+        try:
+            st = p.stat()
+        except OSError:
+            continue
+        stats_sig.append([rel, st.st_mtime_ns, st.st_size])
+    papers_hash = (load_json(cfg.data_dir / "search" / "manifest.json", {}) or {}).get("content_hash")
+    return _sha(json.dumps({
+        "files": stats_sig, "papers": papers_hash, "model": s.model, "dims": s.dims, "chunker": CHUNKER,
+        "ns": {k: ns[k] for k in sorted(ns)}, "vault": str(cfg.vault), "daily": str(cfg.daily_dir),
+    }, sort_keys=True))
+
+
+def _vector_cache(notes_dir: Path, dims: int) -> tuple[array.array, dict[str, int]]:
+    """The previous build's vectors and, for each text it embedded, sha256(text) -> row."""
+    prev_vecs = array.array("f")
+    cache: dict[str, int] = {}
+    vf = notes_dir / "vectors.f32"
+    if vf.exists():
+        prev_vecs.frombytes(vf.read_bytes())
+    nrows = len(prev_vecs) // dims if dims else 0
+    for p in load_json(notes_dir / "papers.json", []) or []:
+        r = p.get("abstractRow")
+        if isinstance(r, int) and 0 <= r < nrows:
+            title, lead = p.get("title", ""), p.get("abstract")
+            cache[_sha(f"{title}\n\n{lead}" if lead else title)] = r
+    for c in load_json(notes_dir / "chunks.json", []) or []:
+        r = c.get("row")
+        if isinstance(r, int) and 0 <= r < nrows:
+            cache[_sha(c.get("text", ""))] = r
+    return prev_vecs, cache
+
+
+@dataclass
+class _Note:
+    entry: dict                  # its papers.json entry (rows filled in by _layout)
+    abstract_text: str | None    # title + lead, embedded as the note's "abstract"; None for a note too short to embed
+    chunks: list[dict]
+
+
+def _parse_notes(cfg, files: list[tuple[str, Path]], ns: dict) -> tuple[list[_Note], list[str]]:
+    """Every readable note as an entry with its chunks; unreadable ones are listed as skipped."""
+    search_papers = load_json(cfg.data_dir / "search" / "papers.json", []) or []
+    citekeys = {p.get("citekey") for p in search_papers if p.get("citekey")}
+    notes: list[_Note] = []
+    skipped: list[str] = []
+    for rel, abs_path in files:
+        try:
+            text = _read_text(abs_path)
+            st = abs_path.stat()
+        except OSError as e:
+            skipped.append(f"{rel}: {e.strerror or e}")
+            continue
+        basename = abs_path.stem
+        daily_iso = abs_path.stem if DAILY_RE.match(abs_path.name) and abs_path.parent == cfg.daily_dir else None
+        note = mdtext.parse_note(text, basename, daily_iso)
+
+        lit_of = None
+        if note.citekey and note.citekey in citekeys:
+            lit_of = note.citekey
+        elif basename in citekeys:
+            lit_of = basename
+        kind = "litnote" if lit_of else ("daily" if daily_iso else "note")
+
+        chunks: list[dict] = []
+        lead = ""
+        abstract_text = None
+        if len(note.body_text.split()) >= MIN_BODY_WORDS:
+            lead = mdtext.lead_text(note.sections, ns["lead_words"])
+            abstract_text = f"{note.title}\n\n{lead}" if lead else note.title
+            for c in mdtext.chunk_note(note.sections, ns["chunk_words"], ns["chunk_overlap_words"],
+                                       ns["min_section_words"], ns["max_chunks_per_note"]):
+                chunks.append({"attachmentKey": "", "page": 0, "text": c.text, "row": None,
+                               "heading": c.heading, "line": c.line})
+        folder = abs_path.parent.relative_to(cfg.vault).as_posix()
+        notes.append(_Note(entry={
+            "key": note_key(rel), "citekey": basename, "title": note.title, "authors": [],
+            "year": None, "journal": None, "doi": None, "tags": note.tags,
+            "collections": [] if folder == "." else [folder],
+            "abstract": lead or None, "pdfs": [], "abstractRow": None,
+            "kind": kind, "path": rel, "mtime": int(st.st_mtime), "litnoteOf": lit_of,
+        }, abstract_text=abstract_text, chunks=chunks))
+    return notes, skipped
+
+
+def _texts(notes: list[_Note]):
+    for n in notes:
+        if n.abstract_text:
+            yield n.abstract_text
+        yield from (c["text"] for c in n.chunks)
+
+
+def _layout(notes: list[_Note], vec_for) -> tuple[array.array, list[dict], int]:
+    """Compact rows in note order for every text with a vector; returns the vectors, chunks.json and how many texts
+    have none (embedding failed)."""
+    vectors = array.array("f")
+    chunks_data: list[dict] = []
+    row = missing = 0
+    for idx, n in enumerate(notes):
+        if n.abstract_text:
+            v = vec_for(n.abstract_text)
+            if v is not None:
+                n.entry["abstractRow"] = row
+                vectors.extend(v)
+                row += 1
+            else:
+                missing += 1
+        for c in n.chunks:
+            v = vec_for(c["text"])
+            if v is not None:
+                c["row"] = row
+                vectors.extend(v)
+                row += 1
+            else:
+                missing += 1
+            chunks_data.append({"paper": idx, **c})
+    return vectors, chunks_data, missing
+
+
 def build_index(
     cfg,
     full: bool = False,
@@ -151,238 +276,76 @@ def build_index(
         allow_fallback = embed_fn is None
     t0 = time.time()
     ns = settings(cfg)
-    excludes = compile_excludes(ns["exclude"])
+    s = SearchSettings.of(cfg)
 
-    notes_dir = cfg.data_dir / "notes"
-    tmp_dir = cfg.data_dir / "notes.tmp"
-    old_dir = cfg.data_dir / "notes.old"
-    search_dir = cfg.data_dir / "search"
+    with building(cfg, "notes", "notes.lock", timeout=lock_timeout, blocking=blocking) as dirs:
+        notes_dir = dirs.live
+        files, excluded = scan(cfg.vault, compile_excludes(ns["exclude"]))
+        if not files and not full and notes_dir.exists():
+            prev = load_json(notes_dir / "manifest.json") or {}
+            if prev.get("papers"):
+                raise VaultUnreadable(f"{cfg.vault} has no notes now (the index has {prev['papers']}); "
+                                      "keeping the index. If that is right, run: planner notes index --full")
+        signature = _signature(cfg, files, ns, s)
 
-    model = cfg.search.get("model", "qwen3-embedding:0.6b")
-    dims = int(cfg.search.get("dims", 1024))
-    query_instruction = cfg.search.get(
-        "query_instruction", "Given a description of what a paper found or showed, retrieve that paper")
-    batch_size = int(cfg.search.get("batch_size", 32))
-    keep_alive = cfg.search.get("keep_alive", "5m")
-    ollama_url = cfg.search.get("ollama_url", "http://localhost:11434")
-    backend = cfg.search.get("backend", "ollama")   # "pplx": the pplx-embed-v2-late profile (planner/pplx.py)
-    pplx_url = cfg.search.get("pplx_url", "http://127.0.0.1:11435")
+        prev_manifest = load_json(notes_dir / "manifest.json") if notes_dir.exists() else None
+        prev_state = load_json(notes_dir / "state.json") if notes_dir.exists() else None
+        comparable = (
+            not full and isinstance(prev_manifest, dict) and isinstance(prev_state, dict)
+            and prev_state.get("model") == s.model and prev_state.get("dims") == s.dims
+            and prev_state.get("chunker") == CHUNKER
+        )
+        if comparable and prev_state.get("signature") == signature and not prev_manifest.get("degraded"):
+            return {"notes": prev_manifest.get("papers", 0), "chunks": prev_manifest.get("chunks", 0),
+                    "elapsed": time.time() - t0, "changed": False, "embedded": 0, "skipped": [],
+                    "excluded": excluded, "missing_vectors": 0, "content_hash": prev_manifest.get("content_hash")}
 
-    with named_lock(cfg, "notes.lock", timeout=lock_timeout, blocking=blocking):
-        recover_swap(notes_dir, old_dir)
-        if tmp_dir.exists():
-            shutil.rmtree(tmp_dir)
-        try:
-            files, excluded = scan(cfg.vault, excludes)
-            if not files and not full and notes_dir.exists():
-                prev = load_json(notes_dir / "manifest.json") or {}
-                if prev.get("papers"):
-                    raise VaultUnreadable(f"{cfg.vault} has no notes now (the index has {prev['papers']}); "
-                                          "keeping the index. If that is right, run: planner notes index --full")
-            stats_sig = []
-            for rel, p in files:
-                try:
-                    st = p.stat()
-                except OSError:
-                    continue
-                stats_sig.append([rel, st.st_mtime_ns, st.st_size])
+        prev_vecs, cache = _vector_cache(notes_dir, s.dims) if comparable else (array.array("f"), {})
+        notes, skipped = _parse_notes(cfg, files, ns)
 
-            papers_manifest = load_json(search_dir / "manifest.json", {}) or {}
-            papers_hash = papers_manifest.get("content_hash")
-            signature = _sha(json.dumps({
-                "files": stats_sig, "papers": papers_hash, "model": model, "dims": dims, "chunker": CHUNKER,
-                "ns": {k: ns[k] for k in sorted(ns)}, "vault": str(cfg.vault), "daily": str(cfg.daily_dir),
-            }, sort_keys=True))
+        # Embed each text no build has a vector for yet (once, however many notes share it).
+        pending = list(dict.fromkeys(t for t in _texts(notes) if _sha(t) not in cache))
+        new_vec: dict[str, list[float]] = {}
+        embed_ok = True
+        if pending:
+            # One try on the 5-minute tick: a down service must not hold it for minutes.
+            vecs = embed_texts(pending, s, embed_fn=embed_fn, allow_fallback=allow_fallback, label="notes index",
+                               max_retries=1 if allow_fallback else 3)
+            embed_ok = vecs is not None
+            new_vec = {_sha(t): v for t, v in zip(pending, vecs or [])}
 
-            prev_manifest = load_json(notes_dir / "manifest.json") if notes_dir.exists() else None
-            prev_state = load_json(notes_dir / "state.json") if notes_dir.exists() else None
-            comparable = (
-                not full and isinstance(prev_manifest, dict) and isinstance(prev_state, dict)
-                and prev_state.get("model") == model and prev_state.get("dims") == dims
-                and prev_state.get("chunker") == CHUNKER
-            )
-            if comparable and prev_state.get("signature") == signature and not prev_manifest.get("degraded"):
-                elapsed = time.time() - t0
-                return {"notes": prev_manifest.get("papers", 0), "chunks": prev_manifest.get("chunks", 0),
-                        "elapsed": elapsed, "changed": False, "embedded": 0, "skipped": [],
-                        "excluded": excluded, "missing_vectors": 0,
-                        "content_hash": prev_manifest.get("content_hash")}
+        def vec_for(t: str):
+            h = _sha(t)
+            if h in new_vec:
+                return new_vec[h]
+            r = cache.get(h)
+            return prev_vecs[r * s.dims:(r + 1) * s.dims] if r is not None else None
 
-            # Vector cache: sha(embedded text) -> row in the previous vectors.f32
-            prev_vecs = array.array("f")
-            cache: dict[str, int] = {}
-            if comparable:
-                vf = notes_dir / "vectors.f32"
-                if vf.exists():
-                    prev_vecs.frombytes(vf.read_bytes())
-                nrows = len(prev_vecs) // dims if dims else 0
-                for p in load_json(notes_dir / "papers.json", []) or []:
-                    r = p.get("abstractRow")
-                    if isinstance(r, int) and 0 <= r < nrows:
-                        title, lead = p.get("title", ""), p.get("abstract")
-                        cache[_sha(f"{title}\n\n{lead}" if lead else title)] = r
-                for c in load_json(notes_dir / "chunks.json", []) or []:
-                    r = c.get("row")
-                    if isinstance(r, int) and 0 <= r < nrows:
-                        cache[_sha(c.get("text", ""))] = r
+        vectors, chunks_data, missing = _layout(notes, vec_for)
+        entries = [n.entry for n in notes]
+        # Modified times are left out of the hash: a touch with no edit must not rewrite the index (that makes the
+        # app reload). They are refreshed whenever the content changes.
+        content_hash = compute_content_hash([{k: v for k, v in e.items() if k != "mtime"} for e in entries],
+                                            chunks_data, vectors.tobytes())
+        state = {"model": s.model, "dims": s.dims, "chunker": CHUNKER, "signature": signature}
+        if missing:
+            state["degraded"] = True
+        result = {"notes": len(entries), "chunks": len(chunks_data), "skipped": skipped, "excluded": excluded,
+                  "missing_vectors": missing, "content_hash": content_hash}
 
-            citekeys = {p.get("citekey") for p in (load_json(search_dir / "papers.json", []) or []) if p.get("citekey")}
+        if (comparable and prev_manifest.get("content_hash") == content_hash
+                and bool(prev_manifest.get("degraded")) == bool(missing)):
+            # Touched or re-saved but nothing that is indexed changed: refresh the signature only.
+            if prev_state.get("signature") != signature:
+                write_json(notes_dir / "state.json", state)
+            return {**result, "elapsed": time.time() - t0, "changed": False, "embedded": 0}
 
-            entries: list[dict] = []           # papers.json entries (rows filled in later)
-            entry_chunks: list[list[dict]] = []
-            entry_abstract_text: list[str | None] = []
-            skipped: list[str] = []
-            for rel, abs_path in files:
-                try:
-                    text = _read_text(abs_path)
-                    st = abs_path.stat()
-                except OSError as e:
-                    skipped.append(f"{rel}: {e.strerror or e}")
-                    continue
-                basename = abs_path.stem
-                daily_iso = None
-                if DAILY_RE.match(abs_path.name) and abs_path.parent == cfg.daily_dir:
-                    daily_iso = abs_path.stem
-                note = mdtext.parse_note(text, basename, daily_iso)
-
-                lit_of = None
-                if note.citekey and note.citekey in citekeys:
-                    lit_of = note.citekey
-                elif basename in citekeys:
-                    lit_of = basename
-                kind = "litnote" if lit_of else ("daily" if daily_iso else "note")
-
-                chunks: list[dict] = []
-                lead = ""
-                abstract_text = None
-                if len(note.body_text.split()) >= MIN_BODY_WORDS:
-                    lead = mdtext.lead_text(note.sections, ns["lead_words"])
-                    abstract_text = f"{note.title}\n\n{lead}" if lead else note.title
-                    for c in mdtext.chunk_note(note.sections, ns["chunk_words"], ns["chunk_overlap_words"],
-                                               ns["min_section_words"], ns["max_chunks_per_note"]):
-                        chunks.append({"attachmentKey": "", "page": 0, "text": c.text, "row": None,
-                                       "heading": c.heading, "line": c.line})
-                folder = abs_path.parent.relative_to(cfg.vault).as_posix()
-                entries.append({
-                    "key": note_key(rel), "citekey": basename, "title": note.title, "authors": [],
-                    "year": None, "journal": None, "doi": None, "tags": note.tags,
-                    "collections": [] if folder == "." else [folder],
-                    "abstract": lead or None, "pdfs": [], "abstractRow": None,
-                    "kind": kind, "path": rel, "mtime": int(st.st_mtime), "litnoteOf": lit_of,
-                })
-                entry_chunks.append(chunks)
-                entry_abstract_text.append(abstract_text)
-
-            # What needs embedding
-            pending: list[str] = []
-            seen = set(cache)
-            for abs_text, chunks in zip(entry_abstract_text, entry_chunks):
-                for t in ([abs_text] if abs_text else []) + [c["text"] for c in chunks]:
-                    h = _sha(t)
-                    if h not in seen:
-                        seen.add(h)
-                        pending.append(t)
-
-            new_vec: dict[str, list[float]] = {}
-            embed_ok = True
-            if pending:
-                try:
-                    if embed_fn:
-                        vecs = embed_fn(pending, dims=dims)
-                    else:
-                        vecs = embed.embed(pending, model=model, dims=dims, batch_size=batch_size,
-                                           keep_alive=keep_alive, ollama_url=ollama_url,
-                                           max_retries=1 if allow_fallback else 3, backend=backend, pplx_url=pplx_url)
-                    for t, v in zip(pending, vecs):
-                        new_vec[_sha(t)] = v
-                except Exception as e:
-                    if not allow_fallback:
-                        raise
-                    print(f"notes index: embedding unavailable ({e}); falling back to keyword-only", flush=True)
-                    embed_ok = False
-
-            # Assign compact rows
-            vectors = array.array("f")
-            row = 0
-            missing = 0
-
-            def vec_for(t: str):
-                h = _sha(t)
-                if h in new_vec:
-                    return new_vec[h]
-                r = cache.get(h)
-                if r is not None:
-                    return prev_vecs[r * dims:(r + 1) * dims]
-                return None
-
-            chunks_data: list[dict] = []
-            for idx, (entry, abs_text, chunks) in enumerate(zip(entries, entry_abstract_text, entry_chunks)):
-                if abs_text:
-                    v = vec_for(abs_text)
-                    if v is not None:
-                        entry["abstractRow"] = row
-                        vectors.extend(v)
-                        row += 1
-                    else:
-                        missing += 1
-                for c in chunks:
-                    v = vec_for(c["text"])
-                    if v is not None:
-                        c["row"] = row
-                        vectors.extend(v)
-                        row += 1
-                    else:
-                        missing += 1
-                    chunks_data.append({"paper": idx, **c})
-
-            vec_bytes = vectors.tobytes()
-            # Modified times are left out of the hash: a touch with no edit must not rewrite the index (that makes the
-            # app reload). They are refreshed whenever the content changes.
-            content_hash = compute_content_hash([{k: v for k, v in e.items() if k != "mtime"} for e in entries],
-                                                chunks_data, vec_bytes)
-            state = {"model": model, "dims": dims, "chunker": CHUNKER, "signature": signature}
-            if missing:
-                state["degraded"] = True
-
-            if (comparable and prev_manifest.get("content_hash") == content_hash
-                    and bool(prev_manifest.get("degraded")) == bool(missing)):
-                # Touched or re-saved but nothing that is indexed changed: refresh the signature only.
-                if prev_state.get("signature") != signature:
-                    write_json(notes_dir / "state.json", state)
-                return {"notes": len(entries), "chunks": len(chunks_data), "elapsed": time.time() - t0,
-                        "changed": False, "embedded": 0, "skipped": skipped, "excluded": excluded,
-                        "missing_vectors": missing, "content_hash": content_hash}
-
-            manifest = {
-                "format": 1, "corpus": "notes",
-                "built_at": datetime.now().strftime("%Y-%m-%dT%H:%M"),
-                "content_hash": content_hash, "model": model, "dims": dims,
-                "query_instruction": query_instruction, "chunker": CHUNKER,
-                "vault": str(cfg.vault), "vault_name": cfg.vault.name,
-                "papers": len(entries), "chunks": len(chunks_data),
-                "excluded": excluded, "missing_vectors": missing, "degraded": bool(missing),
-            }
-            if backend != "ollama":
-                manifest["backend"] = backend   # readers score rows through that backend's service, at backend_url
-                manifest["backend_url"] = pplx_url
-            tmp_dir.mkdir(parents=True, exist_ok=True)
-            write_json(tmp_dir / "manifest.json", manifest)
-            write_json(tmp_dir / "papers.json", entries)
-            write_json(tmp_dir / "chunks.json", chunks_data)
-            write_json(tmp_dir / "state.json", state)
-            with open(tmp_dir / "vectors.f32", "wb") as f:
-                vectors.tofile(f)
-                f.flush()
-                os.fsync(f.fileno())
-            fsync_files(tmp_dir, ["manifest.json", "papers.json", "chunks.json", "state.json"])
-            atomic_swap(tmp_dir, notes_dir, old_dir)
-            return {"notes": len(entries), "chunks": len(chunks_data), "elapsed": time.time() - t0,
-                    "changed": True, "embedded": len(new_vec), "skipped": skipped, "excluded": excluded,
-                    "missing_vectors": missing, "content_hash": content_hash, "embed_ok": embed_ok}
-        except Exception:
-            if tmp_dir.exists():
-                shutil.rmtree(tmp_dir)
-            raise
+        manifest = index_manifest(
+            s, corpus="notes", content_hash=content_hash, chunker=CHUNKER, vault=str(cfg.vault),
+            vault_name=cfg.vault.name, papers=len(entries), chunks=len(chunks_data), excluded=excluded,
+            missing_vectors=missing, degraded=bool(missing))
+        publish(dirs, manifest, entries, chunks_data, state, vectors)
+        return {**result, "elapsed": time.time() - t0, "changed": True, "embedded": len(new_vec), "embed_ok": embed_ok}
 
 
 # ── stats ──────────────────────────────────────────────────────────────────────
