@@ -169,8 +169,9 @@ def check_notes_index(cfg) -> Result | None:
     caught_up = max(state_file.stat().st_mtime if state_file.exists() else 0,
                     (datetime.now() - age).timestamp() if age is not None else 0)
     files, _ = notesindex.scan(cfg.vault, notesindex.compile_excludes(notesindex.settings(cfg)["exclude"]))
-    newest = max((p.stat().st_mtime for _, p in files), default=0)
-    if newest > caught_up and time.time() - newest > CATCH_UP_S:
+    # Any note edited after that and long enough ago (a note edited just now must not hide an older missed edit).
+    due_by = time.time() - CATCH_UP_S
+    if any(caught_up < p.stat().st_mtime < due_by for _, p in files):
         return Result("notes index", False,
                       f"The notes index hasn't picked up edits since {datetime.fromtimestamp(caught_up):%d %b %H:%M} "
                       "(the notes job runs every 5 minutes; see logs/notes.log). Run: planner notes index")

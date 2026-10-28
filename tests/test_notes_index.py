@@ -605,12 +605,18 @@ class TestTickAndDoctor(NotesCase):
         old = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%dT%H:%M")
         state = self.notes_dir / "state.json"
         two_days, two_hours = time.time() - 2 * 86400, time.time() - 7200
+        three_days = time.time() - 3 * 86400
+        for p in self.vault.rglob("*.md"):   # a fresh checkout dates every file "now": set them explicitly
+            os.utime(p, (three_days, three_days))
         os.utime(state, (two_days, two_days))
         self.assertIsNone(with_manifest(built_at=old))   # old, but no note changed since: fine
         note = self.vault / "Organoid bottlenecks.md"
         os.utime(note, (two_hours, two_hours))           # edited 2 h ago, and the index never caught up
         self.assertIn("hasn't picked up", with_manifest(built_at=old).message)
-        os.utime(note, None)                             # edited just now: the notes job is still due
+        other = self.vault / "empty.md"
+        os.utime(other, None)                            # another note edited just now must not hide the old edit
+        self.assertIn("hasn't picked up", with_manifest(built_at=old).message)
+        os.utime(note, None)                             # both edits recent: the notes job is still due
         self.assertIsNone(with_manifest(built_at=old))
         os.utime(note, (two_days - 60, two_days - 60))
         r = with_manifest(model="other")
