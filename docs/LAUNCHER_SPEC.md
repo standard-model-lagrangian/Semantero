@@ -399,7 +399,7 @@ Split `semantic()` in `engine.ts` into two steps:
 | `scripts/record-conformance.ts` | Writes the conformance fixtures (see [Tests](#tests)) |
 | `build.mjs` | esbuild → `dist/ranker.js` (IIFE, ES2022, no Node built-ins; fails the build if any is pulled in) |
 
-- **Imports:** the core is imported from `../obsidian/paper-search/src/*.ts` by relative path.
+- **Imports:** the core is imported from `../obsidian/paper-search/src/core/*.ts` by relative path.
 - **Bundling:** `dist/ranker.js` is committed, like the plugin's `main.js`. `make check` fails if it's stale.
 - **Dependencies:** esbuild is already a dev dependency.
 

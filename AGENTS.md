@@ -23,13 +23,13 @@ Decisions log: [docs/DECISIONS_AND_GAPS.md](docs/DECISIONS_AND_GAPS.md). Manual 
   - **Related Papers Panel (`RelatedPapersView`)**: Sidebar pane extracting the active note's passage/cursor section, cleans markdown formatting, shortens to $\le 2000$ characters at sentence boundaries, and retrieves relevant papers using calibrated instruction embedding. Hides already-cited papers by default with toggle to inspect them.
 - **Incremental Zotero Watcher** (`planner/zotwatch.py`, `planner search watch-run`):
   - Triggered via launchd (`com.planner.zotero-watch.plist`) on changes to `~/Zotero/zotero.sqlite` and `zotero.sqlite-wal`. Zotero runs in WAL mode with an exclusive lock, so new items can sit in the log for hours: every reader goes through `zotlib.open_snapshot` (a private copy of both files), never `?immutable=1`.
-  - Waits for `zotero.sqlite` to be quiet for 8 s, then compares a fingerprint of the library with `state.json` → `fingerprint`; unchanged means no build and no writes. The fingerprint is recorded only after a successful build.
+  - Waits (holding no lock) for `zotero.sqlite` to be quiet for 8 s, then compares a fingerprint of the library with `state.json` → `fingerprint`; unchanged means no build and no writes. The build records the fingerprint it was built from, only when it succeeds. Failed rounds are counted in `.planner/zotero-watch.json`, which `doctor` reads.
   - A change is published twice: keyword-only first (`build_index(keyword_only=True)`, citable a second or two after the quiet window), then with vectors (~0.4 s a chunk on pplx). Log lines are timestamped.
   - The plugin's `@@` and search modal also ask Zotero's local API (`src/zoterolive.ts`, setting "Ask Zotero for new papers") for papers the index doesn't list yet; needs Zotero's "Allow other applications on this computer to communicate with Zotero", otherwise one refused request a minute.
   - The index builder (`planner/searchindex.py`) computes `content_hash` over papers, chunks, and vector bytes, and writes nothing when it is unchanged.
   - Indexes child PDFs and web snapshots (`text/html`, text via stdlib `html.parser` in `planner/htmltext.py`, chunks with page 0); both are in the fingerprint.
   - Retries missing PDF/snapshot attachments on subsequent runs when files appear on disk.
-  - Concurrency protected by the shared advisory lock `.planner/search.lock` (also taken by a manual `search index`).
+  - Concurrency protected by the shared advisory lock `.planner/search.lock` (also taken by a manual `search index`); the watcher waits up to 120 s for it, then logs `busy`.
 
 
 ### 2. Launcher (one hotkey, papers + notes, any app)
@@ -59,7 +59,9 @@ planner/                __main__ (CLI), config, health (doctor), embed (embeddin
                         mdtext.py (Markdown cleaning/sections/chunks), notesindex.py (vault notes index)
                         profiles.py (embedding profiles), pplx.py (pplx client, stdlib), pplxd.py (pplx service, numpy)
 pplx/                   frozen pplx-embed-v2-late: convert/ (stage, GGUF, parity), requirements-pplxd.txt
-obsidian/paper-search/  Obsidian plugin: src/ (engine, indexstore, bm25, modal (view), modalsearch (its controller), queryjobs, inline, litnote, passage, related)
+obsidian/paper-search/  Obsidian plugin: src/core/ (the shared ranking core: engine, bm25, rank, text, vectors, ollama, semantic,
+                        indexstore, zotero, textstore; no Obsidian imports), src/ (main, settings, modal (view), modalsearch (its
+                        controller), queryjobs, inline, litnote, passage, related)
                         test/ (unit & perf benchmarks), scripts/ (make-synthetic-index, eval-related)
 launcher-core/          launcher ranking core: src/ (corpora, merge, query, vm, paths, urls, cite, actions, api), shortcuts.json,
                         conformance/, dist/ranker.js (committed), scripts/ (eval, record-conformance, make-bench-vault)
@@ -127,7 +129,7 @@ Run from `obsidian/paper-search`:
 - **Never test against the real vault or real Zotero.** Performance tests use the synthetic index generator (`make-synthetic-index.ts`) or in-memory fakes (`test/fakes.ts`). Evaluation of related papers uses a temporary scratch copy in `/tmp/`.
 - **No default hotkeys in plugin code.** Command registrations do not bind default keys; hotkeys belong in `.obsidian/hotkeys.json`. On load, `checkHotkeyConflict` flags clashes with existing commands.
 - **Internal Obsidian APIs** (`chooser`, `suggestions.setSuggestions`) are accessed only through adapter wrappers with tested fallbacks (tests I6, MS11).
-- **One ranking implementation.** Ranking lives in `obsidian/paper-search/src/` (no Obsidian imports there; test T1 enforces it). `launcher-core` and the app reuse it; never port ranking logic into Swift without the conformance suite passing (see LAUNCHER_SPEC.md, "Ranker decision").
+- **One ranking implementation.** Ranking lives in `obsidian/paper-search/src/core/` (no Obsidian imports there; tests T1/T1b enforce it). `launcher-core` and the app reuse it; never port ranking logic into Swift without the conformance suite passing (see LAUNCHER_SPEC.md, "Ranker decision").
 - **Rebuild `launcher-core/dist/ranker.js` after changing `launcher-core/src/` or the shared core,** commit it, and re-record `conformance/cases.json` only when results change on purpose (`make record-conformance`, review the diff).
 - **Index writers never leave a half-written index and never shrink it by accident.** Writes go to `<name>.tmp/` then swap. A vault scan that can't read a folder raises (`VaultUnreadable`) instead of writing a smaller index. Anything the 5-minute tick runs must not raise and must take a non-blocking lock.
 - **Personal data never enters the repo** (it is public). No real note titles, vault contents or paths in docs, tests or fixtures. Private exclusions live in `config.local.toml` (git-ignored). Set `[notes].exclude` **before** the notes index first runs on a vault.

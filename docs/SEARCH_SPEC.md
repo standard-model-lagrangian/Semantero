@@ -195,7 +195,7 @@ Lives in `obsidian/paper-search/` inside this repository. The build symlinks it 
 | `src/vectors.ts` | Load `vectors.f32`, check it, dot products, top-k | no |
 | `src/ollama.ts` | Query embedding: instruction, truncation, normalisation; dropping stale responses | no (HTTP function passed in) |
 | `src/main.ts` | Plugin, settings, `SuggestModal`, commands, index reload | yes |
-| `scripts/eval.ts` | Evaluation CLI (below) | no |
+| `scripts/eval.ts` | Evaluation CLI (below); since 28 Oct 2026 `launcher-core/scripts/eval.ts --scope papers` | no |
 
 ### Ranking
 
@@ -347,7 +347,7 @@ kind = "finding"
 ```
 Aim for at least 12 `finding` queries written from memory, without looking at the paper. A few of each other kind catch regressions.
 
-**`node scripts/eval.ts --index <dir> [--model M] [--keyword-only]`** prints:
+**`node launcher-core/scripts/eval.ts --vault <dir> --scope papers [--keyword-only]`** (originally the plugin's `scripts/eval.ts`) prints:
 - recall@1, recall@5 and MRR, overall and per `kind`;
 - semantic latency p50/p95, measured warm (after a warm-up);
 - a list of misses: query, expected paper's rank, top-3 titles, and whether the expected paper's winning row was its abstract or a chunk.

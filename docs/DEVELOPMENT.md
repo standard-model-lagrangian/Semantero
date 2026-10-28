@@ -27,9 +27,9 @@ changes. Format: [SEARCH_SPEC.md](SEARCH_SPEC.md#index-format-plannersearch-insi
 (papers) and [LAUNCHER_SPEC.md](LAUNCHER_SPEC.md#notes-plannernotes-new-corpus-same-format) (notes, and the `file`
 paths added to papers).
 
-**One ranking implementation.** BM25, the semantic pass, rank fusion and snippets live in
-`obsidian/paper-search/src/{engine,bm25,rank,text,vectors,ollama,indexstore,zotero}.ts`. None of these files may import
-Obsidian (a test enforces this). `launcher-core` imports them by relative path and adds the two-corpus merge and the view
+**One ranking implementation.** BM25, the semantic pass and its backends, rank fusion and snippets live in
+`obsidian/paper-search/src/core/`. Nothing in that folder may import Obsidian or anything outside it (test T1).
+`launcher-core` imports it by relative path, only from `src/core/` (test T1b), and adds the two-corpus merge and the view
 model. The app runs the bundled result in JavaScriptCore, so a ranking change is made once and covered by one set of
 tests.
 
@@ -41,7 +41,7 @@ tests.
 | `obsidian/paper-search/` | TypeScript (Node 26 runs `.ts` directly) | Obsidian plugin + the shared ranking core | `test/*.test.ts` (`node --test`) | `main.js` |
 | `launcher-core/` | TypeScript, no Node/DOM APIs in `src/` | Merges papers + notes, builds `ResultVM`s; JavaScriptCore API `globalThis.semantero` | `test/*.test.ts`, `conformance/cases.json` | `dist/ranker.js` |
 | `macos/` | Swift 6.2 package, no dependencies | `SemanteroKit` (all logic, testable), `Semantero` (the app), `SemanteroBench` (benchmarks) | `Tests/SemanteroKitTests` (Swift Testing); `make app-selftest` | `macos/build/` (git-ignored) |
-| `eval/` | TOML | Ground-truth queries (`expect` citekeys, `expect_note` note paths) | `scripts/eval.ts` in both TS packages | — |
+| `eval/` | TOML | Ground-truth queries (`expect` citekeys, `expect_note` note paths) | `launcher-core/scripts/eval.ts` (`--scope papers` for the plugin's ranking) | — |
 | `launchd/`, `bin/` | plist, shell | launchd job templates and `install-launchd.sh`, which fills them in and loads them; `planner-run.sh` adds Homebrew to launchd's PATH | `tests/test_launchd.py` | — |
 | `docs/` | Markdown | Specs, decisions log, checklists, these guides | — | — |
 

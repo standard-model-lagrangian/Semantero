@@ -19,7 +19,7 @@ and number the tests that pin each behaviour. Where an implementation differs fr
 |---|---|---|
 | [SEARCH_SPEC.md](SEARCH_SPEC.md) | Paper index (Zotero → `.planner/search/`), hybrid ranking, the Obsidian search pop-up, evaluation | implemented |
 | [INTEGRATION_SPEC.md](INTEGRATION_SPEC.md) | Plugin integration: shared engine, inline `@@` citations, literature notes, related-papers panel, watcher, budgets B1–B14 | implemented |
-| [LAUNCHER_SPEC.md](LAUNCHER_SPEC.md) | Notes index (`.planner/notes/`), `launcher-core`, the native macOS app (glass panel, actions, Spotlight), the JavaScriptCore-vs-Swift decision | implemented; manual checks in `macos/CHECK.md` |
+| [LAUNCHER_SPEC.md](LAUNCHER_SPEC.md) | Notes index (`.planner/notes/`), `launcher-core`, the native macOS app (glass panel, actions), the JavaScriptCore-vs-Swift decision | implemented; manual checks in `macos/CHECK.md` |
 
 ## Where things live
 

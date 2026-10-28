@@ -227,7 +227,7 @@ Other S1 fixes: JSON is decoded natively in Swift and passed as strings (the JS 
 - A paper row whose literature note won shows the note's heading/snippet and `↵` opens the note, but `⌘↵` / file actions still use the **paper's PDF**; the citation actions use the winner's text.
 - `ResultVM` gained `openLabel` (footer text). Note citations drop a leading `Title › ` when the note's first H1 equals its title.
 - A corpus with a different `query_instruction` is treated like a model/dims mismatch (keyword-only).
-- `Engine.lookup(ids)` and `semantero.shouldRunSemantic()` were added to the API (Spotlight id resolution; the gating rule stays single-sourced in `rank.ts`). `interleaveSemantic` engine option implements the spec's per-corpus-instruction fallback for `eval.ts --per-corpus-instruction`.
+- `Engine.lookup(ids)` (removed with Spotlight, 28 Oct 2026) and `semantero.shouldRunSemantic()` were added to the API (Spotlight id resolution; the gating rule stays single-sourced in `rank.ts`). `interleaveSemantic` engine option implements the spec's per-corpus-instruction fallback for `eval.ts --per-corpus-instruction`.
 - Dates in view models use the machine's time zone; tests and conformance run with `TZ=UTC` (`make test-launcher` sets it).
 - The engine refactor (`rowScores` + `semanticFromRowScores`) and the BM25 changes live in the plugin's shared files, so the plugin's `main.js` must be rebuilt (done by `make check`'s `build`).
 

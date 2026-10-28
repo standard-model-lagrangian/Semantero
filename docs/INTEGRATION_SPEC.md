@@ -95,24 +95,23 @@ hybrid(keywordHits, semanticHits, limit, k = 60): Hit[]                 // RRF, 
 - Runs `bin/planner-run.sh search watch-run`, logging to `logs/zotero-watch.log`.
 
 **`planner search watch-run`** does this, in order:
-1. **Lock.** Take a non-blocking `fcntl.flock` on `.planner/search.lock`. A manual `planner search index` uses the same lock. If the lock is held, log `busy` and exit 0. Whoever holds the lock re-checks the fingerprint before releasing it (step 6), so a change made in between isn't lost.
-2. **Wait for Zotero to go quiet.** Wait until `zotero.sqlite` hasn't been modified for `quiet_s` (default 8 s; 20 s until 27 Oct 2026), checking every 5 s, for at most `max_wait_s` (600 s). If it never goes quiet, log `gave up waiting` and exit 0; the next trigger or the morning run catches up.
-3. **Fingerprint** (read-only via the `?immutable=1` URI, about 25 MB):
+1. **Wait for Zotero to go quiet,** holding no lock: until `zotero.sqlite` and its write-ahead log haven't been modified for `quiet_s` (default 8 s; 20 s until 27 Oct 2026), checking every 5 s, for at most `max_wait_s` (600 s). If it never goes quiet, log `gave up waiting` and exit; the next trigger catches up. (Until 28 Oct 2026 the lock was taken first, which made a manual build time out during the wait.)
+2. **Lock.** Take `.planner/search.lock`, waiting up to 120 s for a manual `planner search index` that holds it; after that log `busy` and exit.
+3. **Fingerprint** (from a private copy of the database and its log, `zotlib.open_snapshot`):
    - number of regular items not in the trash;
    - `max(clientDateModified)` over items;
    - number of attachments;
    - a sorted list of (PDF path, mtime, size) for each PDF attachment.
 
    If it equals `state.fingerprint`, exit with `no changes`. That takes under 1.5 s and writes nothing.
-4. **Build:** run `build_index(incremental)`. With 0.2 in place, it writes only if something changed.
-5. **Record the fingerprint only after a successful build.** If Ollama is down or the build fails, log it and keep the old fingerprint, so the next trigger retries. Exit 0.
-6. **Before releasing the lock,** recompute the fingerprint. If it changed while building, go back to step 2, at most 3 rounds.
+4. **Build:** keyword-only first, then with vectors, both given the fingerprint from step 3. A build records it only when it succeeds; a failure is logged and counted in `.planner/zotero-watch.json`, and the old fingerprint stays, so the next trigger retries.
+5. **After the build,** recompute the fingerprint. If Zotero wrote meanwhile, go back to step 1, at most 3 rounds.
 
 **Missing PDFs:** a PDF whose file doesn't exist yet (Zotero adds the item before the download finishes) is indexed without chunks. It is **not** remembered as "no text", so a later run picks it up. The cache key includes the file's mtime and size, and a missing file has neither.
 
 **Doctor:**
 - checks that `com.planner.zotero-watch` is loaded;
-- warns if `logs/zotero-watch.log` shows 3 failed builds in a row.
+- warns if `.planner/zotero-watch.json` counts 3 failed rounds in a row (with the last error).
 
 ### 1c. Literature notes when you cite
 
