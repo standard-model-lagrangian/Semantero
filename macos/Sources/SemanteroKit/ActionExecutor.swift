@@ -20,7 +20,8 @@ public protocol SystemState: Sendable {
     var secureInputEnabled: Bool { get }
 }
 public protocol FileChecking: Sendable { func exists(_ path: String) -> Bool }
-public protocol PanelControl: Sendable { func hide() async }
+/// The search panel. It lives on the main actor; the executor hops there to hide it.
+public protocol PanelControl: Sendable { @MainActor func hide() }
 public struct ToastAction: Sendable, Equatable { public let title: String; public let url: URL
     public init(title: String, url: URL) { self.title = title; self.url = url } }
 public protocol Toasting: Sendable { func show(_ message: String, action: ToastAction?) }

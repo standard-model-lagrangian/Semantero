@@ -36,7 +36,6 @@ final class AppModel {
     /// Nil only when the ranker could not be built (`loadMessage` says why).
     private var index: IndexCoordinator?
     private var controller: QueryController?
-    var intentService: IntentSearchService? { index?.intentService }
     private var consumeTask: Task<Void, Never>?
     /// Typed queries, sent to the controller by one task so they arrive in order (a task per keystroke could arrive out
     /// of order, leave the controller on an older query and `apply` dropping every update for the one on screen).
@@ -47,7 +46,7 @@ final class AppModel {
 
     private init() {
         // First launch under the new name: bring the settings over from Daito Search (the app is not sandboxed, so the
-        // old domain is readable). Its Spotlight entries are not reused: this app donates its own.
+        // old domain is readable).
         SettingsStore.importLegacySettings(UserDefaults.standard.persistentDomain(forName: SettingsStore.legacyDomain),
                                            into: .standard)
         let url = Bundle.main.url(forResource: "shortcuts", withExtension: "json")
@@ -58,7 +57,7 @@ final class AppModel {
 
     /// `SEMANTERO_VAULT` overrides the setting for measurement runs, so they never touch the installed app's settings.
     var vaultURL: URL {
-        URL(fileURLWithPath: ProcessInfo.processInfo.environment["SEMANTERO_VAULT"] ?? settings.vaultPath, isDirectory: true)
+        URL(fileURLWithPath: LaunchOptions.current.vault ?? settings.vaultPath, isDirectory: true)
     }
     var results: [ResultVM] { selection.results }
 
@@ -89,33 +88,30 @@ final class AppModel {
         }
         index = IndexCoordinator(
             ranker: ranker, controller: controller, vault: vaultURL, settings: settings,
-            donor: SpotlightDonor(index: CoreSpotlightIndex(), stateURL: Self.supportDirectory.appendingPathComponent("spotlight.json")),
             hooks: IndexCoordinator.Hooks(
                 panelVisible: { [weak self] in self?.panel.isVisible ?? false },
                 query: { [weak self] in self?.query ?? "" },
                 log: { debugLog($0) },
                 onEvent: { [weak self] in self?.indexEvent($0) }))
-        IntentBridge.shared.model = self
 
-        // Test modes run next to the installed app: they take no hotkey and no login item.
-        let env = ProcessInfo.processInfo.environment
-        if env["SEMANTERO_SELFTEST"] == nil && env["SEMANTERO_SNAPSHOT"] == nil && env["SEMANTERO_NO_HOTKEY"] == nil {
+        let options = LaunchOptions.current
+        if !options.isTestMode {
             registerHotkey()
             applyLaunchAtLogin()
         }
-        if let out = env["SEMANTERO_SELFTEST"] { Task { await SelfTest.run(model: self, output: out) } }
+        if let out = options.selfTestOutput { Task { await SelfTest.run(model: self, output: out) } }
         // Debugging aid: SEMANTERO_SHOW_PANEL="<query>" opens the panel with that query once the index is loaded.
-        if let q = env["SEMANTERO_SHOW_PANEL"] {
+        if let q = options.showPanelQuery {
             Task {
                 _ = await waitUntil(timeout: .seconds(30)) { self.status != nil || self.loadMessage != "Loading index…" }
                 self.panel.show()
                 self.query = q
                 // SEMANTERO_SNAPSHOT=<png path>: save the panel's view to a PNG (no screen-recording permission) and quit.
-                if let path = env["SEMANTERO_SNAPSHOT"] {
+                if let path = options.snapshotPath {
                     // The results for `q`, semantic merge included (or a definite "off": a cold model can take seconds).
                     _ = await waitUntil(timeout: .seconds(30)) { self.resultsSettled(for: q) }
                     // SEMANTERO_SNAPSHOT_ACTIONS=1: capture with the ⌘K menu open.
-                    if env["SEMANTERO_SNAPSHOT_ACTIONS"] != nil { self.showActionMenu = true }
+                    if options.snapshotActions { self.showActionMenu = true }
                     self.panel.snapshot(to: path)
                     NSApplication.shared.terminate(nil)
                 }
@@ -144,17 +140,10 @@ final class AppModel {
             status = nil
             loadMessage = "Loading index…"
             selection.apply([])
-            index?.openVault(vaultURL)   // also re-syncs Spotlight after loading
-        } else {
-            if effects.contains(.reconfigureEmbedding) { Task { await index?.reconfigureEmbedding() } }
-            if effects.contains(.syncSpotlight) { Task { await index?.syncSpotlight() } }
+            index?.openVault(vaultURL)
+        } else if effects.contains(.reconfigureEmbedding) {
+            Task { await index?.reconfigureEmbedding() }
         }
-    }
-
-    static var supportDirectory: URL {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Semantero")
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir
     }
 
     func reloadIndexes() async { await index?.reloadIndexes() }
@@ -218,7 +207,7 @@ final class AppModel {
 
     func registerHotkey() {
         let spec = (try? HotkeySpec(parsing: settings.hotkey)) ?? (try! HotkeySpec(parsing: "⌥Space"))
-        let ok = hotkey.register(spec) { [weak self] in Task { @MainActor in self?.panel.toggle() } }
+        let ok = hotkey.register(spec) { [weak self] in self?.panel.toggle() }
         if !ok { ToastCenter.shared.show("Could not register the hotkey \(spec). Pick another in Settings.", action: nil) }
     }
 
@@ -239,17 +228,4 @@ final class AppModel {
         let n = status.notes.map { "\($0.count) notes" } ?? "no notes index"
         return "\(p), \(n)" + (status.anySemantic ? "" : ", keyword only")
     }
-
-    func openSpotlightResult(id: String) {
-        guard let ranker = index?.ranker else { return }
-        let executor = self.executor
-        Task { _ = await SpotlightOpenService(ranker: ranker, executor: executor).open(identifier: id) }
-    }
-}
-
-/// App Intents are created by the system; this is how they reach the running app's engine.
-final class IntentBridge: @unchecked Sendable {
-    static let shared = IntentBridge()
-    @MainActor weak var model: AppModel?
-    @MainActor var service: IntentSearchService? { model?.intentService }
 }

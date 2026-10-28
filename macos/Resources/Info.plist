@@ -12,8 +12,6 @@
     <key>LSMinimumSystemVersion</key><string>26.0</string>
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
-    <key>NSUserActivityTypes</key>
-    <array><string>com.apple.corespotlightitem</string></array>
     <key>NSHumanReadableCopyright</key><string>Semantero: local, open source</string>
 </dict>
 </plist>

@@ -55,7 +55,6 @@ struct HotkeyShortcutsSettingsTests {
         #expect(s.ollamaKeepAlive == "5m")
         #expect(s.resultLimit == 15)
         #expect(s.restoreClipboard == false)
-        #expect(s.spotlightPapers == true && s.spotlightNoteTitles == true && s.spotlightNoteText == false)
         #expect(s.launchAtLogin == true)
         #expect(s.scope == .all)
         #expect(s.showDetail == true)
@@ -70,12 +69,12 @@ struct HotkeyShortcutsSettingsTests {
         defer { scratch.remove() }
         let d = scratch.defaults
         d.set(25, forKey: "resultLimit")                                     // already set under the new name
-        let legacy: [String: Any] = ["hotkey": "⌃⌥Space", "resultLimit": 8, "spotlightNoteText": true,
+        let legacy: [String: Any] = ["hotkey": "⌃⌥Space", "resultLimit": 8, "restoreClipboard": true,
                                      "NSWindow Frame Settings": "0 0 10 10"]  // not ours: left behind
         let copied = SettingsStore.importLegacySettings(legacy, into: d)
-        #expect(Set(copied) == ["hotkey", "spotlightNoteText"])
+        #expect(Set(copied) == ["hotkey", "restoreClipboard"])
         let s = SettingsStore(defaults: d)
-        #expect(s.hotkey == "⌃⌥Space" && s.spotlightNoteText && s.resultLimit == 25)
+        #expect(s.hotkey == "⌃⌥Space" && s.restoreClipboard && s.resultLimit == 25)
         #expect(d.object(forKey: "NSWindow Frame Settings") == nil)
         s.hotkey = "⌥Space"
         #expect(SettingsStore.importLegacySettings(legacy, into: d).isEmpty, "only once")
@@ -93,15 +92,15 @@ struct SettingsEffectTests {
         let before = SettingsSnapshot(s)
         #expect(SettingsEffect.between(before, SettingsSnapshot(s)).isEmpty)
         s.vaultPath = "/elsewhere"; s.ollamaURL = "http://127.0.0.1:9999"; s.resultLimit = 20; s.hotkey = "⌃⌥Space"
-        s.spotlightNoteText = true; s.launchAtLogin = false
+        s.launchAtLogin = false
         #expect(SettingsEffect.between(before, SettingsSnapshot(s)) ==
-                [.reopenVault, .syncSpotlight, .reconfigureEmbedding, .applyResultLimit, .registerHotkey, .applyLoginItem])
+                [.reopenVault, .reconfigureEmbedding, .applyResultLimit, .registerHotkey, .applyLoginItem])
         let mid = SettingsSnapshot(s)
         s.ollamaKeepAlive = "30m"
         #expect(SettingsEffect.between(mid, SettingsSnapshot(s)) == [.reconfigureEmbedding])
         s.ollamaKeepAlive = "5m"
-        s.spotlightPapers = false
-        #expect(SettingsEffect.between(mid, SettingsSnapshot(s)) == [.syncSpotlight])
+        s.restoreClipboard = true   // read when an action runs: nothing to redo
+        #expect(SettingsEffect.between(mid, SettingsSnapshot(s)).isEmpty)
     }
 
     @Test func newResultLimitIsUsedForTheNextSearchAndReRunsTheQuery() async {

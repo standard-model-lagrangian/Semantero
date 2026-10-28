@@ -40,7 +40,7 @@ app:
 install-app: app
 	rm -rf "/Applications/Semantero.app"
 	cp -R "macos/build/Semantero.app" /Applications/
-	@echo "installed to /Applications; open it once so macOS registers the Spotlight action"
+	@echo "installed to /Applications"
 
 # The global setup in one go: notes index (must be enabled in config.local.toml first), its 5-minute job, the Semantero app.
 install-global:

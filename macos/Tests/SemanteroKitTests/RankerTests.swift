@@ -125,12 +125,6 @@ struct RankerTests {
         #expect(await r.shouldRunSemantic("stiff g ") == false)
     }
 
-    @Test func lookupResolvesIds() async throws {
-        let r = try await loadedJSCRanker()
-        let out = try await r.lookup(ids: ["P:KEY0001", "P:NOPE"])
-        #expect(out.map(\.id) == ["P:KEY0001"])
-    }
-
     // S11
     @Test func vectorScorerEqualsNaiveReference() throws {
         let dims = 16, rows = 200

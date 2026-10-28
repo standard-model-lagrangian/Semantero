@@ -11,7 +11,7 @@ final class SearchPanel: NSPanel {
 }
 
 @MainActor
-final class PanelController: NSObject, PanelControl, NSWindowDelegate, @unchecked Sendable {
+final class PanelController: NSObject, PanelControl, NSWindowDelegate {
     static let width: CGFloat = 760
     static let cornerRadius: CGFloat = 22
     private let model: AppModel
@@ -65,8 +65,9 @@ final class PanelController: NSObject, PanelControl, NSWindowDelegate, @unchecke
         position()
         panel.makeKeyAndOrderFront(nil)
         // The shadow is cached from the last time the panel was on screen, maybe at another height; rebuild it once
-        // this frame's content is drawn.
-        DispatchQueue.main.async { [weak self] in self?.panel.invalidateShadow() }
+        // this frame's content is drawn (on the main actor's next turn, after this one has laid it out).
+        Task { [weak self] in self?.panel.invalidateShadow() }
+        // The monitor's handler is not main-actor code (AppKit calls it on the main thread, but Swift can't know that).
         clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             Task { @MainActor in
                 guard let self, self.isVisible, !self.panel.frame.contains(NSEvent.mouseLocation) else { return }
@@ -74,8 +75,6 @@ final class PanelController: NSObject, PanelControl, NSWindowDelegate, @unchecke
             }
         }
     }
-
-    nonisolated func hide() async { await MainActor.run { self.hide() } }
 
     func hide() {
         if let clickMonitor { NSEvent.removeMonitor(clickMonitor); self.clickMonitor = nil }
@@ -98,7 +97,8 @@ final class PanelController: NSObject, PanelControl, NSWindowDelegate, @unchecke
 
     /// Hide when focus moves elsewhere, except to Quick Look opened from the panel (⌘Y).
     func windowDidResignKey(_ notification: Notification) {
-        DispatchQueue.main.async { [weak self] in
+        // Look one main-actor turn later: Quick Look's panel takes key first and only reports itself visible after that.
+        Task { [weak self] in
             guard let self else { return }
             if QLPreviewPanel.sharedPreviewPanelExists(), QLPreviewPanel.shared().isVisible { return }
             self.hide()

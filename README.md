@@ -45,7 +45,6 @@ ones you don't. Then it puts that index one keystroke away, in Obsidian and in e
 | **`⌘⇧0` in Obsidian** | The same search inside your vault. `⌘↵` inserts `[[citekey]]` and creates the literature note from your template. |
 | **`@@` inline citations** | Type `@@` anywhere in prose for a citation autocomplete. One undo step, never fires inside code, math or frontmatter. |
 | **Related papers panel** | Reads the section you're writing and suggests papers from your library that you haven't cited yet. |
-| **Spotlight** | Paper and note titles show up in ⌘Space too, plus a "Search Everything" action. |
 
 > [!TIP]
 > Live mostly in Zotero? It still earns its keep. The vault can be nearly empty: ⌥Space alone gives you semantic search
@@ -62,7 +61,7 @@ flowchart LR
     N --> E
     E --> I[("Hybrid index<br/><sub>BM25 + vectors<br/>in your vault</sub>")]
     I --> P["Obsidian plugin<br/><sub>⌘⇧0 · @@ · related</sub>"]
-    I --> L["Semantero.app<br/><sub>⌥Space · Spotlight</sub>"]
+    I --> L["Semantero.app<br/><sub>⌥Space</sub>"]
 ```
 
 1. **Watch.** A tiny `launchd` job notices when Zotero's database changes, waits for it to go quiet, and compares a
@@ -124,7 +123,7 @@ background watcher. Custom paths go to a git-ignored `config.local.toml`, so `gi
 
 | **Obsidian only** (~5 min) | **Global** (~10 min) |
 |---|---|
-| `⌘⇧0` search, `@@` citations, literature notes, related papers, all inside Obsidian | All of that, **plus** your notes indexed and **⌥Space in every app**, plus Spotlight |
+| `⌘⇧0` search, `@@` citations, literature notes, related papers, all inside Obsidian | All of that, **plus** your notes indexed and **⌥Space in every app** |
 | The quick start above. No Xcode, no Node | Quick start, then `[notes] enabled = true` in `config.local.toml` and `make install-global`. Needs macOS 26, Node and Apple's free Command Line Tools ([is Xcode needed?](docs/INSTALL.md#do-i-need-xcode)) |
 
 Step by step for both, switching between them, and uninstalling: **[docs/INSTALL.md](docs/INSTALL.md#choose-your-setup)**.

@@ -49,13 +49,11 @@ public actor AcceleratedRanker: NotesReloading {
 
     public func collectGarbage() async { await inner.collectGarbage() }
 
-    public func status() async throws -> RankerStatus { try await inner.status() }
     public func shouldRunSemantic(_ query: String) async -> Bool { await inner.shouldRunSemantic(query) }
     public func keyword(_ query: String, scope: Scope, limit: Int) async throws -> [ResultVM] {
         try await inner.keyword(query, scope: scope, limit: limit)
     }
     public func recent(limit: Int) async throws -> [ResultVM] { try await inner.recent(limit: limit) }
-    public func lookup(ids: [String]) async throws -> [ResultVM] { try await inner.lookup(ids: ids) }
 
     public func hybridFromRowScores(_ query: String, papersScores: Data?, notesScores: Data?, scope: Scope,
                                     limit: Int) async throws -> [ResultVM] {

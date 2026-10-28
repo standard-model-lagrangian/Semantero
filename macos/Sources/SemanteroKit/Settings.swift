@@ -34,19 +34,6 @@ public final class SettingsStore: @unchecked Sendable {
         get { defaults.object(forKey: "restoreClipboard") as? Bool ?? false }
         set { defaults.set(newValue, forKey: "restoreClipboard") }
     }
-    public var spotlightPapers: Bool {
-        get { defaults.object(forKey: "spotlightPapers") as? Bool ?? true }
-        set { defaults.set(newValue, forKey: "spotlightPapers") }
-    }
-    public var spotlightNoteTitles: Bool {
-        get { defaults.object(forKey: "spotlightNoteTitles") as? Bool ?? true }
-        set { defaults.set(newValue, forKey: "spotlightNoteTitles") }
-    }
-    /// Off by default: donating note text makes Spotlight rank on it and duplicates results.
-    public var spotlightNoteText: Bool {
-        get { defaults.object(forKey: "spotlightNoteText") as? Bool ?? false }
-        set { defaults.set(newValue, forKey: "spotlightNoteText") }
-    }
     public var launchAtLogin: Bool {
         get { defaults.object(forKey: "launchAtLogin") as? Bool ?? true }
         set { defaults.set(newValue, forKey: "launchAtLogin") }
@@ -68,33 +55,29 @@ public struct SettingsSnapshot: Equatable, Sendable {
     public var ollamaURL: String
     public var ollamaKeepAlive: String
     public var resultLimit: Int
-    public var spotlight: [Bool]
     public var launchAtLogin: Bool
 
     public init(_ s: SettingsStore) {
         vaultPath = s.vaultPath; hotkey = s.hotkey; ollamaURL = s.ollamaURL; ollamaKeepAlive = s.ollamaKeepAlive
-        resultLimit = s.resultLimit
-        spotlight = [s.spotlightPapers, s.spotlightNoteTitles, s.spotlightNoteText]; launchAtLogin = s.launchAtLogin
+        resultLimit = s.resultLimit; launchAtLogin = s.launchAtLogin
     }
 }
 
 public enum SettingsEffect: Hashable, Sendable {
-    /// New vault: new reloader and file watcher, load from scratch, re-sync Spotlight.
+    /// New vault: new reloader and file watcher, load from scratch.
     case reopenVault
     /// New Ollama URL: rebuild the query embedder from the loaded index's model.
     case reconfigureEmbedding
     case applyResultLimit
     case registerHotkey
-    case syncSpotlight
     case applyLoginItem
 
     public static func between(_ old: SettingsSnapshot, _ new: SettingsSnapshot) -> Set<SettingsEffect> {
         var out = Set<SettingsEffect>()
-        if old.vaultPath != new.vaultPath { out.insert(.reopenVault); out.insert(.syncSpotlight) }
+        if old.vaultPath != new.vaultPath { out.insert(.reopenVault) }
         if old.ollamaURL != new.ollamaURL || old.ollamaKeepAlive != new.ollamaKeepAlive { out.insert(.reconfigureEmbedding) }
         if old.resultLimit != new.resultLimit { out.insert(.applyResultLimit) }
         if old.hotkey != new.hotkey { out.insert(.registerHotkey) }
-        if old.spotlight != new.spotlight { out.insert(.syncSpotlight) }
         if old.launchAtLogin != new.launchAtLogin { out.insert(.applyLoginItem) }
         return out
     }
@@ -103,7 +86,7 @@ public enum SettingsEffect: Hashable, Sendable {
 extension SettingsStore {
     /// Every preference key the app stores.
     public static let keys = ["vaultPath", "hotkey", "ollamaURL", "ollamaKeepAlive", "resultLimit", "restoreClipboard",
-                              "spotlightPapers", "spotlightNoteTitles", "spotlightNoteText", "launchAtLogin", "scope", "showDetail"]
+                              "launchAtLogin", "scope", "showDetail"]
     /// The app was called Daito Search, with this bundle id, until 24 Oct 2026.
     public static let legacyDomain = "dev.daito.search"
     static let importedKey = "importedLegacySettings"

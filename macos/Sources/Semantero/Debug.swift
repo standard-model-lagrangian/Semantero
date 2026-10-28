@@ -2,9 +2,42 @@ import Foundation
 import Observation
 import Synchronization
 
-/// `SEMANTERO_DEBUG=1`: timestamped lines on stderr (reloads, Spotlight syncs, the memory watchdog).
+/// The environment variables the app reads, all in one place and read once at launch (DEVELOPMENT.md → Debugging aids).
+struct LaunchOptions {
+    /// `SEMANTERO_VAULT=<dir>`: use this vault instead of the setting.
+    var vault: String?
+    /// `SEMANTERO_SELFTEST=<json>`: drive the panel with synthetic keys, write the report there, quit (`make app-selftest`).
+    var selfTestOutput: String?
+    /// `SEMANTERO_SHOW_PANEL="<query>"`: open the panel with that query once the index is loaded.
+    var showPanelQuery: String?
+    /// `SEMANTERO_SNAPSHOT=<png>` (with `SEMANTERO_SHOW_PANEL`): save the panel to a PNG, then quit.
+    var snapshotPath: String?
+    /// `SEMANTERO_SNAPSHOT_ACTIONS=1`: take that snapshot with the ⌘K menu open.
+    var snapshotActions: Bool
+    /// `SEMANTERO_NO_HOTKEY=1`: take no hotkey and no login item.
+    var noHotkey: Bool
+    /// `SEMANTERO_DEBUG=1`: log to stderr (`debugLog`).
+    var debug: Bool
+
+    init(environment env: [String: String]) {
+        vault = env["SEMANTERO_VAULT"]
+        selfTestOutput = env["SEMANTERO_SELFTEST"]
+        showPanelQuery = env["SEMANTERO_SHOW_PANEL"]
+        snapshotPath = env["SEMANTERO_SNAPSHOT"]
+        snapshotActions = env["SEMANTERO_SNAPSHOT_ACTIONS"] != nil
+        noHotkey = env["SEMANTERO_NO_HOTKEY"] != nil
+        debug = env["SEMANTERO_DEBUG"] != nil
+    }
+
+    static let current = LaunchOptions(environment: ProcessInfo.processInfo.environment)
+
+    /// Test and measurement modes run next to the installed app: they take no hotkey and no login item.
+    var isTestMode: Bool { selfTestOutput != nil || snapshotPath != nil || noHotkey }
+}
+
+/// `SEMANTERO_DEBUG=1`: timestamped lines on stderr (reloads, the memory watchdog).
 func debugLog(_ message: @autoclosure () -> String) {
-    guard ProcessInfo.processInfo.environment["SEMANTERO_DEBUG"] != nil else { return }
+    guard LaunchOptions.current.debug else { return }
     fputs("semantero: \(Date().formatted(date: .omitted, time: .standard)) \(message())\n", stderr)
 }
 

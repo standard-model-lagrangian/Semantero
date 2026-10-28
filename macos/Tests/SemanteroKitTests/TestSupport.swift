@@ -62,15 +62,6 @@ func vm(_ id: String, title: String = "", kind: String = "paper", filePath: Stri
              selectUrl: selectUrl, citation: citation, wikilink: wikilink, actions: actions)
 }
 
-/// Thread-safe call recorder.
-final class CallLog: @unchecked Sendable {
-    private let lock = NSLock()
-    private var items: [String] = []
-    func add(_ s: String) { lock.lock(); items.append(s); lock.unlock() }
-    var all: [String] { lock.lock(); defer { lock.unlock() }; return items }
-    func contains(prefix: String) -> Bool { all.contains { $0.hasPrefix(prefix) } }
-}
-
 /// Wakes waiters when the state they check may have changed. Owners call `changed()` after every mutation (never while
 /// holding their own lock); `wait` registers before its first check, so a change between the check and the wait can't
 /// be missed.
@@ -111,6 +102,15 @@ final class ChangeSignal: Sendable {
     }
 }
 
+/// Thread-safe call recorder; `signal` changes with every call.
+final class CallLog: Sendable {
+    private let items = Mutex<[String]>([])
+    let signal = ChangeSignal()
+    func add(_ s: String) { items.withLock { $0.append(s) }; signal.changed() }
+    var all: [String] { items.withLock { $0 } }
+    func contains(prefix: String) -> Bool { all.contains { $0.hasPrefix(prefix) } }
+}
+
 /// Waits for `check` (re-evaluated on every `signal` change) and records a test failure at the caller if it times out.
 @discardableResult
 func expectEventually(_ signal: ChangeSignal, timeout: Duration = .seconds(3), _ what: String = "condition",
@@ -138,9 +138,14 @@ final class FakeSleeper: Sleeper, Sendable {
         let id = UUID()
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
-                state.withLock { $0.waiters[id] = c }
-                signal.changed()
-                if Task.isCancelled { cancel(id) }
+                // A sleep that is already cancelled never counts as pending, not even for a moment: `waitForPending`
+                // must not see it. One cancelled after this point is removed by the handler below.
+                let registered = state.withLock { s -> Bool in
+                    if Task.isCancelled { return false }
+                    s.waiters[id] = c
+                    return true
+                }
+                if registered { signal.changed() } else { c.resume(throwing: CancellationError()) }
             }
         } onCancel: { cancel(id) }
     }
@@ -165,31 +170,6 @@ final class FakeSleeper: Sleeper, Sendable {
     }
 }
 
-final class ManualScheduler: Scheduler, @unchecked Sendable {
-    private struct Job { let due: Double; let work: @Sendable () -> Void; let token: Token }
-    private final class Token: Cancellable, @unchecked Sendable {
-        var cancelled = false
-        func cancel() { cancelled = true }
-    }
-    private let lock = NSLock()
-    private var now = 0.0
-    private var jobs: [Job] = []
-
-    func schedule(after seconds: Double, _ work: @escaping @Sendable () -> Void) -> Cancellable {
-        lock.lock(); defer { lock.unlock() }
-        let t = Token()
-        jobs.append(Job(due: now + seconds, work: work, token: t))
-        return t
-    }
-    func advance(by seconds: Double) {
-        lock.lock(); now += seconds
-        let due = jobs.filter { $0.due <= now }
-        jobs.removeAll { $0.due <= now }
-        lock.unlock()
-        for j in due where !j.token.cancelled { j.work() }
-    }
-}
-
 /// A ranker whose answers the test controls. Everything it records or is told is behind one lock, since the code under
 /// test calls it from other tasks while the test reads and sets it.
 final class FakeRanker: Ranker, Sendable {
@@ -204,7 +184,6 @@ final class FakeRanker: Ranker, Sendable {
         var keywordResults: @Sendable (String, Scope) -> [ResultVM] = { q, _ in [vm("K:\(q)")] }
         var hybridResults: @Sendable (String, Scope) -> [ResultVM] = { q, _ in [vm("H:\(q)")] }
         var recentResults: [ResultVM] = (0..<12).map { vm("R\($0)") }
-        var lookupResults: [String: ResultVM] = [:]
         var notLoaded = false
         var hybridDelay: (@Sendable (String) async -> Void)?
         var loadStatus = RankerStatus()
@@ -227,7 +206,6 @@ final class FakeRanker: Ranker, Sendable {
     var keywordResults: @Sendable (String, Scope) -> [ResultVM] { get { read(\.keywordResults) } set { write(\.keywordResults, newValue) } }
     var hybridResults: @Sendable (String, Scope) -> [ResultVM] { get { read(\.hybridResults) } set { write(\.hybridResults, newValue) } }
     var recentResults: [ResultVM] { get { read(\.recentResults) } set { write(\.recentResults, newValue) } }
-    var lookupResults: [String: ResultVM] { get { read(\.lookupResults) } set { write(\.lookupResults, newValue) } }
     var notLoaded: Bool { get { read(\.notLoaded) } set { write(\.notLoaded, newValue) } }
     var hybridDelay: (@Sendable (String) async -> Void)? { get { read(\.hybridDelay) } set { write(\.hybridDelay, newValue) } }
     /// What `load` and `status` report.
@@ -237,7 +215,6 @@ final class FakeRanker: Ranker, Sendable {
         record { $0.loads += 1 }
         return loadStatus
     }
-    func status() async throws -> RankerStatus { loadStatus }
     func shouldRunSemantic(_ query: String) async -> Bool {
         // rank.ts, without stopwords: 12+ characters, or two words with the last one 3+ characters or a digit
         if semanticText(query).count >= 12 { return true }
@@ -267,10 +244,6 @@ final class FakeRanker: Ranker, Sendable {
         if notLoaded { throw RankerError("no index loaded") }
         return Array(recentResults.prefix(limit))
     }
-    func lookup(ids: [String]) async throws -> [ResultVM] {
-        if notLoaded { throw RankerError("no index loaded") }
-        return ids.compactMap { lookupResults[$0] }
-    }
     func collectGarbage() async { record { $0.garbageCollections += 1 } }
 
     func waitForHybrid(_ q: String, sourceLocation: SourceLocation = #_sourceLocation) async {
@@ -294,15 +267,6 @@ final class UpdateLog: Sendable {
         Issue.record("timed out after \(timeout) waiting for updates; got \(all.map { "\($0.query)/\($0.semantic)" })",
                      sourceLocation: sourceLocation)
     }
-}
-
-func physFootprint() -> UInt64 {
-    var info = task_vm_info_data_t()
-    var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
-    let kr = withUnsafeMutablePointer(to: &info) {
-        $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count) }
-    }
-    return kr == KERN_SUCCESS ? info.phys_footprint : 0
 }
 
 /// An in-memory papers corpus big enough that building it takes a noticeable time (dims 8).

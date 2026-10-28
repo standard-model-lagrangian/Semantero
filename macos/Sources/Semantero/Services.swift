@@ -5,7 +5,7 @@ import SwiftUI
 
 /// A small message near the top of the screen (copy confirmations, "File not found", the Accessibility hint).
 @MainActor
-final class ToastCenter: Toasting, @unchecked Sendable {
+final class ToastCenter: Toasting {
     static let shared = ToastCenter()
     private var window: NSPanel?
     private var hideTask: Task<Void, Never>?
@@ -57,7 +57,7 @@ struct ToastView: View {
 
 /// Quick Look for the selected file: a standard QLPreviewPanel over the search panel.
 @MainActor
-final class QuickLookService: NSObject, QuickLooking, @preconcurrency QLPreviewPanelDataSource, @unchecked Sendable {
+final class QuickLookService: NSObject, QuickLooking, @preconcurrency QLPreviewPanelDataSource {
     static let shared = QuickLookService()
     private var url: URL?
 

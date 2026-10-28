@@ -1,7 +1,6 @@
 #!/bin/bash
-# Builds "Semantero.app" into macos/build/: release build, ranker.js and shortcuts.json copied into Resources,
-# App Intents metadata extracted (for the Spotlight action), then signed with the hardened runtime and the JIT
-# entitlement JavaScriptCore needs.
+# Builds "Semantero.app" into macos/build/: release build, ranker.js and shortcuts.json copied into Resources, then
+# signed with the hardened runtime and the JIT entitlement JavaScriptCore needs. Command Line Tools are enough.
 #
 # Signing identity: $SEMANTERO_SIGN_IDENTITY, else the first "Apple Development" identity in your keychain (a free Apple ID
 # "Personal Team" certificate is enough), else ad hoc "-". A stable identity keeps the Accessibility permission across
@@ -19,11 +18,6 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN_DIR/Semantero" "$APP/Contents/MacOS/Semantero"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp "$ROOT/launcher-core/dist/ranker.js" "$ROOT/launcher-core/shortcuts.json" "$APP/Contents/Resources/"
-
-# App Intents metadata (Spotlight action). Needs the Xcode toolchain; a failure only disables the Spotlight action.
-if ! bash scripts/appintents-metadata.sh "$APP"; then
-  echo "warning: App Intents metadata not generated (needs full Xcode); the app works, only the Spotlight \"Search Everything\" action is missing. See docs/INSTALL.md, \"Do I need Xcode?\"" >&2
-fi
 
 IDENTITY="${SEMANTERO_SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null | awk -F'"' '/Apple Development/ {print $2; exit}')}"
 IDENTITY="${IDENTITY:--}"

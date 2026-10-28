@@ -33,7 +33,7 @@ extension KeyChord {
     }
 }
 
-/// The SF Symbol for a result kind, in the panel and in the Spotlight action's results.
+/// The SF Symbol for a result kind (result rows and the ⌘K menu's header).
 func symbol(for kind: String) -> String {
     switch kind {
     case "paper": return "doc.text"
@@ -92,7 +92,7 @@ struct SearchView: View {
         }
         .onAppear { fieldFocused = true }
         .onChange(of: model.showActionMenu) { _, open in if !open { fieldFocused = true } }
-        .onExitCommand { if model.showActionMenu { model.showActionMenu = false } else { Task { await model.panel.hide() } } }
+        .onExitCommand { if model.showActionMenu { model.showActionMenu = false } else { model.panel.hide() } }
     }
 
     private var header: some View {

@@ -26,14 +26,7 @@ func stat(_ ms: [Double]) -> Stat {
     return Stat(p50: p(50), p95: p(95), max: s.last ?? 0, n: s.count)
 }
 func ms(_ d: Duration) -> Double { Double(d.components.seconds) * 1000 + Double(d.components.attoseconds) / 1e15 }
-func footprintMB() -> Double {
-    var info = task_vm_info_data_t()
-    var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
-    _ = withUnsafeMutablePointer(to: &info) {
-        $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count) }
-    }
-    return Double(info.phys_footprint) / 1_048_576
-}
+func footprintMB() -> Double { Double(physicalFootprint()) / 1_048_576 }
 func line(_ name: String, _ s: Stat) { print(String(format: "  %-34@ p50 %8.2f  p95 %8.2f  max %8.2f ms  (n=%d)", name as NSString, s.p50, s.p95, s.max, s.n)) }
 
 let clock = ContinuousClock()
@@ -47,8 +40,6 @@ if CommandLine.arguments.contains("--notesprobe") { try await notesProbe(papers:
 if let b = arg("--dropprobe") { try await dropProbe(papers: papers, notes: notes, bundle: URL(fileURLWithPath: b)); exit(0) }
 if CommandLine.arguments.contains("--parseprobe") { parseProbe(papers: papers); exit(0) }
 if CommandLine.arguments.contains("--heapprobe") { try await heapProbe(papers: papers, notes: notes, rankerURL: rankerURL); exit(0) }
-if let probe = arg("--jsprobe2") { try jsProbe2(probeURL: URL(fileURLWithPath: probe), papers: papers); exit(0) }
-if CommandLine.arguments.contains("--jsprobe") { await jsProbe(); exit(0) }
 if CommandLine.arguments.contains("--memprobe") { try await memProbe(papers: papers, notes: notes, rankerURL: rankerURL); exit(0) }
 let before = footprintMB()
 

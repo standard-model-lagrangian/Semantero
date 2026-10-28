@@ -1,5 +1,4 @@
 import AppKit
-import CoreSpotlight
 import SemanteroKit
 import SwiftUI
 
@@ -21,15 +20,6 @@ struct SemanteroApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppModel.shared.start()
-    }
-
-    /// A result picked in Spotlight (⌘Space) arrives as a user activity carrying the item's id.
-    func application(_ application: NSApplication, continue userActivity: NSUserActivity,
-                     restorationHandler: @escaping ([any NSUserActivityRestoring]) -> Void) -> Bool {
-        guard userActivity.activityType == CSSearchableItemActionType,
-              let id = userActivity.userInfo?[CSSearchableItemActivityIdentifier] as? String else { return false }
-        AppModel.shared.openSpotlightResult(id: id)
-        return true
     }
 }
 

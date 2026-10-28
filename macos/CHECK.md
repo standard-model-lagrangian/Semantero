@@ -63,28 +63,19 @@ saw, in `docs/DECISIONS_AND_GAPS.md` (or just tell Claude).
 | 4.2 | Add a paper to Zotero (with PDF), wait ~2 minutes | It is findable by its title |
 | 4.3 | `brew services stop ollama`, search a long phrase | Keyword results only; grey dot "semantic off: Ollama not reachable". No error pop-ups |
 | 4.4 | `brew services start ollama`, search again | Green dot; results improve after a short pause |
-| 4.5 | Add a note to `[notes].exclude` in `config.local.toml`, run `.venv/bin/python -m planner notes index` | That note is gone from the panel and from ⌘Space, even by exact title |
+| 4.5 | Add a note to `[notes].exclude` in `config.local.toml`, run `.venv/bin/python -m planner notes index` | That note is gone from the panel, even by exact title |
 
-## 5. Spotlight (3 minutes)
-
-| # | Do | Expect |
-|---|---|---|
-| 5.1 | ⌘Space, type a citekey (e.g. `roth2023tunable`) or a note's title | The item appears (from Semantero); Return opens it in Zotero / Obsidian |
-| 5.2 | ⌘Space, type `Search Everything`, press **Tab**, type a query | Results from your library update as you type; choosing one opens it. **Note exactly what happens**: live results, only suggestions, or nothing |
-| 5.3 | Quit Semantero (menu bar → Quit), then try 5.2 | Probably needs the app running; note what you see |
-| 5.4 | Settings… → untick "Add note titles" → Save; ⌘Space a note title | Notes no longer appear from Semantero (macOS's own file results still do) |
-
-## 6. Settings and startup (3 minutes)
+## 5. Settings and startup (3 minutes)
 
 | # | Do | Expect |
 |---|---|---|
-| 6.1 | Menu bar → Settings… | The window opens in front |
-| 6.2 | Change Results to 5, Save, search | 5 rows, immediately |
-| 6.3 | Log out and back in, then press ⌥Space at once | The app is running and results appear (launch at login) |
-| 6.4 | After an hour of normal use: Activity Monitor → Memory → Semantero | Under ~400 MB (it compacts itself back to ~110–160 MB when it grows past 350 MB while hidden) |
-| 6.5 | VoiceOver on (⌘F5), open the panel, arrow through rows | Each row is read as "Paper/Note, title, …" |
+| 5.1 | Menu bar → Settings… | The window opens in front |
+| 5.2 | Change Results to 5, Save, search | 5 rows, immediately |
+| 5.3 | Log out and back in, then press ⌥Space at once | The app is running and results appear (launch at login) |
+| 5.4 | After an hour of normal use: Activity Monitor → Memory → Semantero | Under ~400 MB (it compacts itself back to ~110–160 MB when it grows past 350 MB while hidden) |
+| 5.5 | VoiceOver on (⌘F5), open the panel, arrow through rows | Each row is read as "Paper/Note, title, …" |
 
 ## What to report back
 
-For each failure: the step number, the app you were in, what you expected and what happened. For 2.3, 2.5, 5.2 and
-5.3, report what happens even if it "works", since the spec has a decision waiting on each.
+For each failure: the step number, the app you were in, what you expected and what happened. For 2.3 and 2.5, report
+what happens even if it "works", since the spec has a decision waiting on each.

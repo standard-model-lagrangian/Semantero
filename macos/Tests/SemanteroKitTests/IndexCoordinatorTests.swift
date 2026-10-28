@@ -3,16 +3,6 @@ import Synchronization
 import Testing
 @testable import SemanteroKit
 
-private final class RecordingSpotlightIndex: SpotlightIndexing, Sendable {
-    private let state = Mutex<(indexed: [SearchableItem], deleted: [String], calls: Int)>(([], [], 0))
-    var indexed: [SearchableItem] { state.withLock { $0.indexed } }
-    var deleted: [String] { state.withLock { $0.deleted } }
-    var calls: Int { state.withLock { $0.calls } }
-    func index(_ items: [SearchableItem]) async throws { state.withLock { $0.indexed += items; $0.calls += 1 } }
-    func delete(ids: [String]) async throws { state.withLock { $0.deleted += ids; $0.calls += 1 } }
-    func deleteDomain(_ domain: String) async throws { state.withLock { $0.calls += 1 } }
-}
-
 private final class EventLog: Sendable {
     private let items = Mutex<[IndexEvent]>([])
     let signal = ChangeSignal()
@@ -37,8 +27,7 @@ struct IndexManifestTests {
         let m = try #require(manifest("""
             {"content_hash": "abc", "built_at": "2026-10-20", "backend": "pplx", "backend_url": "http://127.0.0.1:9", "zotero_storage": "/Z", "dims": 8}
             """))
-        #expect(m == IndexManifest(contentHash: "abc", builtAt: "2026-10-20", backend: "pplx", backendURL: "http://127.0.0.1:9",
-                                   zoteroStorage: "/Z"))
+        #expect(m == IndexManifest(contentHash: "abc", builtAt: "2026-10-20", backend: "pplx", backendURL: "http://127.0.0.1:9"))
         #expect(m.hash == "abc")
     }
 
@@ -57,7 +46,6 @@ struct IndexManifestTests {
         #expect(IndexManifest.read(dir: dir) == nil)
         #expect(IndexManifest.read(dir: Repo.notesDir)?.hash == IndexFiles.manifestHash(of: Repo.notesDir))
         #expect(IndexManifest.read(dir: Repo.papersDir)?.hash == "2026-10-20T04:06")
-        #expect(IndexManifest.read(dir: Repo.papersDir)?.zoteroStorage == "/Users/test/Zotero/storage")
     }
 }
 
@@ -110,7 +98,7 @@ struct EmbeddingChoiceTests {
     }
 }
 
-/// A coordinator over a temp copy of the fixture vault, a fake ranker and a fake Spotlight index; no file watcher.
+/// A coordinator over a temp copy of the fixture vault and a fake ranker; no file watcher.
 @MainActor
 private final class Harness {
     let vault: URL
@@ -118,7 +106,6 @@ private final class Harness {
     let sleeper = FakeSleeper()
     let updates = UpdateLog()
     let events = EventLog()
-    let spotlight = RecordingSpotlightIndex()
     let logged = CallLog()
     let scratch: ScratchDefaults
     let controller: QueryController
@@ -134,14 +121,12 @@ private final class Harness {
         ranker.loadStatus = status
         let updates = self.updates
         controller = QueryController(ranker: ranker, sleeper: FakeSleeper()) { updates.add($0) }
-        let state = vault.appendingPathComponent("spotlight.json")
         let events = self.events, logged = self.logged
         coordinator = IndexCoordinator(
-            ranker: ranker, controller: controller, vault: vault, settings: SettingsStore(defaults: scratch.defaults),
-            donor: SpotlightDonor(index: spotlight, stateURL: state), sleeper: sleeper,
+            ranker: ranker, controller: controller, vault: vault, settings: SettingsStore(defaults: scratch.defaults), sleeper: sleeper,
             watchdog: MemoryWatchdog(thresholdMB: 350, minInterval: 600), watchFiles: false,
             hooks: IndexCoordinator.Hooks(
-                // Weak: a sync or poll still running when the test ends may outlive the harness.
+                // Weak: a poll still running when the test ends may outlive the harness.
                 panelVisible: { [weak self] in self?.panelVisible ?? false }, query: { [weak self] in self?.query ?? "" },
                 footprintMB: { [weak self] in self?.footprint ?? 0 }, now: { [weak self] in self?.now ?? Date() },
                 log: { logged.add($0) }, onEvent: { events.add($0) }))
@@ -162,7 +147,7 @@ private final class Harness {
 @Suite("IndexCoordinator")
 @MainActor
 struct IndexCoordinatorTests {
-    @Test func aReloadConfiguresSearchReRunsTheQueryAndSyncsSpotlight() async throws {
+    @Test func aReloadConfiguresSearchAndReRunsTheQuery() async throws {
         let h = try Harness("reload", status: keywordOnlyStatus)
         defer { h.finish() }
         await h.coordinator.reloadIndexes()
@@ -173,10 +158,6 @@ struct IndexCoordinatorTests {
         await h.updates.wait { $0.last?.query == "stiff gels " }
         #expect(h.ranker.keywordCalls == ["stiff gels "])
         #expect(h.updates.all.last?.semantic == .off("the index has no vectors"))
-        await h.coordinator.spotlightSync?.value
-        #expect(h.spotlight.indexed.count == 11)
-        #expect(h.spotlight.indexed.first { $0.id == "P:KEY0001" }?.contentURL?.path == "/Users/test/Zotero/storage/ATT001/sample.pdf",
-                "paper files resolve against the manifest's zotero_storage")
     }
 
     @Test func aSemanticIndexGetsAnOllamaEmbedderFromItsModel() async throws {
@@ -194,12 +175,8 @@ struct IndexCoordinatorTests {
         defer { h.finish() }
         await h.coordinator.reloadIndexes()
         await h.updates.wait { !$0.isEmpty }
-        await h.coordinator.spotlightSync?.value
-        let calls = h.spotlight.calls
         await h.coordinator.reloadIndexes()
         #expect(h.events.all.count == 1 && h.ranker.loads == 1 && h.ranker.keywordCalls.count == 1)
-        await h.coordinator.spotlightSync?.value
-        #expect(h.spotlight.calls == calls)
         #expect(h.sleeper.requested == [IndexCoordinator.settleDelay], "no second settle GC")
     }
 
@@ -232,21 +209,6 @@ struct IndexCoordinatorTests {
         #expect(message.contains("chunks.json"))
         #expect(h.coordinator.status == semanticStatus)
         #expect(h.ranker.keywordCalls.count == 1, "no re-query for a failed load")
-    }
-
-    @Test func aSpotlightSyncFailureLeavesEverythingAsItWas() async throws {
-        let h = try Harness("spotlight")
-        defer { h.finish() }
-        await h.coordinator.reloadIndexes()
-        await h.coordinator.spotlightSync?.value
-        let calls = h.spotlight.calls, events = h.events.all
-        // A notes list that no longer decodes: syncing now must not read it as "no notes" and delete them.
-        let notes = IndexFiles.corpusDirs(vault: h.vault).notes.appendingPathComponent("papers.json")
-        try Data("{not json".utf8).write(to: notes)
-        await h.coordinator.syncSpotlight()
-        #expect(h.spotlight.calls == calls && h.spotlight.deleted.isEmpty)
-        #expect(h.events.all == events && h.coordinator.status == semanticStatus)
-        #expect(h.logged.contains(prefix: "spotlight sync failed"))
     }
 
     @Test func settingsChangesReconfigureFromTheLoadedIndex() async throws {

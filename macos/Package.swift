@@ -11,7 +11,7 @@ let package = Package(
     targets: [
         // Everything testable: no SwiftUI views.
         .target(name: "SemanteroKit"),
-        // The app: menu bar item, panel, settings, Spotlight.
+        // The app: menu bar item, panel, settings.
         .executableTarget(name: "Semantero", dependencies: ["SemanteroKit"]),
         // Spike S1: measures the ranker options (JavaScriptCore vs Accelerate) on a real or synthetic index.
         .executableTarget(name: "SemanteroBench", dependencies: ["SemanteroKit"]),

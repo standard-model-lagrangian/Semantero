@@ -482,3 +482,18 @@ if it moved) and opens the copy, which replays the log; the fingerprint and `rea
 Also: test W9 wrote three fake "build failed" lines into the real `logs/zotero-watch.log` and then deleted it, so every
 `make check` erased the watcher's log; it now uses a scratch root.
 
+
+### Spotlight and App Intents removed (28 Oct 2026)
+
+The owner doesn't use Spotlight for this: the ⌥Space panel does the job better. Removed from the app: the Core
+Spotlight entries (`SpotlightDonor`, its settings and its sync after each reload), opening a Spotlight result
+(`NSUserActivity`, `NSUserActivityTypes` in Info.plist), and the "Search Everything" Spotlight action (App Intents, the
+metadata step in `bundle.sh`). Spikes S3 and S4 and checks N-M13/N-M14 are therefore moot. With App Intents gone, full
+Xcode is needed only for `swift test` (Swift Testing); building and running the app needs the Command Line Tools alone.
+Entries already donated were cleared on the owner's Mac by hand; the old `spotlight*` preference keys and
+`~/Library/Application Support/Semantero/spotlight.json` are left behind and harmless.
+
+Also found while re-running `make app-selftest`: the self-test inherits the scope saved by the installed app, so after
+leaving the panel on Papers its "recent notes" step saw 0 rows (an empty query in Papers lists nothing). That explains
+the "self-test run without notes" noted under "Trailing space changed the results". It now starts in All and puts the
+saved scope back at the end.

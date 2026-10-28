@@ -10,9 +10,6 @@ struct SettingsView: View {
     @State private var keepAlive = ""
     @State private var limit = 15
     @State private var restore = false
-    @State private var spotPapers = true
-    @State private var spotTitles = true
-    @State private var spotText = false
     @State private var login = true
     @State private var hotkeyError: String?
 
@@ -34,11 +31,6 @@ struct SettingsView: View {
                     Button("Open System Settings") { NSWorkspace.shared.open(ActionExecutor.accessibilitySettingsURL) }
                 }
             }
-            Section("Spotlight") {
-                Toggle("Add papers (title, authors, citekey)", isOn: $spotPapers)
-                Toggle("Add note titles", isOn: $spotTitles)
-                Toggle("Add note text (Spotlight then ranks on it)", isOn: $spotText)
-            }
             Section("General") {
                 Toggle("Launch at login", isOn: $login)
                 Text(model.statusLine).font(.caption).foregroundStyle(.secondary)
@@ -51,8 +43,8 @@ struct SettingsView: View {
 
     private func load() {
         let s = model.settings
-        vault = s.vaultPath; hotkey = s.hotkey; ollama = s.ollamaURL; keepAlive = s.ollamaKeepAlive; limit = s.resultLimit; restore = s.restoreClipboard
-        spotPapers = s.spotlightPapers; spotTitles = s.spotlightNoteTitles; spotText = s.spotlightNoteText; login = s.launchAtLogin
+        vault = s.vaultPath; hotkey = s.hotkey; ollama = s.ollamaURL; keepAlive = s.ollamaKeepAlive; limit = s.resultLimit
+        restore = s.restoreClipboard; login = s.launchAtLogin
     }
 
     private func save() {
@@ -61,8 +53,7 @@ struct SettingsView: View {
         hotkeyError = nil
         do { _ = try HotkeySpec(parsing: hotkey) } catch { hotkeyError = "Not a valid hotkey: use modifiers and a key, like ⌥Space"; return }
         s.vaultPath = (vault as NSString).expandingTildeInPath; s.hotkey = hotkey; s.ollamaURL = ollama; s.ollamaKeepAlive = keepAlive.isEmpty ? "5m" : keepAlive; s.resultLimit = limit
-        s.restoreClipboard = restore; s.spotlightPapers = spotPapers; s.spotlightNoteTitles = spotTitles
-        s.spotlightNoteText = spotText; s.launchAtLogin = login
+        s.restoreClipboard = restore; s.launchAtLogin = login
         model.applySettings(from: before)
     }
 }

@@ -28,19 +28,22 @@ public actor JSCRanker: NotesReloading {
     }
 
     /// One loaded engine: a context on its own virtual machine. After it is installed only this actor uses it.
-    private final class Engine: @unchecked Sendable {
+    final class Engine: @unchecked Sendable {
         let ctx: JSContext
         let api: JSValue
-        let exceptions: ExceptionBox
-        init(ctx: JSContext, api: JSValue, exceptions: ExceptionBox) { self.ctx = ctx; self.api = api; self.exceptions = exceptions }
+        fileprivate let exceptions: ExceptionBox
+        fileprivate init(ctx: JSContext, api: JSValue, exceptions: ExceptionBox) { self.ctx = ctx; self.api = api; self.exceptions = exceptions }
     }
 
     private let source: String
     private let expectedVersion: String
-    private var engine: Engine?
+    /// Internal for the diagnostics in JSCRanker+Diagnostics.swift.
+    private(set) var engine: Engine?
     /// Loads started so far (internal: tests use it to know a load has begun before starting another).
     private(set) var loadGeneration = 0
     private var installedGeneration = 0
+    /// Tests waiting in `loadStarted(after:)`.
+    private var loadWaiters: [(generation: Int, continuation: CheckedContinuation<Void, Never>)] = []
 
     public init(rankerURL: URL, expectedVersion: String = JSCRanker.expectedVersion) throws {
         self.source = try String(contentsOf: rankerURL, encoding: .utf8)
@@ -54,6 +57,7 @@ public actor JSCRanker: NotesReloading {
         // while it builds (a build takes ~0.5 s at today's library size; before, every keystroke waited for it).
         loadGeneration += 1
         let generation = loadGeneration
+        if !loadWaiters.isEmpty { resumeLoadWaiters() }
         let source = self.source, expected = self.expectedVersion
         let built = try await Task.detached(priority: .userInitiated) {
             try Self.build(source: source, expectedVersion: expected, papers: papers, notes: notes)
@@ -97,6 +101,19 @@ public actor JSCRanker: NotesReloading {
 
     /// How long the synchronous collection after the last notes-only reload took (diagnostics).
     public private(set) var lastNotesGC: Duration = .zero
+
+    /// Tests: returns once a load newer than `generation` has started. A load takes its generation as soon as it reaches
+    /// the actor, before its build starts off the actor, so this is the signal that "the load is under way".
+    func loadStarted(after generation: Int) async {
+        guard loadGeneration <= generation else { return }
+        await withCheckedContinuation { loadWaiters.append((generation, $0)) }
+    }
+
+    private func resumeLoadWaiters() {
+        let ready = loadWaiters.filter { $0.generation < loadGeneration }
+        loadWaiters.removeAll { $0.generation < loadGeneration }
+        ready.forEach { $0.continuation.resume() }
+    }
 
     /// Builds an engine on a fresh virtual machine. Touches no actor state, so it can run on any thread.
     /// Everything runs inside an autorelease pool: JSValues come back autoreleased, and on a Swift concurrency thread
@@ -166,30 +183,6 @@ public actor JSCRanker: NotesReloading {
 
     private func callDecode<T: Decodable>(_ type: T.Type, _ method: String, _ args: [Any]) throws -> T {
         try autoreleasepool { try Self.decode(T.self, from: try call(method, args)) }
-    }
-
-    /// Diagnostics: the current engine's JavaScriptCore heap (after an optional synchronous full GC).
-    public func heapStatistics(collectFirst: Bool = false) -> [String: Double] {
-        guard let engine else { return [:] }
-        return autoreleasepool {
-            if collectFirst { JSCPrivate.collectNow(engine.ctx) }
-            return JSCPrivate.heapStatistics(engine.ctx)
-        }
-    }
-
-    public func objectTypeCounts() -> [(String, Int)] {
-        guard let engine else { return [] }
-        return autoreleasepool { JSCPrivate.collectNow(engine.ctx); return JSCPrivate.objectTypeCounts(engine.ctx) }
-    }
-
-    /// Diagnostics: runs JavaScript in the current engine and returns its string result.
-    public func evaluateForDiagnostics(_ script: String) -> String {
-        guard let engine else { return "" }
-        return autoreleasepool { engine.ctx.evaluateScript(script)?.toString() ?? "" }
-    }
-
-    public func lookup(ids: [String]) async throws -> [ResultVM] {
-        try callDecode([ResultVM].self, "lookup", [ids])
     }
 
     // MARK: JavaScriptCore plumbing

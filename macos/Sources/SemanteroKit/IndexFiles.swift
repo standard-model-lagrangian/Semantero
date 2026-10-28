@@ -18,25 +18,20 @@ public struct IndexManifest: Decodable, Sendable, Equatable {
     /// "pplx" for an index built by the pplx-embed-v2-late profile; absent for Ollama.
     public var backend: String?
     public var backendURL: String?
-    /// Zotero's storage folder, against which relative paper file paths resolve.
-    public var zoteroStorage: String?
 
-    public init(contentHash: String? = nil, builtAt: String? = nil, backend: String? = nil, backendURL: String? = nil,
-                zoteroStorage: String? = nil) {
+    public init(contentHash: String? = nil, builtAt: String? = nil, backend: String? = nil, backendURL: String? = nil) {
         self.contentHash = contentHash; self.builtAt = builtAt; self.backend = backend; self.backendURL = backendURL
-        self.zoteroStorage = zoteroStorage
     }
 
     private enum CodingKeys: String, CodingKey {
-        case contentHash = "content_hash", builtAt = "built_at", backend, backendURL = "backend_url",
-             zoteroStorage = "zotero_storage"
+        case contentHash = "content_hash", builtAt = "built_at", backend, backendURL = "backend_url"
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         func string(_ key: CodingKeys) -> String? { (try? c.decodeIfPresent(String.self, forKey: key)) ?? nil }
         self.init(contentHash: string(.contentHash), builtAt: string(.builtAt), backend: string(.backend),
-                  backendURL: string(.backendURL), zoteroStorage: string(.zoteroStorage))
+                  backendURL: string(.backendURL))
     }
 
     /// Nil when `data` is not a JSON object.

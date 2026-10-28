@@ -26,10 +26,10 @@ private final class Fakes: @unchecked Sendable {
     }
     struct Sys: SystemState { let f: Fakes; var accessibilityTrusted: Bool { f.accessibility }; var secureInputEnabled: Bool { f.secureInput } }
     struct Files: FileChecking { let f: Fakes; func exists(_ p: String) -> Bool { f.existing.contains(p) } }
-    struct Panel: PanelControl { let f: Fakes; func hide() async { f.log.add("hide") } }
+    struct Panel: PanelControl { let f: Fakes; func hide() { f.log.add("hide") } }
     struct Toast: Toasting { let f: Fakes; func show(_ m: String, action: ToastAction?) { f.log.add("toast:\(m)"); f.toasts.append((m, action)) } }
     struct QL: QuickLooking { let f: Fakes; func preview(_ url: URL) { f.log.add("quicklook:\(url.path)") } }
-    final class RecordingSleeper: Sleeper, @unchecked Sendable {
+    final class RecordingSleeper: Sleeper, Sendable {
         let f: Fakes
         init(_ f: Fakes) { self.f = f }
         func sleep(seconds: Double) async throws { f.log.add("sleep:\(Int((seconds * 1000).rounded()))") }

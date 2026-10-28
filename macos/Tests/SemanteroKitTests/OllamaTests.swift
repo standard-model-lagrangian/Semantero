@@ -1,18 +1,31 @@
 import Foundation
+import Synchronization
 import Testing
 @testable import SemanteroKit
 
-final class FakeTransport: HTTPTransport, @unchecked Sendable {
-    private let lock = NSLock()
-    private var _requests: [(url: URL, body: [String: Any], timeout: TimeInterval)] = []
-    var response: @Sendable ([String: Any]) throws -> (Data, Int) = { _ in (Data("{\"embeddings\":[[1,0,0,0,0,0,0,0]]}".utf8), 200) }
-    var requests: [(url: URL, body: [String: Any], timeout: TimeInterval)] { lock.withLock { _requests } }
+/// Records requests (as sent, decoded on reading) and answers with `response`.
+final class FakeTransport: HTTPTransport, Sendable {
+    typealias Responder = @Sendable ([String: Any]) throws -> (Data, Int)
+    private struct Sent { let url: URL; let json: Data; let timeout: TimeInterval }
+    private let sent = Mutex<[Sent]>([])
+    private let responder = Mutex<Responder>({ _ in (Data("{\"embeddings\":[[1,0,0,0,0,0,0,0]]}".utf8), 200) })
+
+    var response: Responder {
+        get { responder.withLock { $0 } }
+        set { responder.withLock { $0 = newValue } }
+    }
+    var requests: [(url: URL, body: [String: Any], timeout: TimeInterval)] {
+        sent.withLock { $0 }.map { ($0.url, Self.body($0.json), $0.timeout) }
+    }
 
     func post(_ url: URL, json: Data, timeout: TimeInterval) async throws -> (data: Data, status: Int) {
-        let body = (try? JSONSerialization.jsonObject(with: json) as? [String: Any]) ?? [:]
-        lock.withLock { _requests.append((url, body, timeout)) }
-        let (d, s) = try response(body)
+        sent.withLock { $0.append(Sent(url: url, json: json, timeout: timeout)) }
+        let (d, s) = try response(Self.body(json))
         return (d, s)
+    }
+
+    private static func body(_ json: Data) -> [String: Any] {
+        (try? JSONSerialization.jsonObject(with: json) as? [String: Any]) ?? [:]
     }
 }
 

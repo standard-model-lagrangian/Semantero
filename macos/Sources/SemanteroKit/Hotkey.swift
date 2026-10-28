@@ -70,23 +70,25 @@ public struct HotkeySpec: Equatable, Sendable, CustomStringConvertible {
     }
 }
 
-/// Registers one global hotkey (Carbon `RegisterEventHotKey`: needs no permission).
-public final class HotkeyRegistrar: @unchecked Sendable {
+/// Registers one global hotkey (Carbon `RegisterEventHotKey`: needs no permission). Carbon delivers the press on the
+/// main thread, so the registrar and its handler live on the main actor.
+@MainActor
+public final class HotkeyRegistrar {
     private var hotKeyRef: EventHotKeyRef?
     private var handlerRef: EventHandlerRef?
-    private var onPress: (@Sendable () -> Void)?
+    private var onPress: (@MainActor () -> Void)?
 
     public init() {}
-    deinit { unregister() }
+    isolated deinit { unregister() }
 
     @discardableResult
-    public func register(_ spec: HotkeySpec, onPress: @escaping @Sendable () -> Void) -> Bool {
+    public func register(_ spec: HotkeySpec, onPress: @escaping @MainActor () -> Void) -> Bool {
         unregister()
         self.onPress = onPress
         var type = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
         let status = InstallEventHandler(GetApplicationEventTarget(), { _, _, userData in
             guard let userData else { return noErr }
-            Unmanaged<HotkeyRegistrar>.fromOpaque(userData).takeUnretainedValue().onPress?()
+            MainActor.assumeIsolated { Unmanaged<HotkeyRegistrar>.fromOpaque(userData).takeUnretainedValue().onPress?() }
             return noErr
         }, 1, &type, Unmanaged.passUnretained(self).toOpaque(), &handlerRef)
         guard status == noErr else { return false }

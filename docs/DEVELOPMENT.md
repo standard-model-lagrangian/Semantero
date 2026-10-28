@@ -15,9 +15,8 @@ override anything here. To install, see [INSTALL.md](INSTALL.md).
             zotwatch (launchd) ───┘                                    │        ▲ runs inside
                                                                        │   Semantero.app  macos/  (Swift, JavaScriptCore)
  vault/**/*.md ─► mdtext ─► notesindex ─► <vault>/.planner/notes/ ─────┘        │
-                                  ▲    (same format, one entry per note)        ├─► panel (⌥Space), actions, clipboard
-  notes job (launchd, 5 min) ─────┘                                             ├─► Core Spotlight entries
-                                                                                └─► App Intents ("Search Everything")
+                                  ▲    (same format, one entry per note)        └─► panel (⌥Space), actions, clipboard
+  notes job (launchd, 5 min) ─────┘
  embed.py ─► the live profile's embedder ◄── query embedding from the plugin and the app
              pplxd (127.0.0.1:11435, pplx-embed-v2-late, the default) or Ollama (127.0.0.1:11434, qwen3-embedding:0.6b)
 ```
@@ -68,7 +67,7 @@ make check         # ruff, tsc ×2, all four test suites, committed bundles up t
 make ci            # the same without the Swift suite: what GitHub Actions runs
 ```
 
-`make check` needs full Xcode for `test-swift` (Swift Testing) and for the App Intents metadata in `make app`. Everything else, including building and running the app itself, works with the Command Line Tools. Keep it that way: users of the Global setup are told Xcode is optional ([INSTALL.md](INSTALL.md#do-i-need-xcode)).
+`make check` needs full Xcode for `test-swift` (Swift Testing). Everything else, including building and running the app itself, works with the Command Line Tools. Keep it that way: users of the Global setup are told Xcode is optional ([INSTALL.md](INSTALL.md#do-i-need-xcode)).
 
 **CI** ([.github/workflows/ci.yml](../.github/workflows/ci.yml)) runs `make ci` on Ubuntu with Python 3.11 (the oldest supported) and Node 26 on every pull request and every push to `main`. The Swift suite and `make app-selftest` stay local: they need macOS 26 and, for the self-test, a screen. The PDF extraction tests in `tests/test_search_index.py` need `pdftotext`; without poppler they skip, except on CI, which installs it.
 
@@ -81,7 +80,7 @@ make ci            # the same without the Swift suite: what GitHub Actions runs
 | `cd launcher-core && npm run build` | Rebuild `dist/ranker.js`. The build fails if Node built-ins, `console.` or `TextDecoder` slip in: JavaScriptCore's bare context has none |
 | `make fixtures` | Rebuild `launcher-core/test/fixtures/notes_small/` from `tests/fixtures/notes/vault_small/` with the fake embedder |
 | `make record-conformance` | Re-record `launcher-core/conformance/cases.json` from the TypeScript implementation (a deliberate, reviewed commit) |
-| `make app` / `make install-app` | Build (and install) `Semantero.app`: release build, `ranker.js` + `shortcuts.json` copied in, App Intents metadata, hardened runtime + JIT entitlement |
+| `make app` / `make install-app` | Build (and install) `Semantero.app`: release build, `ranker.js` + `shortcuts.json` copied in, hardened runtime + JIT entitlement |
 | `make app-selftest` | Runs the built app with `SEMANTERO_SELFTEST`: shows the real panel, sends synthetic key events to it, records actions instead of running them, prints pass/fail |
 | `make bench-app` | Spike S1 benchmark on your vault: load, keystroke, hybrid (JavaScriptCore vs Accelerate), memory; three signing modes |
 | `node launcher-core/scripts/eval.ts --vault <dir> --scope compare` | Recall@1/@5 and MRR, papers vs all; `--keyword-only`, `--per-corpus-instruction` |
@@ -128,14 +127,14 @@ and must take a non-blocking lock. Health problems surface through `planner doct
 
 ## Testing strategy
 
-- **Test first**, always (AGENTS.md). Spec documents number their tests (Py 1–36, R1–R32, S1–S42 in
+- **Test first**, always (AGENTS.md). Spec documents number their tests (Py 1–36, R1–R32, S1–S32 in
   [LAUNCHER_SPEC.md](LAUNCHER_SPEC.md)); keep new tests named after the behaviour they pin.
 - **No real data in tests.** Temp dirs, fixtures (`tests/fixtures/`), and a deterministic fake embedder (md5 of each
   word → a dimension, normalised). The same fake exists in Python and TypeScript (`launcher-core/test/helpers.ts`) so
   fixtures and query vectors agree. `fixtures/search/trunc.json` pins truncate-and-normalise across Python, TS and Swift.
 - **Conformance is the contract** between `launcher-core` and any ranker in the app: 84 cases, compared field by field.
 - **Fakes for the OS** in Swift: clipboard, key events, workspace, Accessibility and secure-input state, file existence,
-  Spotlight index, HTTP, sleep and scheduler. No test touches the real clipboard, keyboard or Spotlight.
+  HTTP and sleep (`FakeSleeper`). No test touches the real clipboard or keyboard.
 - **What only a person can check** is in [`macos/CHECK.md`](../macos/CHECK.md) (launcher) and [MANUAL_CHECKS.md](MANUAL_CHECKS.md)
   (plugin). `make app-selftest` covers the launcher's keyboard path in the real app.
 - **Gated tests**: `SEMANTERO_PERF=1` (performance budgets), `SEMANTERO_LIVE=1` (real `pdftotext` and Ollama).
@@ -144,19 +143,20 @@ and must take a non-blocking lock. Health problems surface through `planner doct
 
 | Aid | What |
 |---|---|
-| `SEMANTERO_DEBUG=1 "/Applications/Semantero.app/Contents/MacOS/Semantero"` | Logs reload outcomes, compactions, the memory watchdog and Spotlight syncs to stderr |
+| `SEMANTERO_DEBUG=1 "/Applications/Semantero.app/Contents/MacOS/Semantero"` | Logs reload outcomes, compactions and the memory watchdog to stderr |
 | `SEMANTERO_SHOW_PANEL="<query>"` | Opens the panel with that query once the index is loaded |
 | `SEMANTERO_SNAPSHOT=<png>` (+ `SEMANTERO_SNAPSHOT_ACTIONS=1`) | With `SEMANTERO_SHOW_PANEL`: saves the panel (optionally with ⌘K open) to a PNG via `cacheDisplay`, then quits. Needs no screen-recording permission. Glass and SF Symbols may not render in the capture |
 | `SEMANTERO_SELFTEST=<json>` | See `make app-selftest`. Test modes take no hotkey or login item, so they run beside the installed app |
-| `semantero-bench` (`swift run -c release semantero-bench --vault …`; sign it with the JIT entitlement first, see `macos/scripts/bench.sh`) | default: load/keyword/hybrid timings for options A and B. `--heapprobe` (live heap, objects by type, footprint over idle time), `--notesprobe` (notes-only reload cost), `--parseprobe` (JSON.parse/string costs), `--dropprobe <debug bundle>` (heap owned by each engine part), `--memprobe`, `--jsprobe`, `--jsprobe2 <bundle>` |
+| `semantero-bench` (`swift run -c release semantero-bench --vault …`; sign it with the JIT entitlement first, see `macos/scripts/bench.sh`) | default: load/keyword/hybrid timings for options A and B. `--heapprobe` (live heap, objects by type, footprint over idle time), `--notesprobe` (notes-only reload cost), `--parseprobe` (JSON.parse/string costs), `--dropprobe <debug bundle>` (heap owned by each engine part), `--memprobe` (footprint after each load stage). The `JSCRanker` calls these use are in `JSCRanker+Diagnostics.swift` |
 | `SEMANTERO_VAULT=<dir> SEMANTERO_NO_HOTKEY=1` | Run a build of the app against another vault (e.g. a copy of the indexes) without touching the installed app's hotkey or settings |
 | `footprint <pid>` / `vmmap -summary <pid>` | The real memory figure (`ps` RSS counts reclaimable pages) |
 | `planner notes stats`, `planner search stats`, `planner doctor` | Index contents, age, health |
 
 ## Gotchas (each one cost time)
 
+- **Every delay in SemanteroKit goes through a `Sleeper`** (query debounce, settle GC, safety poll, paste settle, the file watcher's `Debouncer`), so tests drive time with `FakeSleeper`. The app reads its environment variables only in `LaunchOptions` (`Debug.swift`).
 - **Launcher index orchestration lives in `IndexCoordinator` (SemanteroKit), not `AppModel`.** It takes the ranker, a `Sleeper` for the poll and the settle delay, and app hooks (panel visibility, query on screen, footprint, clock, log, load events), so it is tested with fakes. `manifest.json` is read only through `IndexManifest`.
-- **Swift tests never poll or sleep.** Wait with `UpdateLog.wait`, `FakeSleeper.waitForPending`, `FakeRanker.waitFor…` or `expectEventually`, which fail the test on timeout; check "no further update" with `await controller.settle()` (it waits for every running search, so release or cancel a `FakeSleeper` first).
+- **Swift tests never poll or sleep.** Wait with `UpdateLog.wait`, `FakeSleeper.waitForPending`, `FakeRanker.waitFor…`, `JSCRanker.loadStarted(after:)` or `expectEventually` (on any `ChangeSignal`, such as `CallLog.signal`), which fail the test on timeout; check "no further update" with `await controller.settle()` (it waits for every running search, so release or cancel a `FakeSleeper` first).
 
 - **JavaScriptCore needs the JIT entitlement** (`com.apple.security.cs.allow-jit`). Without it, it runs interpreted:
   the semantic pass is 30× slower and loading 3× slower. `bundle.sh` always signs with it, so `swift run` builds are slow.
@@ -176,8 +176,6 @@ and must take a non-blocking lock. Health problems surface through `planner doct
 - **Nested glass is transparent.** Anything drawn over the panel (the ⌘K menu) is opaque and drawn outside the
   `GlassEffectContainer`.
 - **Ad hoc signing resets permissions** (Documents, Accessibility) at every reinstall. Use a development identity.
-- **App Intents metadata** isn't produced by `swift build`. `macos/scripts/appintents-metadata.sh` gets the
-  `.swiftconstvalues` from `xcodebuild` and runs Xcode's `appintentsmetadataprocessor`.
 - **launchd has a minimal PATH.** `bin/planner-run.sh` adds `/opt/homebrew/bin`; anything launchd runs must go through it.
 - **`os.walk` swallows permission errors.** `notesindex.scan` passes an `onerror` that raises, so an unreadable vault
   can't empty the index. Keep that pattern for any new vault scan.

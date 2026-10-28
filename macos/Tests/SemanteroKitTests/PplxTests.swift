@@ -88,11 +88,4 @@ struct PplxTests {
         await log.wait { $0.last?.semantic == .off("pplx service not reachable") }
         #expect(log.all.last?.results.map(\.id) == ["K:stiff gels "])
     }
-
-    @Test func spotlightUsesTheRowScorer() async {
-        let ranker = FakeRanker()
-        let svc = IntentSearchService(ranker: ranker, embedder: nil, rowScorer: { _, _ in RowScores(papers: Data([0, 0, 0, 0]), notes: nil) },
-                                      sleeper: SystemSleeper(), semanticWait: 2)
-        #expect(await svc.matching("stiff gels in organoids").map(\.id) == ["S:stiff gels in organoids"])
-    }
 }

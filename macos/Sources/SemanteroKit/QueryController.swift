@@ -181,9 +181,9 @@ public struct SelectionModel: Sendable, Equatable {
     public var selectedIndex: Int? { selectedID.flatMap { id in results.firstIndex { $0.id == id } } }
     public var selected: ResultVM? { selectedIndex.map { results[$0] } }
 
-    public mutating func apply(_ new: [ResultVM], resetSelection: Bool = false) {
+    public mutating func apply(_ new: [ResultVM]) {
         results = new
-        if !resetSelection, userMoved, let id = selectedID, new.contains(where: { $0.id == id }) { return }
+        if userMoved, let id = selectedID, new.contains(where: { $0.id == id }) { return }
         selectedID = new.first?.id
     }
 

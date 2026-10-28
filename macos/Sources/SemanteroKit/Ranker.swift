@@ -5,16 +5,14 @@ import Foundation
 public protocol Ranker: Sendable {
     /// Builds both corpora and swaps the engine in only on success; a failure keeps the previous engine.
     func load(papers: CorpusFiles?, notes: CorpusFiles?) async throws -> RankerStatus
-    func status() async throws -> RankerStatus
     func shouldRunSemantic(_ query: String) async -> Bool
     func keyword(_ query: String, scope: Scope, limit: Int) async throws -> [ResultVM]
     func hybrid(_ query: String, queryVector: [Float], scope: Scope, limit: Int) async throws -> [ResultVM]
     /// Hybrid from Float32 row scores computed elsewhere (Accelerate, or the pplx service for a late-interaction index).
     func hybridFromRowScores(_ query: String, papersScores: Data?, notesScores: Data?, scope: Scope,
                              limit: Int) async throws -> [ResultVM]
+    /// Recent notes (the conformance cases' "recent" mode; the panel's empty query goes through `keyword`).
     func recent(limit: Int) async throws -> [ResultVM]
-    /// Results for remembered ids (Spotlight), in the order asked; unknown ids are skipped.
-    func lookup(ids: [String]) async throws -> [ResultVM]
     /// Reclaim what the last load left behind (see JSCRanker.collectGarbage).
     func collectGarbage() async
 }

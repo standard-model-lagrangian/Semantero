@@ -2,13 +2,7 @@ import Foundation
 import Testing
 @testable import SemanteroKit
 
-/// Returns once a load newer than `generation` has started on `ranker`. A load takes its generation as soon as it reaches
-/// the actor, before its build starts, so this is the signal that "the first load is under way".
-private func waitForLoad(after generation: Int, on ranker: JSCRanker) async {
-    while await ranker.loadGeneration <= generation { await Task.yield() }
-}
-
-@Suite("Reloading without blocking searches")
+@Suite("Reloading without blocking searches", .timeLimit(.minutes(1)))
 struct ReloadTests {
     @Test func searchesKeepAnsweringFromTheOldEngineWhileANewOneBuilds() async throws {
         let ranker = try await loadedJSCRanker()
@@ -17,7 +11,7 @@ struct ReloadTests {
         let start = clock.now
         let generation = await ranker.loadGeneration
         async let loading = ranker.load(papers: big, notes: nil)
-        await waitForLoad(after: generation, on: ranker)   // the build is under way, off the actor
+        await ranker.loadStarted(after: generation)   // the build is under way, off the actor
         let t = clock.now
         let during = try await ranker.keyword("matrigel", scope: .all, limit: 5)
         let keywordTook = clock.now - t
@@ -35,7 +29,7 @@ struct ReloadTests {
         let slow = syntheticCorpus(papers: 300, chunksPerPaper: 20, tag: "slow")
         let fast = syntheticCorpus(papers: 3, chunksPerPaper: 1, tag: "fast")
         async let first: RankerStatus? = try? ranker.load(papers: slow, notes: nil)
-        await waitForLoad(after: 0, on: ranker)   // `first` really is the older load
+        await ranker.loadStarted(after: 0)   // `first` really is the older load
         let second = try await ranker.load(papers: fast, notes: nil)
         let firstResult = await first
         #expect(second.papers?.count == 3)

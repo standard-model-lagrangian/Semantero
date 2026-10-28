@@ -38,7 +38,7 @@ public enum IndexEvent: Sendable, Equatable {
 
 /// Keeps the ranker's engine in step with the vault's index and everything that depends on it: the reloader and file
 /// watcher, a 60 s safety poll, the GC that settles a reload, the memory watchdog, the embedding backend (pplx service,
-/// Ollama, or none), the query re-run after a reload, and the Spotlight donation.
+/// Ollama, or none), and the query re-run after a reload.
 @MainActor
 public final class IndexCoordinator {
     /// What the coordinator needs from the app. Each is read when it is needed, never cached.
@@ -66,18 +66,15 @@ public final class IndexCoordinator {
     /// The watcher misses an index swapped in while the app was not running or the folder did not exist yet.
     public static let pollInterval: Double = 60
 
-    public let ranker: Ranker
+    private let ranker: Ranker
     public private(set) var vault: URL
     /// The last index loaded from `vault`; nil until one has loaded.
     public private(set) var status: RankerStatus?
     /// How queries are embedded now; nil until an index has loaded.
     public private(set) var embedding: EmbeddingChoice?
-    /// The Spotlight action's search, configured like the panel's.
-    public private(set) var intentService: IntentSearchService
 
     private let controller: QueryController
     private let settings: SettingsStore
-    private let donor: SpotlightDonor?
     private let sleeper: Sleeper
     private var watchdog: MemoryWatchdog
     private let watchFiles: Bool
@@ -87,16 +84,14 @@ public final class IndexCoordinator {
     private var pollTask: Task<Void, Never>?
     private(set) var loadTask: Task<Void, Never>?
     private(set) var settleTask: Task<Void, Never>?
-    private(set) var spotlightSync: Task<Void, Never>?
 
     /// `watchFiles`: watch `<vault>/.planner` with FSEvents (tests turn it off and reload by hand).
-    public init(ranker: Ranker, controller: QueryController, vault: URL, settings: SettingsStore, donor: SpotlightDonor?,
+    public init(ranker: Ranker, controller: QueryController, vault: URL, settings: SettingsStore,
                 sleeper: Sleeper = SystemSleeper(), watchdog: MemoryWatchdog = MemoryWatchdog(), watchFiles: Bool = true,
                 hooks: Hooks = Hooks()) {
-        self.ranker = ranker; self.controller = controller; self.vault = vault; self.settings = settings; self.donor = donor
+        self.ranker = ranker; self.controller = controller; self.vault = vault; self.settings = settings
         self.sleeper = sleeper; self.watchdog = watchdog; self.watchFiles = watchFiles; self.hooks = hooks
         reloader = IndexReloader(vault: vault, ranker: ranker)
-        intentService = IntentSearchService(ranker: ranker, embedder: nil)
     }
 
     /// The app's ranker (docs/DECISIONS_AND_GAPS.md, spike S1 and "Memory pass"): JavaScriptCore for keyword search,
@@ -122,11 +117,11 @@ public final class IndexCoordinator {
 
     public func stop() {
         watcher?.stop()
-        for task in [pollTask, loadTask, settleTask, spotlightSync] { task?.cancel() }
+        for task in [pollTask, loadTask, settleTask] { task?.cancel() }
     }
 
-    /// (Re)starts everything that depends on the vault path: reloader, file watcher, first load (which also syncs
-    /// Spotlight). The engine answers from the old index until the new one has loaded.
+    /// (Re)starts everything that depends on the vault path: reloader, file watcher, first load. The engine answers
+    /// from the old index until the new one has loaded.
     public func openVault(_ url: URL) {
         vault = url
         status = nil
@@ -141,8 +136,8 @@ public final class IndexCoordinator {
         loadTask = Task { [weak self] in await self?.reloadIndexes() }
     }
 
-    /// Loads the index if it changed; after a load: tell the app, schedule the settle GC, configure embedding, rank the
-    /// query on screen again, and sync Spotlight (in the background: `spotlightSync`).
+    /// Loads the index if it changed; after a load: tell the app, schedule the settle GC, configure embedding, and rank
+    /// the query on screen again.
     public func reloadIndexes() async {
         let outcome = await reloader.check()
         hooks.log("reload outcome \(String(describing: outcome).prefix(60))")
@@ -153,7 +148,6 @@ public final class IndexCoordinator {
             scheduleSettleGC()
             await configureEmbedding(from: s)
             await controller.setQuery(hooks.query(), force: true)
-            spotlightSync = Task { [weak self] in await self?.syncSpotlight() }
         case .failed(let message):
             hooks.onEvent(.failed(message))
         case .unchanged, .deferred:
@@ -179,15 +173,12 @@ public final class IndexCoordinator {
             let rowScorer: @Sendable (String, Scope) async throws -> RowScores = { try await pplx.rowScores($0, scope: $1) }
             await controller.configure(rowScorer: rowScorer, warmUp: { await pplx.warmUp() },
                                        unreachable: "pplx service not reachable")
-            intentService = IntentSearchService(ranker: ranker, embedder: nil, rowScorer: rowScorer)
         case .ollama(let url, let model, let dims, let instruction, let keepAlive):
             let client = OllamaClient(baseURL: url, model: model, instruction: instruction, dims: dims, keepAlive: keepAlive)
             let embedder: @Sendable (String) async throws -> [Float] = { try await client.embedQuery($0) }
             await controller.configure(embedder: embedder, warmUp: { await client.warmUp() })
-            intentService = IntentSearchService(ranker: ranker, embedder: embedder)
         case .off(let reason):
             await controller.configure(embedder: nil, offReason: reason)
-            intentService = IntentSearchService(ranker: ranker, embedder: nil)
         }
     }
 
@@ -208,24 +199,5 @@ public final class IndexCoordinator {
         watchdog.didCompact(at: hooks.now())
         _ = await reloader.forceReload()
         hooks.log("watchdog reload at \(mb) MB")
-    }
-
-    /// Donates the loaded index to Spotlight as the settings ask. A failure changes nothing (the donor checks every file
-    /// before deleting anything) and is retried on the next reload.
-    public func syncSpotlight() async {
-        guard let donor else { return }
-        hooks.log("spotlight sync")
-        let dirs = IndexFiles.corpusDirs(vault: vault)
-        let read = { (dir: URL, name: String) in try? Data(contentsOf: dir.appendingPathComponent(name)) }
-        let spotlight = SpotlightSettings(papers: settings.spotlightPapers, noteTitles: settings.spotlightNoteTitles,
-                                          noteText: settings.spotlightNoteText)
-        do {
-            _ = try await donor.sync(
-                papers: read(dirs.papers, "papers.json"), notes: read(dirs.notes, "papers.json"),
-                chunks: spotlight.noteText ? read(dirs.notes, "chunks.json") : nil, settings: spotlight,
-                zoteroStorage: IndexManifest.read(dir: dirs.papers)?.zoteroStorage, vault: vault.path)
-        } catch {
-            hooks.log("spotlight sync failed, nothing changed: \(error)")
-        }
     }
 }

@@ -21,13 +21,17 @@ public struct MemoryWatchdog: Sendable {
 
     public mutating func didCompact(at date: Date) { lastCompaction = date }
 
-    /// The process's physical footprint (what Activity Monitor shows as Memory), in MB.
-    public static func footprintMB() -> Int {
-        var info = task_vm_info_data_t()
-        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
-        let kr = withUnsafeMutablePointer(to: &info) {
-            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count) }
-        }
-        return kr == KERN_SUCCESS ? Int(info.phys_footprint / 1_048_576) : 0
+    /// The process's physical footprint, in MB.
+    public static func footprintMB() -> Int { Int(physicalFootprint() / 1_048_576) }
+}
+
+/// The process's physical footprint in bytes: what Activity Monitor shows as Memory (`ps` RSS also counts reclaimable
+/// pages). 0 if it cannot be read.
+public func physicalFootprint() -> UInt64 {
+    var info = task_vm_info_data_t()
+    var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
+    let kr = withUnsafeMutablePointer(to: &info) {
+        $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count) }
     }
+    return kr == KERN_SUCCESS ? info.phys_footprint : 0
 }

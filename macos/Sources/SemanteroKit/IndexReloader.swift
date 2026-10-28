@@ -15,7 +15,6 @@ public actor IndexReloader {
     private let vault: URL
     private let ranker: Ranker
     private var loadedHashes: [String?]?
-    public private(set) var status: RankerStatus?
     public private(set) var reloadCount = 0
     /// How many of those reloads replaced only the notes corpus.
     public private(set) var partialReloadCount = 0
@@ -62,7 +61,6 @@ public actor IndexReloader {
                     if (notes?.contentHash).flatMap({ $0.isEmpty ? nil : $0 }) != hashes[1] { return .deferred }
                     let s = try await partial.reloadNotes(notes)
                     self.loadedHashes = hashes
-                    status = s
                     reloadCount += 1
                     partialReloadCount += 1
                     return .reloaded(s)
@@ -79,7 +77,6 @@ public actor IndexReloader {
             if readHashes.map({ $0?.isEmpty == false ? $0 : nil }) != hashes { return .deferred }
             let s = try await ranker.load(papers: papers, notes: notes)
             loadedHashes = hashes
-            status = s
             reloadCount += 1
             return .reloaded(s)
         } catch {
@@ -112,10 +109,10 @@ public final class IndexWatcher: @unchecked Sendable {
     private let debouncer: Debouncer
     private let queue = DispatchQueue(label: "semantero.indexwatcher")
 
-    public init(directory: URL, scheduler: Scheduler = DispatchScheduler(), debounce: Double = 0.5,
+    public init(directory: URL, sleeper: Sleeper = SystemSleeper(), debounce: Double = 0.5,
                 onChange: @escaping @Sendable () -> Void) {
         self.directory = directory
-        self.debouncer = Debouncer(scheduler: scheduler, delay: debounce, action: onChange)
+        self.debouncer = Debouncer(sleeper: sleeper, delay: debounce, action: onChange)
     }
 
     deinit { stop() }

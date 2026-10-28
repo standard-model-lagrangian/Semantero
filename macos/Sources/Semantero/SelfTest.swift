@@ -26,6 +26,10 @@ enum SelfTest {
         let down = String(UnicodeScalar(NSDownArrowFunctionKey)!), up = String(UnicodeScalar(NSUpArrowFunctionKey)!)
 
         check("index loaded", await waitUntil(timeout: .seconds(15)) { model.status != nil }, model.statusLine)
+        // The scope is a saved setting shared with the installed app: start from All (an empty query in Papers lists
+        // nothing) and put the user's choice back at the end.
+        let savedScope = model.scope
+        model.scope = .all
         model.recordedActions = []
         model.panel.show()
         check("panel visible", model.panel.isVisible)
@@ -85,6 +89,7 @@ enum SelfTest {
 
         await key(53, "\u{1b}")
         check("Esc hides the panel", !model.panel.isVisible)
+        model.scope = savedScope
 
         let report = ["passed": steps.allSatisfy(\.ok) ? "yes" : "no"]
         let enc = JSONEncoder(); enc.outputFormatting = [.prettyPrinted, .sortedKeys]

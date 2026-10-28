@@ -215,7 +215,6 @@ struct QueryControllerTests {
         #expect(s.selectedID == "a")
         s.move(-5); #expect(s.selectedID == "a")
         s.move(9); #expect(s.selectedID == "b")
-        s.apply([vm("b")], resetSelection: true); #expect(s.selectedID == "b")
         s.apply([]); #expect(s.selectedID == nil && s.selected == nil)
     }
 

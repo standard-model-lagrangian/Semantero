@@ -1,6 +1,6 @@
 # Launcher search: spec (test-driven)
 
-One hotkey, from any app, opens a floating glass panel that searches your whole Zotero library **and** every Obsidian note at once. From a result you can open it where it lives (Zotero at the page, Obsidian at the heading), drop the file itself into the app you were just in (Mail, Teams, Claude, ChatGPT), paste the passage with its citation, or drag the file out. The same search is available from Spotlight.
+One hotkey, from any app, opens a floating glass panel that searches your whole Zotero library **and** every Obsidian note at once. From a result you can open it where it lives (Zotero at the page, Obsidian at the heading), drop the file itself into the app you were just in (Mail, Teams, Claude, ChatGPT), paste the passage with its citation, or drag the file out. (The original design also offered the search from Spotlight; that was removed on 28 Oct 2026: the owner uses the ⌥Space hotkey and doesn't need Spotlight for this.)
 
 Status: **implemented, manual checks outstanding** (see [DECISIONS_AND_GAPS.md](DECISIONS_AND_GAPS.md#launcher-docslauncher_specmd-implementation-log) for the measured ranker decision, assumptions and deviations; this document describes the original design). Companion to [SEARCH_SPEC.md](SEARCH_SPEC.md) (whose index and ranking this reuses) and [INTEGRATION_SPEC.md](INTEGRATION_SPEC.md). Same rules: see [AGENTS.md](../AGENTS.md).
 
@@ -13,7 +13,7 @@ Scope of this pass: **Zotero items (PDFs and web snapshots) + Markdown notes ins
   - Everything runs locally.
   - Keyword results arrive instantly; semantic results merge in after a pause.
   - Indexing never writes to Zotero.
-- **No third-party closed source.** The app is this repository's own code. It uses only Apple's system frameworks (SwiftUI, AppKit, JavaScriptCore, Accelerate, Core Spotlight, App Intents, ServiceManagement, Carbon) and the open-source Swift toolchain. Xcode is used as a build tool, but nothing depends on an Xcode project file. There are no Swift package dependencies.
+- **No third-party closed source.** The app is this repository's own code. It uses only Apple's system frameworks (SwiftUI, AppKit, JavaScriptCore, Accelerate, Quick Look, ServiceManagement, Carbon) and the open-source Swift toolchain. Xcode is used as a build tool, but nothing depends on an Xcode project file. There are no Swift package dependencies.
 - **One ranking implementation until measurements say otherwise.** The ranking logic stays in the existing pure TypeScript core. The app runs it in JavaScriptCore, unless the spike shows a part must move to Swift (see [Ranker decision](#ranker-decision-javascriptcore-vs-swift)). Whatever runs it must pass one shared **conformance suite**, so the choice can be reversed safely.
 - **The app stays running and keeps the index warm.** Opening the panel never loads an index. Loading happens at login and whenever the index changes, in the background.
 - **The file is the result.** Every result knows its path on disk.
@@ -25,13 +25,15 @@ Scope of this pass: **Zotero items (PDFs and web snapshots) + Markdown notes ins
 
 | Option | Verdict |
 |---|---|
-| Spotlight only | Spotlight ranks its own index; a third party can't plug in a ranker for plain ⌘Space typing. Kept as two *extra* ways in (below), not the main one. |
+| Spotlight only | Spotlight ranks its own index; a third party can't plug in a ranker for plain ⌘Space typing. Kept as two *extra* ways in (below), not the main one; both were removed on 28 Oct 2026. |
 | Raycast | Closed source. Ruled out by the owner. |
 | Hammerspoon (MIT) | Plain chooser UI with no glass, Lua scripts, and it would need a resident Node server for the ranking. |
 | Script Kit (MIT) | Node, so it reuses the TypeScript core directly. But it's Electron and niche (about 170 installs a year on Homebrew), so it's a maintenance risk. |
 | **Native SwiftUI app** ✅ | Real Liquid Glass, a non-activating panel (pasting into the previous app just works), drag-out, Spotlight integration, all FOSS. Costs more Swift work. |
 
 ### Three ways in, one engine
+
+**Ways 2 and 3 were removed on 28 Oct 2026: the owner uses the ⌥Space hotkey and doesn't need Spotlight for this.** They are kept here as design history; only the hotkey panel exists.
 
 1. **Hotkey panel** (primary): the full experience below.
 2. **Spotlight action** "Search Everything" (App Intents). Type the action name in ⌘Space, press Tab, and type the query. Your ranker answers live. You pick a result and it opens. Fewer actions than the panel. **Gated by spike S3.**
@@ -145,7 +147,6 @@ Default hotkey `⌥Space`, configurable in settings:
   - Ollama URL (default `http://127.0.0.1:11434`);
   - result limit (15);
   - restore clipboard after paste (off);
-  - Spotlight: add papers (on), add note titles (on), add note text (**off**);
   - launch at login (on).
 - **Storage:** settings live in `UserDefaults`. The Zotero storage path comes from the papers manifest.
 - **Launch at login:** `SMAppService.mainApp`.
@@ -162,11 +163,10 @@ Default hotkey `⌥Space`, configurable in settings:
  vault/**/*.md ─► mdtext ───► notesindex ──► .planner/notes/  ─┘                    ▼
                                    │                                     ResultVM[] (JSON view model)
                                  embed ─► Ollama                                    │
-                                                         ┌──────────────────────────┼─────────────────────────┐
-                                                         ▼                          ▼                         ▼
-                                                   Panel (SwiftUI)        SearchIntent (Spotlight)   SpotlightDonor (CS index)
-                                                         │
-                                                  ActionExecutor ─► NSPasteboard · CGEvent ⌘V · NSWorkspace · QuickLook
+                                                                                    ▼
+                                                                             Panel (SwiftUI)
+                                                                                    │
+                                                                             ActionExecutor ─► NSPasteboard · CGEvent ⌘V · NSWorkspace · QuickLook
 ```
 
 **The boundary that keeps the ranker decision cheap:** the ranker's only output is a list of **`ResultVM`**, a plain JSON view model. It already contains everything the UI and actions need:
@@ -279,7 +279,7 @@ Extra fields (ignored by BM25):
   - dot-folders: `.obsidian/`, `.planner/`, `.trash/`, `.git/`;
   - anything matched by `[notes].exclude` globs (vault-relative, `**` supported).
 - **Default `exclude`:** `Templates/**`, `Threads.md`, `Zotero Template.md`, `Zotero Citation Template.md`.
-- **Personal notes you don't want surfaced** (bank details, travel documents) go in `exclude`. Excluded notes are never opened. They never reach the index, Spotlight, or a snippet.
+- **Personal notes you don't want surfaced** (bank details, travel documents) go in `exclude`. Excluded notes are never opened. They never reach the index or a snippet.
 - **Empty after cleaning** (fewer than 3 words): an entry with no chunks and no row, so the note is still findable by title.
 
 ### Markdown cleaning (`mdtext`)
@@ -423,7 +423,6 @@ macos/
       Shortcuts.swift           decode shortcuts.json → key map + menu
       ActionExecutor.swift      run an action id against injected Pasteboard/EventPoster/Workspace/Clock
       Hotkey.swift              "⌥Space" ⇄ Carbon key code + modifiers; RegisterEventHotKey wrapper
-      SpotlightDonor.swift      Core Spotlight diff + donate (injected index for tests)
       Settings.swift            typed UserDefaults
     Semantero/                executable: the app
       App.swift                 @main, MenuBarExtra, Settings scene, login item
@@ -431,17 +430,14 @@ macos/
       SearchView.swift          SwiftUI: field, list, detail, footer, glass
       ActionMenu.swift          ⌘K list
       QuickLook.swift           QLPreviewPanel data source
-      Intents.swift             SearchEntity, EntityStringQuery, OpenResultIntent, AppShortcuts (gated by S3)
-      SpotlightOpen.swift       NSUserActivity (CSSearchableItemActionType) → open
   Tests/SemanteroKitTests/    Swift Testing
   Resources/Info.plist          LSUIElement, bundle id dev.semantero.app, usage strings
   scripts/bundle.sh             swift build -c release → Semantero.app, copy ranker.js + shortcuts.json, codesign
 ```
 
 - **Build:** `make app` runs `launcher-core` build → `swift build` → `scripts/bundle.sh`, which assembles `build/Semantero.app`.
-- **Install:** `make install-app` copies it to `/Applications`, so Launch Services, Spotlight and App Intents see it.
+- **Install:** `make install-app` copies it to `/Applications`, where the login item can find it.
 - **Signing:** with the free Apple ID "Personal Team" development certificate, so the Accessibility and other privacy permissions survive rebuilds. Ad-hoc signing works but forces you to grant the permission again after each build.
-- **App Intents metadata:** a plain SwiftPM build doesn't produce it. If spike S3 passes, `bundle.sh` runs `xcrun appintentsmetadataprocessor` explicitly. If that turns out impractical, the S3 decision entry says so, and an `xcodebuild` scheme over the same package is added for this one step.
 - **`make check`** adds `swift test --package-path macos` and the `ranker.js` freshness check.
 
 ### Panel behaviour
@@ -510,7 +506,7 @@ This is decided **by measurement in spike S1**, recorded in `DECISIONS_AND_GAPS.
 - the library grows past 3× today's size;
 - a budget regresses for 2 weeks in daily use;
 - a macOS update changes JavaScriptCore performance (re-run `make bench-app`);
-- you want the ranker in a separate process (an App Intents extension, for example), where JavaScriptCore start-up cost would count again.
+- you want the ranker in a separate process (an app extension, for example), where JavaScriptCore start-up cost would count again.
 
 **JSCRanker details** (option A or B):
 - **Threading:** one `JSVirtualMachine` and one `JSContext`, owned by `RankerActor` (a Swift actor). JavaScriptCore is never touched off that actor.
@@ -521,7 +517,9 @@ This is decided **by measurement in spike S1**, recorded in `DECISIONS_AND_GAPS.
 - **Errors:** a JS exception (via `context.exceptionHandler`) becomes a Swift `RankerError` carrying the message and stack. It is never a crash.
 - **Version check:** `semantero.version` must match the app's expected `ranker.js` version; on a mismatch the app shows an error and stays keyword-off.
 
-### Spotlight action (App Intents): gated by S3
+### Spotlight action (App Intents): gated by S3 (removed)
+
+**Removed on 28 Oct 2026** (the owner prefers the hotkey). Design history only; none of this is in the app.
 
 - **`SearchEntity: AppEntity`:**
   - `id` = `ResultVM.id`;
@@ -538,7 +536,9 @@ This is decided **by measurement in spike S1**, recorded in `DECISIONS_AND_GAPS.
 - **`AppShortcutsProvider`** with the phrase "Search Everything in \(.applicationName)".
 - Intents live in the **app target**, not an extension, so they share the warm engine. That's why the app must be running; launch at login covers it.
 
-### Spotlight index entries (Core Spotlight): gated by S4
+### Spotlight index entries (Core Spotlight): gated by S4 (removed)
+
+**Removed on 28 Oct 2026** (the owner prefers the hotkey). Design history only; none of this is in the app.
 
 - **`SpotlightDonor`** keeps `CSSearchableIndex(name: "semantero")` in sync whenever `content_hash` changes:
   - papers: domain `papers`; one item per paper (`uniqueIdentifier` = `P:<itemKey>`);
@@ -584,7 +584,7 @@ This is decided **by measurement in spike S1**, recorded in `DECISIONS_AND_GAPS.
 
 - **Frameworks:** Python uses `unittest`, TypeScript uses `node --test`, and Swift uses **Swift Testing** (`swift test`).
 - **No test calls a real model:** embeddings come from the existing fake embedder, and Ollama is faked over an injected `URLProtocol`.
-- **No test touches the real clipboard, keyboard, Spotlight index or Launch Services:** each sits behind an injected protocol with a fake.
+- **No test touches the real clipboard, keyboard or Launch Services:** each sits behind an injected protocol with a fake.
 - **Live tests** (real Ollama, real index, real pasteboard) run only with `SEMANTERO_LIVE=1`.
 
 ### Fixtures
@@ -760,19 +760,7 @@ S30. `hotkey string round-trips to Carbon code + modifiers` (`⌥Space`, `⌃⌥
 S31. `key map from shortcuts.json resolves every documented key and has no duplicates`
 S32. `settings defaults match the spec`
 
-**SpotlightDonor** (fake index)
-S33. `first sync donates papers and note titles, no abstracts, no note text`
-S34. `second sync with no change → zero calls`
-S35. `changed paper → one re-donation; removed note → one delete`
-S36. `excluded notes never donated` (they aren't in the index, so this is a guard)
-S37. `note-text setting on → note text donated; turning a domain off deletes the domain`
-S38. `NSUserActivity identifier resolves to the right ResultVM and runs ↵`
-
-**Intents** (logic only; Spotlight itself is manual)
-S39. `EntityStringQuery returns ≤ 10 entities in ranker order with display representations`
-S40. `empty string → suggestedEntities = recent`
-S41. `engine not loaded → [] not a crash`
-S42. `semantic wait capped at 400 ms, then keyword results`
+S33–S42 (`SpotlightDonor` and the Spotlight action's logic) were removed with those features on 28 Oct 2026.
 
 ### Manual checklist (`macos/CHECK.md`, IDs N-M1…)
 
@@ -792,9 +780,8 @@ S42. `semantic wait capped at 400 ms, then keyword results`
 - [ ] **N-M9:** A paper and its literature note show as one row. `⌘O` works; on a paper without a literature note, what `obsidian://new` does is logged.
 - [ ] **N-M10:** Stop Ollama → keyword results and the ○ status. Restart it → semantic results return.
 - [ ] **N-M11:** Edit a note and wait for one tick → findable with no app action (FSEvents reload). Add a paper in Zotero → findable within B13.
-- [ ] **N-M12:** A note in `exclude` never appears, in the panel or in Spotlight, even by its exact title.
-- [ ] **N-M13:** Spotlight action (if S3 passed): in ⌘Space, "Search Everything", Tab, a query → live results → opens. It also works right after login.
-- [ ] **N-M14:** Spotlight entries (if S4 passed): ⌘Space with a citekey or a note title shows the item, and selecting it opens it.
+- [ ] **N-M12:** A note in `exclude` never appears in the panel, even by its exact title.
+- N-M13 and N-M14 (Spotlight action and entries) were removed with those features on 28 Oct 2026.
 - [ ] **N-M15:** With Reduce Transparency on, the panel is legible. VoiceOver reads rows and actions.
 - [ ] **N-M16:** Log out and in → the app is running and the indexes are loaded before the first hotkey press (L6).
 
@@ -806,8 +793,8 @@ On a throwaway branch, time-boxed to **3 days total**. Each spike ends with a `D
 |---|---|---|---|
 | **S1 Ranker** | Can JavaScriptCore run the TypeScript core within budget? | Measurements M1–M7 and the [decision rules](#ranker-decision-javascriptcore-vs-swift) pick A, B or C | — (the rules always choose one) |
 | **S2 Panel + paste** | Does a non-activating glass panel take typing while the previous app stays frontmost, and does ⌘V reach it? | Works in Mail, Teams, Chrome, Claude desktop and Terminal; and over a full-screen app | Fallback: an activating panel that remembers the previous app (`NSWorkspace.frontmostApplication`), re-activates it, then pastes. Re-test. If that also fails, ship copy-only plus drag. |
-| **S3 Spotlight action** | Does Spotlight call `EntityStringQuery` live as you type, with the app running and built from SwiftPM + `appintentsmetadataprocessor`? | Results update per keystroke in under 1 s; selection runs the intent | Try an `xcodebuild` scheme for metadata. If it's still not live (for example, it only offers suggestions), drop the action from scope; Spotlight entries (S4) remain. |
-| **S4 Spotlight entries** | Do Core Spotlight items from a non-sandboxed SwiftPM-built app appear in ⌘Space and open via `NSUserActivity`? | A citekey query shows the paper; selecting it opens Zotero | Drop it from scope and record why. |
+| **S3 Spotlight action** (feature removed 28 Oct 2026) | Does Spotlight call `EntityStringQuery` live as you type, with the app running and built from SwiftPM + `appintentsmetadataprocessor`? | Results update per keystroke in under 1 s; selection runs the intent | Try an `xcodebuild` scheme for metadata. If it's still not live (for example, it only offers suggestions), drop the action from scope; Spotlight entries (S4) remain. |
+| **S4 Spotlight entries** (feature removed 28 Oct 2026) | Do Core Spotlight items from a non-sandboxed SwiftPM-built app appear in ⌘Space and open via `NSUserActivity`? | A citekey query shows the paper; selecting it opens Zotero | Drop it from scope and record why. |
 
 ## Evaluation
 
@@ -868,7 +855,7 @@ Each phase ends with its tests green, `make check` passing, and a commit.
 | 4 | Engine refactor; `launcher-core` (corpora, merge, query, paths, urls, cite, vm, api, shortcuts); conformance recorder; `eval.ts` | T1–T2, R1–R32 | Eval acceptance met (or misses analysed and decided); conformance recorded |
 | 5 | `SemanteroKit`: IndexFiles, watcher, the chosen Ranker, OllamaClient, QueryController, ActionExecutor, Hotkey, Shortcuts, Settings | S1–S32 (S6/S7 per decision) | `swift test` green with Thread Sanitizer |
 | 6 | App: panel, SearchView with glass, action menu, Quick Look, drag, menu bar, settings, login item; `bundle.sh`, `make app`, `make install-app` | N-M1…N-M12, N-M15, N-M16 | L1, L2, L8 measured and within budget |
-| 7 | Spotlight: donor (if S4 passed) and intents (if S3 passed) | S33–S42, N-M13, N-M14 | Works after a fresh login |
+| 7 | Spotlight: donor (if S4 passed) and intents (if S3 passed). Built, then removed on 28 Oct 2026 | S33–S42, N-M13, N-M14 | Works after a fresh login |
 | 8 | A week of daily use; log decisions; update `AGENTS.md` | — | Status → implemented |
 
 ## Later

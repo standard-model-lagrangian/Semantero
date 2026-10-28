@@ -26,9 +26,9 @@ struct IndexTests {
         // reads is this read's.
         var grew = UInt64.max
         for _ in 0..<3 {
-            let before = physFootprint()
+            let before = physicalFootprint()
             let read = try #require(try IndexFiles.read(dir: dir))
-            grew = min(grew, physFootprint() &- before)
+            grew = min(grew, physicalFootprint() &- before)
             #expect(UInt64(read.vectors?.count ?? 0) == size)
         }
         #expect(grew < size / 4, "reading grew the footprint by \(grew) bytes: the file was copied, not mapped")
@@ -80,17 +80,21 @@ struct IndexTests {
         #expect(await reloader.check() == .unchanged)
     }
 
-    @Test func burstOfFileEventsBecomesOneCheckAfterTheDebounce() {
-        let scheduler = ManualScheduler()
+    @Test func burstOfFileEventsBecomesOneCheckAfterTheDebounce() async {
+        let sleeper = FakeSleeper()
         let calls = CallLog()
-        let watcher = IndexWatcher(directory: FileManager.default.temporaryDirectory, scheduler: scheduler, debounce: 0.5) {
+        let watcher = IndexWatcher(directory: FileManager.default.temporaryDirectory, sleeper: sleeper, debounce: 0.5) {
             calls.add("check")
         }
-        for _ in 0..<5 { watcher.poke(); scheduler.advance(by: 0.2) }   // each poke restarts the 0.5 s window
+        for _ in 0..<5 { watcher.poke() }   // each poke cancels the previous 0.5 s wait and starts a new one
+        await sleeper.waitForPending(1)
         #expect(calls.all.isEmpty)
-        scheduler.advance(by: 0.5)
-        #expect(calls.all == ["check"])
-        scheduler.advance(by: 5)
+        #expect(Set(sleeper.requested) == [0.5])
+        sleeper.releaseAll()
+        await expectEventually(calls.signal, "the check") { calls.all == ["check"] }
+        #expect(sleeper.pending == 0, "the cancelled waits never fire")
+        watcher.poke()                      // a later event waits again
+        await sleeper.waitForPending(1)
         #expect(calls.all == ["check"])
     }
 
@@ -100,13 +104,10 @@ struct IndexTests {
         defer { try? FileManager.default.removeItem(at: dir) }
         let calls = CallLog()
         let watcher = IndexWatcher(directory: dir, debounce: 0.2) { calls.add("check") }
-        #expect(watcher.start())
-        try await Task.sleep(nanoseconds: 300_000_000)
+        #expect(watcher.start())   // the stream is registered when this returns: no settling delay before the write
         try Data("x".utf8).write(to: dir.appendingPathComponent("manifest.json"))
-        let deadline = Date().addingTimeInterval(5)
-        while calls.all.isEmpty, Date() < deadline { try await Task.sleep(nanoseconds: 50_000_000) }
+        await expectEventually(calls.signal, timeout: .seconds(5), "an FSEvents check") { !calls.all.isEmpty }
         watcher.stop()
-        #expect(!calls.all.isEmpty)
     }
 
     // S4
