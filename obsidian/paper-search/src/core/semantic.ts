@@ -14,6 +14,8 @@ export interface SemanticBackendOptions {
   keepAlive?: string;
   /** Rows of these papers score 0 (as rowScores' exclude). */
   exclude?: Set<number>;
+  /** Which of the pplx service's corpora `ix` is: "search" (papers, the default) or "notes". */
+  corpus?: "search" | "notes";
 }
 
 /** `scores: null` means there is nothing to score (no vectors, other dims); a thrown error means the service is down. */
@@ -23,6 +25,11 @@ export interface SemanticScores {
 
 /** For an index whose manifest names no query instruction (every index the planner writes names one). */
 export const DEFAULT_QUERY_INSTRUCTION = "Given a query, retrieve relevant research papers";
+
+/** The instruction search queries are embedded with: the one the index was built for, else the default. */
+export function queryInstruction(ix: LoadedIndex): string {
+  return ix.manifest.query_instruction || DEFAULT_QUERY_INSTRUCTION;
+}
 
 export function isPplx(ix: LoadedIndex): boolean {
   return ix.manifest?.backend === "pplx";
@@ -41,7 +48,7 @@ export async function semanticScores(
 ): Promise<SemanticScores> {
   if (!ix.vectors || ix.totalRows === 0) return { scores: null };
   if (isPplx(ix)) {
-    const scores = await pplxRowScores(requestUrl, ix.manifest.backend_url, text, "search", ix.manifest.content_hash);
+    const scores = await pplxRowScores(requestUrl, ix.manifest.backend_url ?? "", text, opts.corpus ?? "search", ix.manifest.content_hash);
     if (scores.length !== ix.totalRows) throw new Error("pplx scores do not match the loaded index");
     if (opts.exclude && opts.exclude.size > 0) {
       for (let r = 0; r < scores.length; r++) if (opts.exclude.has(ix.rowToPaper[r])) scores[r] = 0;
@@ -50,7 +57,7 @@ export async function semanticScores(
   }
   const qVec = await embedQuery(requestUrl, {
     url: opts.ollamaUrl,
-    model: ix.manifest.model,
+    model: ix.manifest.model ?? "",
     instruction: opts.instruction,
     query: text,
     dims: ix.dims,
@@ -102,5 +109,5 @@ export async function warmSemantic(requestUrl: RequestUrlFn, ix: LoadedIndex, ol
     }
     return;
   }
-  await warmUp(requestUrl, { url: ollamaUrl, model: ix.manifest.model, keepAlive });
+  await warmUp(requestUrl, { url: ollamaUrl, model: ix.manifest.model ?? "", keepAlive });
 }

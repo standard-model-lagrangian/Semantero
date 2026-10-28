@@ -2,8 +2,8 @@
 import test from "node:test";
 import assert from "node:assert";
 import { RelatedPapersController, type RelatedEmbedderLike } from "../src/related.ts";
-import { FakeVault } from "./fakes.ts";
-import { BM25Index, type PaperMetadata } from "../src/bm25.ts";
+import { FakeVault, vectorScorer } from "./fakes.ts";
+import { BM25Index, type PaperMetadata } from "../src/core/bm25.ts";
 
 function paper(citekey: string, title: string): PaperMetadata {
   return { key: `KEY_${citekey}`, citekey, title, authors: ["Roth"], year: 2023, abstract: `Abstract ${title}`, journal: "J", doi: "", tags: [], collections: [] } as any;
@@ -40,12 +40,12 @@ function make(opts: { embedder?: RelatedEmbedderLike; store?: Store; settings?: 
   let calls = 0;
   const controller = new RelatedPapersController({
     indexStore: opts.store ?? new Store(),
-    embedder: opts.embedder ?? {
+    embedder: opts.embedder ?? vectorScorer({
       async embedQuery() {
         calls++;
         return new Float32Array(4).fill(0.5);
       },
-    },
+    }),
     vault: new FakeVault() as any,
     settings: { relatedMinScore: 0.1, ...opts.settings },
     showNotice: (m) => notices.push(m),
@@ -56,7 +56,7 @@ function make(opts: { embedder?: RelatedEmbedderLike; store?: Store; settings?: 
 test("RM1 switching notes during a refresh ends in the new note's empty state, not loading", async () => {
   let resolve!: (v: Float32Array) => void;
   const { controller } = make({
-    embedder: { embedQuery: () => new Promise<Float32Array>((r) => (resolve = r)) },
+    embedder: vectorScorer({ embedQuery: () => new Promise<Float32Array>((r) => (resolve = r)) }),
   });
   const p = controller.refresh(NOTE, 10, "", "a.md");
   assert.strictEqual(controller.state, "loading");
@@ -97,13 +97,13 @@ test("RM5 embedder returns null because the index vanished mid-refresh -> index-
   let first = true;
   const { controller, notices } = make({
     store,
-    embedder: {
+    embedder: vectorScorer({
       async embedQuery() {
         if (first) store.ready = false; // only the first call races an index reload
         first = false;
         return null;
       },
-    },
+    }),
   });
   await controller.refresh(NOTE, 10, "", "a.md");
   assert.strictEqual(controller.state, "index-loading");

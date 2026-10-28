@@ -7,9 +7,9 @@ import {
   type ModalSearchItem,
   type ModalSearchSettings,
 } from "../src/modalsearch.ts";
-import { BM25Index, type PaperMetadata } from "../src/bm25.ts";
-import type { LoadedIndex } from "../src/engine.ts";
-import { FakeClock, FakeVault } from "./fakes.ts";
+import { BM25Index, type PaperMetadata } from "../src/core/bm25.ts";
+import type { LoadedIndex } from "../src/core/engine.ts";
+import { FakeClock, FakeVault, flushPromises } from "./fakes.ts";
 
 function paper(key: string, title: string): PaperMetadata {
   return {
@@ -114,7 +114,6 @@ function keys(items: ModalSearchItem[]): string[] {
   return items.map((it) => it.livePaper ? `live:${it.livePaper.key}` : it.hit ? PAPERS[it.hit.paper].key : "?");
 }
 
-const flush = () => new Promise((r) => setImmediate(r));
 
 /** Scores that rank the papers in this order (row i is paper i's abstract). */
 function scoresRanking(...order: number[]): Float64Array {
@@ -144,7 +143,7 @@ test("MS2 stale-query race: a reply for a query you shortened below the semantic
   clock.advance(1000);
   assert.strictEqual(scorer.calls.length, 1, "the short query sends no semantic request");
   scorer.calls[0].resolve(scoresRanking(1, 0, 2));
-  await flush();
+  await flushPromises();
   assert.deepStrictEqual(view.log, [], "the late reply was dropped");
   assert.strictEqual(view.items, short);
 });
@@ -165,7 +164,7 @@ test("MS3 closing the modal cancels pending work and drops replies already in fl
     controller.close();
     scorer.last().reject(new Error("refused"));
     zotero.calls[0].resolve([paper("NEW00001", "A new gel paper")]);
-    await flush();
+    await flushPromises();
     assert.deepStrictEqual(view.log, []);
     assert.strictEqual(view.footer, "", "no footer for a request of a closed modal");
   }
@@ -180,7 +179,7 @@ test("MS4 a whitespace-only edit keeps the list on screen and the merge on its w
   clock.advance(1000);
   assert.strictEqual(scorer.calls.length, 1, "no second semantic request");
   scorer.last().resolve(scoresRanking(2, 1, 0));
-  await flush();
+  await flushPromises();
   assert.strictEqual(view.log.length, 1, "the merge still landed");
   assert.deepStrictEqual(keys(view.items).slice(0, 1), ["BAUE2022"]);
 });
@@ -197,13 +196,13 @@ test("MS5 live Zotero rows go below the index's hits, survive the merge, and are
   type("stiff gels relax");
   clock.advance(SETTINGS.debounceMs);
   zotero.calls[0].resolve([paper("NEW00001", "A new gel paper")]);
-  await flush();
+  await flushPromises();
   const indexKeys = keys(view.items).filter((k) => !k.startsWith("live:"));
   assert.ok(indexKeys.length > 0);
   assert.deepStrictEqual(keys(view.items), [...indexKeys, "live:NEW00001"]);
 
   scorer.last().resolve(scoresRanking(2, 1, 0));
-  await flush();
+  await flushPromises();
   assert.strictEqual(keys(view.items).at(-1), "live:NEW00001", "the merged list keeps the live row last");
 
   const next = type("organoids");
@@ -211,7 +210,7 @@ test("MS5 live Zotero rows go below the index's hits, survive the merge, and are
   clock.advance(SETTINGS.debounceMs);
   assert.strictEqual(zotero.calls.length, 2);
   scorer.last().resolve(scoresRanking(2, 1, 0));
-  await flush();
+  await flushPromises();
   assert.ok(!keys(view.items).some((k) => k.startsWith("live:")), "the old query's live row does not come back with the merge");
 });
 
@@ -221,7 +220,7 @@ test("MS5b a Zotero reply for a query no longer on screen is dropped", async () 
   clock.advance(SETTINGS.debounceMs);
   const now = type("organoids");
   zotero.calls[0].resolve([paper("NEW00001", "A new gel paper")]);
-  await flush();
+  await flushPromises();
   assert.deepStrictEqual(view.log, []);
   assert.strictEqual(view.items, now);
 });
@@ -236,7 +235,7 @@ test("MS6 the selection stays on the same paper when the merge re-ranks the list
   clock.advance(SETTINGS.debounceMs);
   // semantic ranks the chosen paper (2) first and paper 0 last, so the merge puts paper 2 first
   scorer.last().resolve(scoresRanking(2, 1, 0));
-  await flush();
+  await flushPromises();
   assert.strictEqual(view.items[view.selected].paperIndex, chosen);
   assert.strictEqual(view.selected, 0, "it moved, and the selection followed it");
 });
@@ -246,10 +245,10 @@ test("MS6b the selection stays on a live Zotero row when the merge lands after i
   type("stiff gels relax");
   clock.advance(SETTINGS.debounceMs);
   zotero.calls[0].resolve([paper("NEW00001", "A new gel paper")]);
-  await flush();
+  await flushPromises();
   view.selected = view.items.length - 1;
   scorer.last().resolve(scoresRanking(2, 1, 0));
-  await flush();
+  await flushPromises();
   assert.strictEqual(view.items[view.selected].livePaper?.key, "NEW00001");
 });
 
@@ -258,14 +257,14 @@ test("MS7 the footer names the pplx service for a pplx index, and clears once se
   type("stiff gels relax");
   clock.advance(SETTINGS.debounceMs);
   scorer.last().reject(new Error("connection refused"));
-  await flush();
+  await flushPromises();
   assert.strictEqual(view.footer, "semantic off: the pplx service not reachable");
   assert.deepStrictEqual(view.log, [], "the keyword list stays");
 
   type("stiff gels in hydrogels");
   clock.advance(SETTINGS.debounceMs);
   scorer.last().resolve(scoresRanking(0, 1, 2));
-  await flush();
+  await flushPromises();
   assert.strictEqual(view.footer, "");
 });
 
@@ -274,7 +273,7 @@ test("MS7b the footer names Ollama for an Ollama index", async () => {
   type("stiff gels relax");
   clock.advance(SETTINGS.debounceMs);
   scorer.last().reject(new Error("connection refused"));
-  await flush();
+  await flushPromises();
   assert.strictEqual(view.footer, "semantic off: Ollama not reachable");
 });
 

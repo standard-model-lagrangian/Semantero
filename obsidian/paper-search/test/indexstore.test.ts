@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert";
-import { IndexStore, type IndexStoreAdapter } from "../src/indexstore.ts";
-import { keyword, type LoadedIndex } from "../src/engine.ts";
+import { IndexStore, type IndexStoreAdapter } from "../src/core/indexstore.ts";
+import { keyword, type LoadedIndex } from "../src/core/engine.ts";
+import { flushPromises } from "./fakes.ts";
 
 class FakeIndexAdapter implements IndexStoreAdapter {
   files: Map<string, string | ArrayBuffer> = new Map();
@@ -262,8 +263,8 @@ test("X6 onload returns before load finishes and search returns loading row", as
   assert.strictEqual(store.isReady(), false);
   assert.strictEqual(store.getIndex(), null);
 
-  // Wait a microtask tick for the load pipeline to reach papers.json
-  await new Promise((r) => setImmediate(r));
+  // Let the load pipeline reach papers.json
+  await flushPromises();
 
   // Now resolve the hanging read
   const deferred = adapter.hangDeferred.get(".planner/search/papers.json")!;

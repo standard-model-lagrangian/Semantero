@@ -1,6 +1,6 @@
 // Memory probe entry: staged BM25 work with the real code, driven from Swift (`semantero-bench --jsprobe2 <probe.js>`).
-import { BM25Index } from "../../obsidian/paper-search/src/bm25.ts";
-import { tokenize } from "../../obsidian/paper-search/src/text.ts";
+import { BM25Index } from "../../obsidian/paper-search/src/core/bm25.ts";
+import { tokenize } from "../../obsidian/paper-search/src/core/text.ts";
 
 let papers: any[] = [], chunks: any[] = [], idx: any = null, tok: any = null;
 (globalThis as any).probe = {

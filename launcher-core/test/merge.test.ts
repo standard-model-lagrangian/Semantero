@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert";
-import type { Hit } from "../../obsidian/paper-search/src/engine.ts";
+import type { Hit } from "../../obsidian/paper-search/src/core/engine.ts";
 import { collapseLitnotes, interleave, rrf, sortByCosine, type CHit } from "../src/merge.ts";
 import { buildVM } from "../src/vm.ts";
 import { fixtureCorpora, fixtureEngine, fakeVec } from "./helpers.ts";

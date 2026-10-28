@@ -1,11 +1,11 @@
 import { extractPassage } from "./passage.ts";
 import { citedKeys, formatCitation, DEFAULT_CITATION_FORMAT } from "./cite.ts";
-import { rowScores, semanticFromRowScores, type Hit, type LoadedIndex } from "./engine.ts";
+import { semanticFromRowScores, type Hit, type LoadedIndex } from "./core/engine.ts";
 import { ensureLiteratureNote, type LitNoteSettings, type VaultLike, type MetadataCacheLike } from "./litnote.ts";
-import type { PaperMetadata } from "./bm25.ts";
+import type { PaperMetadata } from "./core/bm25.ts";
 import { editorSnapshot, type ActiveEditorTracker } from "./editortracker.ts";
-import { hitUrl } from "./zotero.ts";
-import { embedderName } from "./semantic.ts";
+import { hitLocation, hitUrl } from "./core/zotero.ts";
+import { embedderName } from "./core/semantic.ts";
 
 /** Hide related papers scoring below this (calibrated with scripts/eval-related.ts; a setting overrides it). */
 export const DEFAULT_RELATED_MIN_SCORE = 0.5;
@@ -19,9 +19,9 @@ export interface RelatedSettings extends LitNoteSettings {
 }
 
 export interface RelatedEmbedderLike {
-  embedQuery(text: string, instruction?: string): Promise<Float32Array | null>;
-  /** Per-row scores for any backend (semantic.ts); when present it is used instead of embedQuery. Throws when down. */
-  rowScores?(text: string, ix: LoadedIndex, instruction?: string): Promise<ArrayLike<number> | null>;
+  /** Per-row semantic scores of `text` over `ix`, from the backend that built it (semantic.ts); null when there is
+   * nothing to score. Throws when the backend is down. */
+  rowScores(text: string, ix: LoadedIndex, instruction?: string): Promise<ArrayLike<number> | null>;
 }
 
 export interface RelatedIndexStoreLike {
@@ -208,30 +208,14 @@ export class RelatedPapersController {
     }
 
     try {
-      const instruction = this.settings.relatedInstruction;
-      const byScores = !!this.embedder.rowScores;
-      const qVec = byScores ? null : await this.embedder.embedQuery(passage, instruction);
-
-      // Switching notes mid-refresh or older refresh arriving drops response (P3, P4)
-      if (!stillCurrent()) return;
-
       const ix = this.indexStore.isReady() ? this.indexStore.getIndex() : null;
       if (!ix) {
         this.setState("index-loading");
         return;
       }
-
-      let scores: ArrayLike<number> | null;
-      if (byScores) {
-        scores = await this.embedder.rowScores!(passage, ix, instruction);
-        if (!stillCurrent()) return;
-      } else {
-        if (!qVec) {
-          this.handleEmbedderDown();
-          return;
-        }
-        scores = rowScores(ix, qVec);
-      }
+      const scores = await this.embedder.rowScores(passage, ix, this.settings.relatedInstruction);
+      // Switching notes mid-refresh or older refresh arriving drops response (P3, P4)
+      if (!stillCurrent()) return;
 
       // Semantic search candidates
       const minScore = this.settings.relatedMinScore ?? DEFAULT_RELATED_MIN_SCORE;
@@ -494,7 +478,7 @@ export function createRelatedPapersViewClass(
           const meta = row?.createDiv?.({ cls: "semantero-related-meta" });
           const author = item.paper.authors?.[0] || "Unknown";
           const year = item.paper.year ? String(item.paper.year) : "n.d.";
-          const badge = item.hit.page ? `p. ${item.hit.page}` : item.hit.fromAbstract === false ? "web page" : "abstract";
+          const badge = hitLocation(item.paper, item.hit, "web page");
           meta?.setText?.(`${author} · ${year} · [${badge}]`);
 
           if (item.hit.snippet) {

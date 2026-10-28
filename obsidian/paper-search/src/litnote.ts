@@ -1,5 +1,5 @@
-import type { PaperMetadata } from "./bm25.ts";
-import { selectItemUrl } from "./zotero.ts";
+import type { PaperMetadata } from "./core/bm25.ts";
+import { selectItemUrl } from "./core/zotero.ts";
 
 export interface VaultLike {
   getFiles(): any[];

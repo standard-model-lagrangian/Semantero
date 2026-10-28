@@ -1,6 +1,6 @@
 "use strict";
 (() => {
-  // ../obsidian/paper-search/src/text.ts
+  // ../obsidian/paper-search/src/core/text.ts
   var STOPWORDS = /* @__PURE__ */ new Set([
     "a",
     "about",
@@ -268,7 +268,7 @@
     return { text: snippet, sentence: bestSent };
   }
 
-  // ../obsidian/paper-search/src/rank.ts
+  // ../obsidian/paper-search/src/core/rank.ts
   function shouldRunSemantic(query, minChars = 12) {
     if (semanticText(query).length >= minChars) {
       return true;
@@ -281,8 +281,21 @@
   function semanticText(query) {
     return query.trim().replace(/\s+/g, " ");
   }
+  function reciprocalRankFusion(lists, key, k = 60) {
+    const byKey = /* @__PURE__ */ new Map();
+    lists.forEach((list, li) => {
+      list.forEach((item, i) => {
+        const id = key(item);
+        let f = byKey.get(id);
+        if (!f) byKey.set(id, f = { score: 0, from: new Array(lists.length).fill(void 0) });
+        f.score += 1 / (k + i + 1);
+        f.from[li] = item;
+      });
+    });
+    return [...byKey.values()].sort((a, b) => b.score - a.score);
+  }
 
-  // ../obsidian/paper-search/src/bm25.ts
+  // ../obsidian/paper-search/src/core/bm25.ts
   var FIELD_WEIGHTS = {
     title: 3,
     authors: 3,
@@ -291,6 +304,15 @@
     tags: 2,
     collections: 2,
     abstract: 1.5
+  };
+  var FIELD_TEXT = {
+    title: (p) => p.title || "",
+    authors: (p) => p.authors.join(" "),
+    citekey: (p) => p.citekey || "",
+    journal: (p) => p.journal || "",
+    tags: (p) => p.tags.join(" "),
+    collections: (p) => p.collections.join(" "),
+    abstract: (p) => p.abstract || ""
   };
   var BM25Index = class {
     k1 = 1.2;
@@ -342,15 +364,7 @@
       const counts = /* @__PURE__ */ new Map();
       const seen = /* @__PURE__ */ new Set();
       for (const paper of this.papers) {
-        const fieldTexts = [
-          paper.title || "",
-          paper.authors.join(" "),
-          paper.citekey || "",
-          paper.journal || "",
-          paper.tags.join(" "),
-          paper.collections.join(" "),
-          paper.abstract || ""
-        ];
+        const fieldTexts = fieldNames.map((name) => FIELD_TEXT[name](paper));
         seen.clear();
         const perField = [];
         for (let f = 0; f < fieldNames.length; f++) {
@@ -621,7 +635,7 @@
     }
   };
 
-  // ../obsidian/paper-search/src/textstore.ts
+  // ../obsidian/paper-search/src/core/textstore.ts
   var TextStore = class _TextStore {
     bytes;
     offsets;
@@ -746,7 +760,18 @@
     return store;
   }
 
-  // ../obsidian/paper-search/src/indexstore.ts
+  // ../obsidian/paper-search/src/core/vectors.ts
+  var FALLBACK_DIMS = 1024;
+  function checkVectors(manifestDims, rows, byteLength) {
+    const dimsOk = Number.isInteger(manifestDims) && manifestDims > 0;
+    const dims = dimsOk ? manifestDims : FALLBACK_DIMS;
+    if (byteLength === null) return { dims, reason: rows > 0 ? "no vectors" : null };
+    if (!dimsOk) return { dims, reason: "index dims invalid" };
+    if (byteLength !== rows * dims * 4) return { dims, reason: "vectors file invalid" };
+    return { dims, reason: null };
+  }
+
+  // ../obsidian/paper-search/src/core/indexstore.ts
   var IndexStore = class _IndexStore {
     adapter;
     basePath;
@@ -787,20 +812,7 @@
      * Precomputes index lookup tables in O(chunks) one pass.
      */
     static precomputeIndex(manifest, papers, chunks, vectors, dims, id) {
-      let maxRow = -1;
-      for (let i = 0; i < papers.length; i++) {
-        const ar = papers[i].abstractRow;
-        if (ar !== void 0 && ar !== null && ar > maxRow) {
-          maxRow = ar;
-        }
-      }
-      for (let i = 0; i < chunks.length; i++) {
-        const r = chunks[i].row;
-        if (r !== void 0 && r !== null && r > maxRow) {
-          maxRow = r;
-        }
-      }
-      const totalRows = maxRow >= 0 ? maxRow + 1 : 0;
+      const totalRows = _IndexStore.countRows(papers, chunks);
       const rowToChunk = new Int32Array(totalRows).fill(-1);
       const rowToPaper = new Int32Array(totalRows).fill(-1);
       const rowIsAbstract = new Uint8Array(totalRows);
@@ -898,22 +910,21 @@
         return this.currentIndex !== null;
       }
       this.failedContentHash = null;
-      const dimsValid = Number.isInteger(manifest.dims) && manifest.dims > 0;
-      const dims = dimsValid ? manifest.dims : 1024;
-      let vectors = null;
-      const invalidVectors = () => this.notifyOnce("invalid_vectors", "Paper search: vectors file invalid, falling back to keyword-only");
+      let bin = null;
+      let unreadable = false;
       if (await this.adapter.exists(vectorsPath)) {
         try {
-          const bin = await this.adapter.readBinary(vectorsPath);
-          const expectedBytes = _IndexStore.countRows(papers, chunks) * dims * 4;
-          if (!dimsValid || bin.byteLength !== expectedBytes) {
-            invalidVectors();
-          } else {
-            vectors = new Float32Array(bin);
-          }
+          bin = await this.adapter.readBinary(vectorsPath);
         } catch {
-          invalidVectors();
+          unreadable = true;
         }
+      }
+      const { dims, reason } = checkVectors(manifest.dims, _IndexStore.countRows(papers, chunks), bin ? bin.byteLength : null);
+      let vectors = null;
+      if (unreadable || bin && reason) {
+        this.notifyOnce("invalid_vectors", "Paper search: vectors file invalid, falling back to keyword-only");
+      } else if (bin) {
+        vectors = new Float32Array(bin);
       }
       const id = this.nextIndexId++;
       const loaded = _IndexStore.precomputeIndex(manifest, papers, chunks, vectors, dims, id);
@@ -1020,14 +1031,13 @@
     flush();
     return out;
   }
-  var loadTimings = { decode: 0, parse: 0, build: 0 };
-  function parseJsonPart(part) {
+  function parseJsonPart(part, timings) {
     let t = Date.now();
     const text = typeof part === "string" ? part : decodeUtf8(part);
-    loadTimings.decode += Date.now() - t;
+    if (timings) timings.decode += Date.now() - t;
     t = Date.now();
     const value = JSON.parse(text);
-    loadTimings.parse += Date.now() - t;
+    if (timings) timings.parse += Date.now() - t;
     return value;
   }
   function noteName(path) {
@@ -1055,19 +1065,9 @@
   // src/corpora.ts
   function buildCorpus(name, raw2) {
     const manifest = raw2.manifest ?? {};
-    const dimsOk = Number.isInteger(manifest.dims) && manifest.dims > 0;
-    const dims = dimsOk ? manifest.dims : 1024;
     const rows = IndexStore.countRows(raw2.papers, raw2.chunks);
-    let vectors = null;
-    let reason = null;
-    if (raw2.vectors === null || raw2.vectors === void 0) {
-      reason = rows > 0 ? "no vectors" : null;
-    } else if (!dimsOk) {
-      reason = "index dims invalid";
-    } else {
-      if (raw2.vectors.byteLength !== rows * dims * 4) reason = "vectors file invalid";
-      else if (rows > 0) vectors = toFloat32(raw2.vectors);
-    }
+    const { dims, reason } = checkVectors(manifest.dims, rows, raw2.vectors ? raw2.vectors.byteLength : null);
+    const vectors = raw2.vectors && !reason && rows > 0 ? toFloat32(raw2.vectors) : null;
     const chunks = raw2.chunks.map((c) => ({ ...c, row: c.row === null ? void 0 : c.row }));
     const ix = IndexStore.precomputeIndex(manifest, raw2.papers, chunks, vectors, dims, name);
     return { name, ix, semantic: vectors !== null, reason };
@@ -1115,7 +1115,7 @@
     };
   }
 
-  // ../obsidian/paper-search/src/engine.ts
+  // ../obsidian/paper-search/src/core/engine.ts
   function snippetFor(ix, hit, tokens) {
     if (hit.chunkIndex !== void 0 && hit.chunkIndex >= 0) return bestSnippet(ix.chunks[hit.chunkIndex].text, tokens).text;
     const paper = ix.papers[hit.paper];
@@ -1263,29 +1263,10 @@
   function rrf(kw, sem, k = 60) {
     if (sem.length === 0) return kw;
     if (kw.length === 0) return sem;
-    const score = /* @__PURE__ */ new Map();
-    const kwBy = /* @__PURE__ */ new Map();
-    const semBy = /* @__PURE__ */ new Map();
-    kw.forEach((c, i) => {
-      kwBy.set(keyOf(c), c);
-      score.set(keyOf(c), (score.get(keyOf(c)) ?? 0) + 1 / (k + i + 1));
-    });
-    sem.forEach((c, i) => {
-      semBy.set(keyOf(c), c);
-      score.set(keyOf(c), (score.get(keyOf(c)) ?? 0) + 1 / (k + i + 1));
-    });
-    const keys = [...score.keys()];
-    const idx = new Map(keys.map((key, i) => [key, i]));
-    keys.sort((a, b) => score.get(b) - score.get(a) || idx.get(a) - idx.get(b));
-    return keys.map((key) => {
-      const s = semBy.get(key);
-      const w = kwBy.get(key);
+    return reciprocalRankFusion([kw, sem], keyOf, k).map(({ score, from: [w, s] }) => {
       const base = s ?? w;
       const source = s && w ? "both" : s ? "semantic" : "keyword";
-      return {
-        corpus: base.corpus,
-        hit: { ...base.hit, score: score.get(key), source }
-      };
+      return { corpus: base.corpus, hit: { ...base.hit, score, source } };
     });
   }
   function collapseLitnotes(list, corpora) {
@@ -1405,7 +1386,7 @@
     return null;
   }
 
-  // ../obsidian/paper-search/src/zotero.ts
+  // ../obsidian/paper-search/src/core/zotero.ts
   function selectItemUrl(itemKey) {
     return `zotero://select/library/items/${itemKey}`;
   }
@@ -1422,6 +1403,11 @@
     if (!attKey) return selectItemUrl(paper.key);
     if (snapshots.some((s) => s.attachmentKey === attKey)) return openAttachmentUrl(attKey);
     return openPdfUrl(attKey, hit?.attachmentKey ? hit.page : 1);
+  }
+  function hitLocation(paper, hit, snapshotLabel = "snapshot") {
+    if (hit.fromAbstract) return "abstract";
+    if (hit.attachmentKey && (paper.snapshots ?? []).some((s) => s.attachmentKey === hit.attachmentKey)) return snapshotLabel;
+    return hit.page && hit.page > 0 ? `p. ${hit.page}` : "abstract";
   }
 
   // src/urls.ts
@@ -1456,11 +1442,6 @@
     }
     return out;
   }
-  function paperLocation(paper, hit) {
-    if (hit.fromAbstract) return "abstract";
-    if (hit.attachmentKey && (paper.snapshots ?? []).some((s) => s.attachmentKey === hit.attachmentKey)) return "snapshot";
-    return hit.page && hit.page > 0 ? `p. ${hit.page}` : "abstract";
-  }
   function paperSubtitle(p) {
     return [authorsShort(p.authors), p.year ? String(p.year) : "", p.journal ?? ""].filter(Boolean).join(" \xB7 ");
   }
@@ -1483,7 +1464,7 @@
     const known = paper.citekey ? c.litnoteByCitekey.get(paper.citekey) : void 0;
     const notePath = nEntry?.path ?? known?.path;
     const hasNote = !!notePath;
-    const loc = paperLocation(paper, phit);
+    const loc = hitLocation(paper, phit);
     const att = chooseAttachment(paper, phit.attachmentKey);
     const filePath = att ? resolvePaperFile(c.zoteroStorage, att.file) : null;
     const heading = noteWon ? noteHeading(c, row) : void 0;
@@ -1615,30 +1596,6 @@
       });
       return rows.map((r) => buildVM(r, this.corpora, []));
     }
-    /** Results for known ids ("P:<itemKey>", "N:<noteKey>"), in the order asked; unknown ids are skipped.
-     * Spotlight uses this to turn a remembered id back into a result. */
-    lookup(ids) {
-      const rows = [];
-      for (const id of ids) {
-        const corpus = id.startsWith("P:") ? this.corpora.papers : id.startsWith("N:") ? this.corpora.notes : null;
-        if (!corpus) continue;
-        const key = id.slice(2);
-        const i = corpus.ix.papers.findIndex((p2) => p2.key === key);
-        if (i < 0) continue;
-        const p = corpus.ix.papers[i];
-        const hit = {
-          paper: i,
-          score: 0,
-          source: "keyword",
-          fromAbstract: true,
-          snippet: bestSnippet(p.abstract || p.title, []).text,
-          attachmentKey: p.pdfs?.[0]?.attachmentKey ?? p.snapshots?.[0]?.attachmentKey
-        };
-        const ch = { corpus: corpus.name, hit };
-        rows.push(corpus.name === "papers" ? { paper: ch, winner: "paper" } : { note: ch, winner: "note" });
-      }
-      return rows.map((r) => buildVM(r, this.corpora, []));
-    }
     status() {
       const one = (c) => c ? { count: c.ix.papers.length, builtAt: c.ix.manifest?.built_at ?? null, semantic: c.semantic, reason: c.reason } : null;
       return {
@@ -1683,37 +1640,15 @@
     }
   };
 
-  // package.json
-  var package_default = {
-    name: "semantero-launcher-core",
-    version: "1.0.0",
-    description: "Ranking and view-model core for the Semantero launcher (runs in Node for tests, in JavaScriptCore in the app)",
-    private: true,
-    type: "module",
-    scripts: {
-      test: "node --test test/*.test.ts",
-      typecheck: "tsc --noEmit -p . && tsc --noEmit -p tsconfig.test.json",
-      build: "node build.mjs",
-      record: "node scripts/record-conformance.ts",
-      eval: "node scripts/eval.ts"
-    },
-    license: "MIT",
-    devDependencies: {
-      "@types/node": "^26.6.5",
-      esbuild: "^0.25.0",
-      typescript: "^5.8.0"
-    }
-  };
-
   // src/api.ts
-  var VERSION = package_default.version;
+  var VERSION = true ? "1.0.0" : "dev";
   var engine = null;
-  function raw(part) {
+  function raw(part, timings) {
     if (!part) return null;
     return {
-      manifest: parseJsonPart(part.manifest),
-      papers: parseJsonPart(part.papers),
-      chunks: parseJsonPart(part.chunks),
+      manifest: parseJsonPart(part.manifest, timings),
+      papers: parseJsonPart(part.papers, timings),
+      chunks: parseJsonPart(part.chunks, timings),
       vectors: part.vectors ?? null
     };
   }
@@ -1728,14 +1663,14 @@
     version: VERSION,
     /** Build both corpora; swaps the engine only on success. Returns the status as JSON. */
     load(papers, notes) {
-      loadTimings.decode = loadTimings.parse = loadTimings.build = 0;
-      const rawPapers = raw(papers);
-      const rawNotes = raw(notes);
+      const timings = { decode: 0, parse: 0, build: 0 };
+      const rawPapers = raw(papers, timings);
+      const rawNotes = raw(notes, timings);
       const t = Date.now();
       const next = new Engine(buildCorpora(rawPapers, rawNotes));
-      loadTimings.build = Date.now() - t;
+      timings.build = Date.now() - t;
       engine = next;
-      return JSON.stringify({ ...next.status(), timings: { ...loadTimings } });
+      return JSON.stringify({ ...next.status(), timings });
     },
     /** Replace only the notes corpus, reusing the loaded papers corpus. Returns the status as JSON. */
     loadNotes(notes) {
@@ -1759,9 +1694,6 @@
     hybridFromRowScores(query, papersScores, notesScores, scope, limit) {
       const scores = { papers: f32(papersScores), notes: f32(notesScores) };
       return JSON.stringify(need().hybridFromRowScores(query, scores, scope, limit));
-    },
-    lookup(ids) {
-      return JSON.stringify(need().lookup(ids));
     },
     recent(limit) {
       return JSON.stringify(need().recent(limit));

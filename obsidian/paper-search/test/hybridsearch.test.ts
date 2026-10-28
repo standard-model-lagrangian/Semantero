@@ -3,11 +3,11 @@ import assert from "node:assert";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { keyword, semantic, hybrid, hybridSearch, rowScores, type LoadedIndex } from "../src/engine.ts";
+import { keyword, semantic, hybrid, hybridSearch, rowScores, type LoadedIndex } from "../src/core/engine.ts";
 import { ModalSearchController, type ModalSearchItem } from "../src/modalsearch.ts";
 import { InlineSuggestController, type SuggestionItem } from "../src/inline.ts";
-import { FakeClock, FakeVault } from "./fakes.ts";
-import { IndexStore } from "../src/indexstore.ts";
+import { FakeClock, FakeVault, flushPromises } from "./fakes.ts";
+import { IndexStore } from "../src/core/indexstore.ts";
 import { buildSyntheticIndex } from "../scripts/make-synthetic-index.ts";
 
 // 80 papers: more than the 12-result limit, so truncating before the merge changes results.
@@ -64,7 +64,7 @@ test("HS2 keyword/semantic with snippets:false skip snippet work but keep rankin
 /** Runs the debounced work of a controller to completion: timers, then the replies they await. */
 async function settle(clock: FakeClock) {
   clock.runAll();
-  for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
+  await flushPromises();
 }
 
 test("HS3 the search modal and @@ show the merge over the full lists (hybridSearch), not a merge of truncated ones", async () => {
@@ -102,7 +102,7 @@ test("HS3 the search modal and @@ show the merge over the full lists (hybridSear
     const suggest = { suggestions: { values, selectedItem: 0, setSuggestions(items: SuggestionItem[]) { this.values = items; } } };
     const inline = new InlineSuggestController({
       indexStore: store,
-      embedder: { embedQuery: async () => qVec, rowScores: async (_t, index) => rowScores(index, qVec) },
+      embedder: { rowScores: async (_t, index) => rowScores(index, qVec) },
       vault: new FakeVault(),
       settings: { inlineLimit: 12, minCharsSemantic: 1, createLiteratureNotes: false },
       setTimeoutFn: (fn, ms) => iclock.setTimeout(fn, ms),

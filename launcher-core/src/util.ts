@@ -63,16 +63,20 @@ export function decodeUtf8(input: ArrayBuffer | ArrayBufferView): string {
 }
 
 /** Where `load` spends its time (ms), for diagnostics: reported in the status. */
-export const loadTimings = { decode: 0, parse: 0, build: 0 };
+export interface LoadTimings {
+  decode: number;
+  parse: number;
+  build: number;
+}
 
-/** A JSON part that may arrive as a string or as UTF-8 bytes. */
-export function parseJsonPart<T>(part: string | ArrayBuffer | ArrayBufferView): T {
+/** A JSON part that may arrive as a string or as UTF-8 bytes. Adds the time spent to `timings` when given. */
+export function parseJsonPart<T>(part: string | ArrayBuffer | ArrayBufferView, timings?: LoadTimings): T {
   let t = Date.now();
   const text = typeof part === "string" ? part : decodeUtf8(part);
-  loadTimings.decode += Date.now() - t;
+  if (timings) timings.decode += Date.now() - t;
   t = Date.now();
   const value = JSON.parse(text) as T;
-  loadTimings.parse += Date.now() - t;
+  if (timings) timings.parse += Date.now() - t;
   return value;
 }
 

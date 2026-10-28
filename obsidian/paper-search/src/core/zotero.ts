@@ -28,3 +28,17 @@ export function hitUrl(paper: PaperMetadata, hit?: { attachmentKey?: string; pag
   if (snapshots.some((s) => s.attachmentKey === attKey)) return openAttachmentUrl(attKey);
   return openPdfUrl(attKey, hit?.attachmentKey ? hit.page : 1);
 }
+
+/**
+ * Where a hit matched, as shown beside it: "abstract", "p. N" (a page of a PDF) or `snapshotLabel` (a web snapshot,
+ * which has no pages). The plugin says "web page", the launcher "snapshot".
+ */
+export function hitLocation(
+  paper: PaperMetadata,
+  hit: { fromAbstract: boolean; attachmentKey?: string; page?: number },
+  snapshotLabel: string = "snapshot"
+): string {
+  if (hit.fromAbstract) return "abstract";
+  if (hit.attachmentKey && (paper.snapshots ?? []).some((s) => s.attachmentKey === hit.attachmentKey)) return snapshotLabel;
+  return hit.page && hit.page > 0 ? `p. ${hit.page}` : "abstract";
+}

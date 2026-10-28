@@ -2,9 +2,9 @@ import test from "node:test";
 import assert from "node:assert";
 import fs from "node:fs";
 import path from "node:path";
-import { keyword, semantic, hybrid, type LoadedIndex, type Hit } from "../src/engine.ts";
-import { IndexStore } from "../src/indexstore.ts";
-import type { PaperMetadata, ChunkDocument } from "../src/bm25.ts";
+import { keyword, semantic, hybrid, type LoadedIndex, type Hit } from "../src/core/engine.ts";
+import { IndexStore } from "../src/core/indexstore.ts";
+import type { PaperMetadata, ChunkDocument } from "../src/core/bm25.ts";
 
 const FIXTURES_DIR = path.resolve(import.meta.dirname, "../../../tests/fixtures/search/index_small");
 

@@ -1,4 +1,4 @@
-export { selectItemUrl, openPdfUrl, openAttachmentUrl, hitUrl } from "../../obsidian/paper-search/src/zotero.ts";
+export { selectItemUrl, openPdfUrl, openAttachmentUrl, hitUrl, hitLocation } from "../../obsidian/paper-search/src/core/zotero.ts";
 
 const enc = encodeURIComponent;
 

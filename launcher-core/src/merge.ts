@@ -1,4 +1,5 @@
-import type { Hit } from "../../obsidian/paper-search/src/engine.ts";
+import type { Hit } from "../../obsidian/paper-search/src/core/engine.ts";
+import { reciprocalRankFusion } from "../../obsidian/paper-search/src/core/rank.ts";
 import type { Corpora, CorpusName } from "./corpora.ts";
 
 /** A hit, tagged with the corpus its `paper` index refers to. */
@@ -37,33 +38,14 @@ export function sortByCosine(list: CHit[]): CHit[] {
 
 const keyOf = (c: CHit) => `${c.corpus}:${c.hit.paper}`;
 
-/** Reciprocal rank fusion of the keyword and semantic lists. An item in one list still ranks. */
+/** Reciprocal rank fusion of the keyword and semantic lists (rank.ts). An item in one list still ranks. */
 export function rrf(kw: CHit[], sem: CHit[], k: number = 60): CHit[] {
   if (sem.length === 0) return kw;
   if (kw.length === 0) return sem;
-  const score = new Map<string, number>();
-  const kwBy = new Map<string, CHit>();
-  const semBy = new Map<string, CHit>();
-  kw.forEach((c, i) => {
-    kwBy.set(keyOf(c), c);
-    score.set(keyOf(c), (score.get(keyOf(c)) ?? 0) + 1 / (k + i + 1));
-  });
-  sem.forEach((c, i) => {
-    semBy.set(keyOf(c), c);
-    score.set(keyOf(c), (score.get(keyOf(c)) ?? 0) + 1 / (k + i + 1));
-  });
-  const keys = [...score.keys()];
-  const idx = new Map(keys.map((key, i) => [key, i]));
-  keys.sort((a, b) => score.get(b)! - score.get(a)! || idx.get(a)! - idx.get(b)!);
-  return keys.map((key) => {
-    const s = semBy.get(key);
-    const w = kwBy.get(key);
+  return reciprocalRankFusion([kw, sem], keyOf, k).map(({ score, from: [w, s] }) => {
     const base = (s ?? w)!;
     const source: Hit["source"] = s && w ? "both" : s ? "semantic" : "keyword";
-    return {
-      corpus: base.corpus,
-      hit: { ...base.hit, score: score.get(key)!, source },
-    };
+    return { corpus: base.corpus, hit: { ...base.hit, score, source } };
   });
 }
 

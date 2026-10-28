@@ -1,4 +1,4 @@
-import { splitSentences } from "./text.ts";
+import { splitSentences } from "./core/text.ts";
 
 /**
  * Cleans Markdown formatting from text according to SPEC 3b:
@@ -121,6 +121,31 @@ function shortenSentences(
 }
 
 /**
+ * `clean`, the cleaned text of noteText from `start` on, shortened to maxChars around the sentence holding the cursor.
+ */
+function aroundCursor(clean: string, noteText: string, start: number, cursorOffset: number, maxChars: number): string {
+  const sentences = splitSentences(clean);
+  if (sentences.length === 0) return clean.slice(0, maxChars);
+
+  // Cursor position in the cleaned text: clean the text before the cursor the same way.
+  // (A proportional estimate drifts when large blocks are removed and can drop the cursor's sentence.)
+  const cleanOffset = cleanMarkdown(noteText.slice(start, Math.max(start, cursorOffset))).length;
+
+  // The cursor's sentence: the first one ending at or after it (sentences joined by one space)
+  let cursorSentenceIdx = 0;
+  let accumulated = 0;
+  for (let i = 0; i < sentences.length; i++) {
+    accumulated += sentences[i].length + 1;
+    if (accumulated >= cleanOffset) {
+      cursorSentenceIdx = i;
+      break;
+    }
+  }
+
+  return shortenSentences(sentences, cursorSentenceIdx, maxChars);
+}
+
+/**
  * Extracts a passage from note text for related paper retrieval:
  * 1. Use selection if >= 20 characters after clean-up.
  * 2. Otherwise use the section around cursor (between headings) if >= 200 chars.
@@ -169,25 +194,7 @@ export function extractPassage(
 
   if (cleanSec.length >= 200) {
     // Section has at least 200 chars after clean-up (R2)
-    const sentences = splitSentences(cleanSec);
-    if (sentences.length === 0) return cleanSec.slice(0, maxChars);
-
-    // Cursor position in the cleaned section: clean the text before the cursor the same way.
-    // (A proportional estimate drifts when large blocks are removed and can drop the cursor's sentence.)
-    const approxCleanOffset = cleanMarkdown(noteText.slice(prevHeadingEnd, Math.max(prevHeadingEnd, cursorOffset))).length;
-
-    // Find cursor sentence index
-    let cursorSentenceIdx = 0;
-    let accumulated = 0;
-    for (let i = 0; i < sentences.length; i++) {
-      accumulated += sentences[i].length + 1;
-      if (accumulated >= approxCleanOffset) {
-        cursorSentenceIdx = i;
-        break;
-      }
-    }
-
-    return shortenSentences(sentences, cursorSentenceIdx, maxChars);
+    return aroundCursor(cleanSec, noteText, prevHeadingEnd, cursorOffset, maxChars);
   }
 
   // 3. Whole note fallback
@@ -197,21 +204,5 @@ export function extractPassage(
     return null;
   }
 
-  const sentences = splitSentences(cleanWhole);
-  if (sentences.length === 0) return cleanWhole.slice(0, maxChars);
-
-  // Cursor position in the cleaned note (see the section case above).
-  const approxCleanOffset = cleanMarkdown(noteText.slice(0, Math.max(0, cursorOffset))).length;
-
-  let cursorSentenceIdx = 0;
-  let accumulated = 0;
-  for (let i = 0; i < sentences.length; i++) {
-    accumulated += sentences[i].length + 1;
-    if (accumulated >= approxCleanOffset) {
-      cursorSentenceIdx = i;
-      break;
-    }
-  }
-
-  return shortenSentences(sentences, cursorSentenceIdx, maxChars);
+  return aroundCursor(cleanWhole, noteText, 0, cursorOffset, maxChars);
 }

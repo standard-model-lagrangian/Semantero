@@ -1,11 +1,11 @@
-import type { Hit } from "../../obsidian/paper-search/src/engine.ts";
-import type { PaperMetadata } from "../../obsidian/paper-search/src/bm25.ts";
+import type { Hit } from "../../obsidian/paper-search/src/core/engine.ts";
+import type { PaperMetadata } from "../../obsidian/paper-search/src/core/bm25.ts";
 import { actionsFor, type ResultKind } from "./actions.ts";
 import { authorsShort, noteCitation, noteWikilink, paperCitation, paperWikilink } from "./cite.ts";
 import type { Corpora } from "./corpora.ts";
 import type { Row } from "./merge.ts";
 import { chooseAttachment, resolveNoteFile, resolvePaperFile } from "./paths.ts";
-import { hitUrl, lastHeading, obsidianNewUrl, obsidianOpenUrl, selectItemUrl } from "./urls.ts";
+import { hitLocation, hitUrl, lastHeading, obsidianNewUrl, obsidianOpenUrl, selectItemUrl } from "./urls.ts";
 import { fileName, folderOf, isoDate, shortDate } from "./util.ts";
 
 /** Everything the UI and the actions need. Swift only renders this and runs actions by id. */
@@ -49,12 +49,6 @@ export function boldRanges(text: string, tokens: string[]): [number, number][] {
   return out;
 }
 
-function paperLocation(paper: PaperMetadata, hit: Hit): string {
-  if (hit.fromAbstract) return "abstract";
-  if (hit.attachmentKey && (paper.snapshots ?? []).some((s) => s.attachmentKey === hit.attachmentKey)) return "snapshot";
-  return hit.page && hit.page > 0 ? `p. ${hit.page}` : "abstract";
-}
-
 function paperSubtitle(p: PaperMetadata): string {
   return [authorsShort(p.authors), p.year ? String(p.year) : "", p.journal ?? ""].filter(Boolean).join(" · ");
 }
@@ -83,7 +77,7 @@ function paperVM(row: Row, c: Corpora, tokens: string[]): ResultVM {
   const notePath = nEntry?.path ?? known?.path;
   const hasNote = !!notePath;
 
-  const loc = paperLocation(paper, phit);
+  const loc = hitLocation(paper, phit);
   const att = chooseAttachment(paper, phit.attachmentKey);
   const filePath = att ? resolvePaperFile(c.zoteroStorage, att.file) : null;
 

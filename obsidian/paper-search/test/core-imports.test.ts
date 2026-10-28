@@ -3,8 +3,9 @@ import assert from "node:assert";
 import fs from "node:fs";
 import path from "node:path";
 
-const SRC = path.resolve(import.meta.dirname, "../src");
-const CORE = ["engine", "bm25", "rank", "text", "vectors", "ollama", "indexstore", "zotero", "textstore"];
+/** The shared ranking core is this folder: launcher-core bundles it for JavaScriptCore. */
+const CORE = path.resolve(import.meta.dirname, "../src/core");
+const LAUNCHER_SRC = path.resolve(import.meta.dirname, "../../../launcher-core/src");
 
 function importsOf(file: string): string[] {
   const src = fs.readFileSync(file, "utf8");
@@ -15,19 +16,27 @@ function importsOf(file: string): string[] {
   return out;
 }
 
+const tsFiles = (dir: string) => fs.readdirSync(dir).filter((n) => n.endsWith(".ts")).map((n) => path.join(dir, n));
+
 // T1: the launcher bundles these files without Obsidian, Electron, or Node built-ins
-test("T1 core files import nothing from obsidian (recursively)", () => {
-  const seen = new Set<string>();
-  const queue = CORE.map((n) => path.join(SRC, `${n}.ts`));
-  while (queue.length) {
-    const file = queue.pop()!;
-    if (seen.has(file)) continue;
-    seen.add(file);
+test("T1 core files import only each other: nothing from obsidian, Node or the rest of the plugin", () => {
+  const files = tsFiles(CORE);
+  assert.ok(files.length >= 10, "src/core/ holds the ranking core");
+  for (const file of files) {
     for (const spec of importsOf(file)) {
-      assert.ok(spec.startsWith("."), `${path.basename(file)} imports bare module "${spec}" (core files may only import each other)`);
-      assert.ok(!/obsidian|electron/.test(spec), `${path.basename(file)} imports ${spec}`);
-      queue.push(path.resolve(path.dirname(file), spec));
+      const name = path.basename(file);
+      assert.ok(spec.startsWith("./"), `core/${name} imports "${spec}" (core files may only import each other)`);
+      assert.ok(fs.existsSync(path.resolve(CORE, spec)), `core/${name} imports missing ${spec}`);
+      assert.strictEqual(path.dirname(path.resolve(CORE, spec)), CORE, `core/${name} imports ${spec} from outside src/core/`);
     }
   }
-  assert.ok(seen.size >= CORE.length);
+});
+
+test("T1b launcher-core reaches into the plugin only through src/core/", () => {
+  for (const file of tsFiles(LAUNCHER_SRC)) {
+    for (const spec of importsOf(file)) {
+      if (!spec.includes("obsidian/paper-search")) continue;
+      assert.ok(spec.includes("obsidian/paper-search/src/core/"), `${path.basename(file)} imports ${spec}`);
+    }
+  }
 });

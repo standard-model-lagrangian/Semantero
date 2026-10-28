@@ -6,11 +6,11 @@ import {
   requestUrl,
 } from "obsidian";
 import type PaperSearchPlugin from "./main.ts";
-import { DEFAULT_KEEP_ALIVE } from "./ollama.ts";
-import { DEFAULT_QUERY_INSTRUCTION, warmSemantic } from "./semantic.ts";
+import { DEFAULT_KEEP_ALIVE } from "./core/ollama.ts";
+import { queryInstruction, warmSemantic } from "./core/semantic.ts";
 import { formatCitation } from "./cite.ts";
-import { hitUrl, selectItemUrl } from "./zotero.ts";
-import type { PaperMetadata } from "./bm25.ts";
+import { hitLocation, hitUrl, selectItemUrl } from "./core/zotero.ts";
+import type { PaperMetadata } from "./core/bm25.ts";
 import { ModalSearchController, chooserView, type ChooserLike, type ModalSearchItem } from "./modalsearch.ts";
 
 export type SearchModalItem = ModalSearchItem;
@@ -26,7 +26,7 @@ export class PaperSearchModal extends SuggestModal<SearchModalItem> {
     this.plugin = plugin;
     this.controller = new ModalSearchController({
       indexStore: plugin.indexStore,
-      semanticScores: (ix, text, instruction) => plugin.semanticScoresFor(ix, text, instruction || DEFAULT_QUERY_INSTRUCTION),
+      semanticScores: (ix, text) => plugin.semanticScoresFor(ix, text, queryInstruction(ix)),
       zotero: plugin.zotero,
       settings: plugin.settings,
       view: chooserView(() => this.chooser(), (msg) => this.footerEl?.setText(msg)),
@@ -135,13 +135,7 @@ export class PaperSearchModal extends SuggestModal<SearchModalItem> {
       badge.style.marginRight = "6px";
       badge.style.backgroundColor = "var(--background-secondary)";
 
-      if (hit.fromAbstract) {
-        badge.setText("abstract");
-      } else if (hit.page) {
-        badge.setText(`p. ${hit.page}`);
-      } else {
-        badge.setText("web page");
-      }
+      badge.setText(hitLocation(paper, hit, "web page"));
 
       snippetContainer.createSpan({ text: hit.snippet, cls: "paper-snippet-text" });
     }

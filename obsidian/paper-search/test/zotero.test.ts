@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert";
 import fs from "node:fs";
 import path from "node:path";
-import { selectItemUrl, openPdfUrl, openAttachmentUrl, hitUrl } from "../src/zotero.ts";
+import { selectItemUrl, openPdfUrl, openAttachmentUrl, hitUrl, hitLocation } from "../src/core/zotero.ts";
 import { renderTemplate } from "../src/litnote.ts";
 import { RelatedPapersController } from "../src/related.ts";
 
@@ -34,9 +34,9 @@ test("Z4 panel opens the matching attachment at the matching page, not the paren
 
 test("Z5 no source file builds zotero:// links by hand", () => {
   const srcDir = path.join(import.meta.dirname, "..", "src");
-  for (const f of fs.readdirSync(srcDir).filter((n) => n.endsWith(".ts") && n !== "zotero.ts")) {
+  for (const f of fs.readdirSync(srcDir, { recursive: true, encoding: "utf8" }).filter((n) => n.endsWith(".ts") && n !== "core/zotero.ts")) {
     const code = fs.readFileSync(path.join(srcDir, f), "utf8");
-    assert.ok(!code.includes("zotero://"), `${f} builds a zotero:// link; use src/zotero.ts`);
+    assert.ok(!code.includes("zotero://"), `${f} builds a zotero:// link; use src/core/zotero.ts`);
   }
 });
 
@@ -57,4 +57,14 @@ test("Z6 a web-snapshot hit opens the snapshot without a page; abstract hits fal
   assert.strictEqual(c.getPdfUrl(snapOnly, { attachmentKey: "SNAPKEY1", page: 0, fromAbstract: false }), "zotero://open/library/items/SNAPKEY1");
   // papers.json from an index built before snapshots existed has no `snapshots` field
   assert.strictEqual(hitUrl({ key: "PARENTKY" } as any, undefined), "zotero://select/library/items/PARENTKY");
+});
+
+test("Z7 hitLocation: abstract, the PDF page, or the snapshot (one label for the modal, the panel and the launcher)", () => {
+  const p: any = { key: "PARENTKY", pdfs: [{ attachmentKey: "PDFKEY01" }], snapshots: [{ attachmentKey: "SNAPKEY1" }] };
+  assert.strictEqual(hitLocation(p, { fromAbstract: true }), "abstract");
+  assert.strictEqual(hitLocation(p, { fromAbstract: false, attachmentKey: "PDFKEY01", page: 4 }), "p. 4");
+  assert.strictEqual(hitLocation(p, { fromAbstract: false, attachmentKey: "SNAPKEY1", page: 0 }), "snapshot");
+  assert.strictEqual(hitLocation(p, { fromAbstract: false, attachmentKey: "SNAPKEY1", page: 0 }, "web page"), "web page");
+  // a chunk with no page to show falls back to "abstract"
+  assert.strictEqual(hitLocation(p, { fromAbstract: false, attachmentKey: "PDFKEY01", page: 0 }), "abstract");
 });

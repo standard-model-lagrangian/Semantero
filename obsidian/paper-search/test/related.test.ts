@@ -10,8 +10,10 @@ import {
   FakeVault,
   FakeMetadataCache,
   FakeClock,
+  vectorScorer,
+  flushPromises,
 } from "./fakes.ts";
-import { BM25Index, type PaperMetadata } from "../src/bm25.ts";
+import { BM25Index, type PaperMetadata } from "../src/core/bm25.ts";
 
 function createDummyPaper(citekey: string, title: string, author = "Roth", year = 2023): PaperMetadata {
   return {
@@ -70,14 +72,14 @@ test("P1 refresh embeds passage once with instruction, limits results, hides cit
   const indexStore = new FakeRelatedIndexStore();
 
   let embedCalls: { text: string; instruction?: string }[] = [];
-  const embedder: RelatedEmbedderLike = {
+  const embedder = vectorScorer({
     async embedQuery(text: string, instruction?: string) {
       embedCalls.push({ text, instruction });
       const vec = new Float32Array(4);
       vec.fill(1.0); // matches all
       return vec;
     },
-  };
+  });
 
   const controller = new RelatedPapersController({
     indexStore,
@@ -122,12 +124,12 @@ test("P2 below relatedMinScore -> Nothing close state, not weak results", async 
   const vault = new FakeVault();
   const indexStore = new FakeRelatedIndexStore();
 
-  const embedder: RelatedEmbedderLike = {
+  const embedder = vectorScorer({
     async embedQuery(text: string) {
       // Return vector that gives zero or very low score
       return new Float32Array(4); // all 0 dot products
     },
-  };
+  });
 
   const controller = new RelatedPapersController({
     indexStore,
@@ -149,13 +151,13 @@ test("P3 switching notes mid-refresh -> result discarded, shows new note empty s
   const indexStore = new FakeRelatedIndexStore();
 
   let resolveEmbed: ((v: Float32Array) => void) | null = null;
-  const embedder: RelatedEmbedderLike = {
+  const embedder = vectorScorer({
     async embedQuery() {
       return new Promise<Float32Array>((res) => {
         resolveEmbed = res;
       });
     },
-  };
+  });
 
   const controller = new RelatedPapersController({
     indexStore,
@@ -191,7 +193,7 @@ test("P4 two quick refreshes -> only the last renders, first request ignored", a
   let resolveSecond: ((v: Float32Array) => void) | null = null;
 
   let callCount = 0;
-  const embedder: RelatedEmbedderLike = {
+  const embedder = vectorScorer({
     async embedQuery() {
       callCount++;
       if (callCount === 1) {
@@ -203,7 +205,7 @@ test("P4 two quick refreshes -> only the last renders, first request ignored", a
         resolveSecond = res;
       });
     },
-  };
+  });
 
   const controller = new RelatedPapersController({
     indexStore,
@@ -241,12 +243,12 @@ test("P5 auto-refresh off (default) -> opening files triggers ZERO embed calls a
   const indexStore = new FakeRelatedIndexStore();
 
   let embedCallCount = 0;
-  const embedder: RelatedEmbedderLike = {
+  const embedder = vectorScorer({
     async embedQuery() {
       embedCallCount++;
       return new Float32Array(4);
     },
-  };
+  });
 
   const controller = new RelatedPapersController({
     indexStore,
@@ -270,14 +272,14 @@ test("P6 auto-refresh on -> refreshes 1s after last switch, reopening same file+
   const clock = new FakeClock();
 
   let embedCallCount = 0;
-  const embedder: RelatedEmbedderLike = {
+  const embedder = vectorScorer({
     async embedQuery() {
       embedCallCount++;
       const v = new Float32Array(4);
       v.fill(1.0);
       return v;
     },
-  };
+  });
 
   const controller = new RelatedPapersController({
     indexStore,
@@ -305,7 +307,7 @@ test("P6 auto-refresh on -> refreshes 1s after last switch, reopening same file+
 
   // Advance 1s
   clock.advance(1000);
-  await new Promise((r) => setImmediate(r));
+  await flushPromises();
 
   assert.strictEqual(embedCallCount, 1, "Exactly one embed call 1s after last file switch");
   assert.strictEqual(controller.state, "results");
@@ -313,7 +315,7 @@ test("P6 auto-refresh on -> refreshes 1s after last switch, reopening same file+
   // Reopening same file with same passage
   controller.onFileOpen({ path: "notes/f3.md" }, () => noteText);
   clock.advance(1000);
-  await new Promise((r) => setImmediate(r));
+  await flushPromises();
 
   assert.strictEqual(embedCallCount, 1, "Reopening same file with same passage gives NO new embed call");
 });
@@ -326,7 +328,7 @@ test("P7 actions: cite inserts into editor or clipboard; note opens/creates; cli
   const notices: string[] = [];
   const controller = new RelatedPapersController({
     indexStore,
-    embedder: { async embedQuery() { return new Float32Array(4); } },
+    embedder: vectorScorer({ async embedQuery() { return new Float32Array(4); } }),
     vault,
     metadataCache,
     settings: {
@@ -383,11 +385,11 @@ test("P8 Ollama down -> needs Ollama state and at most one notice per session", 
   const vault = new FakeVault();
   const indexStore = new FakeRelatedIndexStore();
 
-  const embedder: RelatedEmbedderLike = {
+  const embedder = vectorScorer({
     async embedQuery() {
       throw new Error("Connection refused");
     },
-  };
+  });
 
   const notices: string[] = [];
   const controller = new RelatedPapersController({
@@ -424,11 +426,11 @@ test("P9 refresh checks index freshness first, so a paper removed from Zotero is
     );
     return true;
   };
-  const embedder: RelatedEmbedderLike = {
+  const embedder = vectorScorer({
     async embedQuery() {
       return new Float32Array(4).fill(1.0);
     },
-  };
+  });
   const controller = new RelatedPapersController({
     indexStore,
     embedder,

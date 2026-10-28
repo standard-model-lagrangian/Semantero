@@ -11,7 +11,7 @@ import {
 } from "../src/litnote.ts";
 import { formatCitation } from "../src/cite.ts";
 import { FakeVault, FakeMetadataCache, FakeEditor } from "./fakes.ts";
-import type { PaperMetadata } from "../src/bm25.ts";
+import type { PaperMetadata } from "../src/core/bm25.ts";
 
 function parseSimpleYamlFrontmatter(content: string): Record<string, string> {
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);

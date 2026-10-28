@@ -4,7 +4,11 @@
  * - EditorLike
  * - FakeClock
  * - FakeRequestUrl
+ * - vectorScorer (the controllers' semantic scorer over a query-vector fake)
+ * - flushPromises
  */
+
+import { rowScores, type LoadedIndex } from "../src/core/engine.ts";
 
 export interface FakeFile {
   path: string;
@@ -335,4 +339,32 @@ export class FakeRequestUrl {
       text: JSON.stringify({ embeddings }),
     };
   }
+}
+
+/** A fake that embeds a query: resolves to a vector, or null for "the embedder is unavailable". */
+export interface VectorFake {
+  embedQuery(text: string, instruction?: string): Promise<Float32Array | null>;
+}
+
+/**
+ * The semantic scorer the controllers take (`rowScores`) over a query-vector fake: what semantic.ts does for an Ollama
+ * index, minus HTTP. A null vector counts as the embedder being down, so the scorer throws, as the real one does.
+ */
+export function vectorScorer(fake: VectorFake) {
+  return {
+    async rowScores(text: string, ix: LoadedIndex, instruction?: string): Promise<ArrayLike<number> | null> {
+      const v = await fake.embedQuery(text, instruction);
+      if (!v) throw new Error("embedder unavailable");
+      return rowScores(ix, v);
+    },
+  };
+}
+
+/**
+ * Lets every promise chain that is already settled or settling run to the end, however many `await`s it has: one
+ * macrotask turn, and Node drains the whole microtask queue before it. Work waiting on a timer (FakeClock) or on a
+ * promise the test still holds stays pending.
+ */
+export function flushPromises(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
 }

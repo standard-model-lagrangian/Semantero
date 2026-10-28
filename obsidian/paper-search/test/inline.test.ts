@@ -13,8 +13,10 @@ import {
   FakeVault,
   FakeMetadataCache,
   FakeClock,
+  vectorScorer,
+  flushPromises,
 } from "./fakes.ts";
-import { BM25Index, type PaperMetadata } from "../src/bm25.ts";
+import { BM25Index, type PaperMetadata } from "../src/core/bm25.ts";
 
 function createDummyPaper(citekey: string, title: string, author = "Roth", year = 2023): PaperMetadata {
   return {
@@ -203,14 +205,14 @@ test("I4 semantic results merge in after 250 ms quiet and typing at 100 ms produ
   const clock = new FakeClock();
 
   let embedCallCount = 0;
-  const embedder = {
+  const embedder = vectorScorer({
     async embedQuery(text: string) {
       embedCallCount++;
       const v = new Float32Array(4);
       v.fill(1.0);
       return v;
     },
-  };
+  });
 
   const controller = new InlineSuggestController({
     indexStore,
@@ -243,7 +245,7 @@ test("I4 semantic results merge in after 250 ms quiet and typing at 100 ms produ
   // Advance remaining 150 ms to reach 250 ms quiet pause
   clock.advance(150);
   // Allow microtasks to complete
-  await new Promise((r) => setImmediate(r));
+  await flushPromises();
 
   assert.strictEqual(embedCallCount, 1, "Exactly one embed call after 250 ms pause");
   assert.ok(fakeSuggest.suggestions?.values && fakeSuggest.suggestions.values.length > 0);
@@ -257,7 +259,7 @@ test("I5 outdated semantic responses are dropped", async () => {
   let resolveFirst: ((val: Float32Array) => void) | null = null;
   let resolveSecond: ((val: Float32Array) => void) | null = null;
 
-  const embedder = {
+  const embedder = vectorScorer({
     async embedQuery(text: string) {
       if (text === "stiff gel") { // the query is embedded without its trailing space
         return new Promise<Float32Array>((res) => {
@@ -268,7 +270,7 @@ test("I5 outdated semantic responses are dropped", async () => {
         resolveSecond = res;
       });
     },
-  };
+  });
 
   const controller = new InlineSuggestController({
     indexStore,
@@ -301,13 +303,13 @@ test("I5 outdated semantic responses are dropped", async () => {
   const v = new Float32Array(4);
   v.fill(1.0);
   resolveSecond!(v);
-  await new Promise((r) => setImmediate(r));
+  await flushPromises();
 
   assert.strictEqual(refreshHistory.length, 1);
 
   // 4. Resolve "stiff gel " (outdated)
   resolveFirst!(v);
-  await new Promise((r) => setImmediate(r));
+  await flushPromises();
 
   // Should NOT trigger another refresh because it is outdated
   assert.strictEqual(refreshHistory.length, 1, "Outdated response must be dropped");
@@ -318,11 +320,11 @@ test("I6 adapter fallback: suggest without setSuggestions caches in 16-entry LRU
   const indexStore = new FakeIndexStore();
   const clock = new FakeClock();
 
-  const embedder = {
+  const embedder = vectorScorer({
     async embedQuery(text: string) {
       return new Float32Array(4);
     },
-  };
+  });
 
   const controller = new InlineSuggestController({
     indexStore,
@@ -341,8 +343,7 @@ test("I6 adapter fallback: suggest without setSuggestions caches in 16-entry LRU
 
   await controller.getSuggestions("viscoelastic hydrogel", fakeSuggestWithoutSet);
   clock.advance(250);
-  await Promise.resolve();
-  await Promise.resolve();
+  await flushPromises();
 
   // Cached in controller.queryCache
   assert.ok(controller.queryCache.has("viscoelastic hydrogel"), "Should cache in LRU");
@@ -368,11 +369,11 @@ test("I7 Ollama down -> keyword results only, at most one notice per session, se
   const indexStore = new FakeIndexStore();
   const clock = new FakeClock();
 
-  const embedder = {
+  const embedder = vectorScorer({
     async embedQuery(text: string) {
       throw new Error("Connection refused (Ollama down)");
     },
-  };
+  });
 
   const notices: string[] = [];
   const controller = new InlineSuggestController({
@@ -397,14 +398,12 @@ test("I7 Ollama down -> keyword results only, at most one notice per session, se
   // Keystroke 1
   await controller.getSuggestions("organoid stiff", fakeSuggest);
   clock.advance(250);
-  await Promise.resolve();
-  await Promise.resolve();
+  await flushPromises();
 
   // Keystroke 2
   await controller.getSuggestions("organoid stiffness", fakeSuggest);
   clock.advance(250);
-  await Promise.resolve();
-  await Promise.resolve();
+  await flushPromises();
 
   // Notice should only have fired once
   assert.strictEqual(notices.length, 1);
@@ -422,7 +421,7 @@ test("I7b with the pplx backend down, the notice names the pplx service, not Oll
   const notices: string[] = [];
   const controller = new InlineSuggestController({
     indexStore,
-    embedder: { async embedQuery() { throw new Error("Connection refused"); } },
+    embedder: vectorScorer({ async embedQuery() { throw new Error("Connection refused"); } }),
     vault: new FakeVault(),
     showNotice: (msg) => notices.push(msg),
     setTimeoutFn: (fn, ms) => clock.setTimeout(fn, ms),
@@ -430,8 +429,7 @@ test("I7b with the pplx backend down, the notice names the pplx service, not Oll
   });
   await controller.getSuggestions("organoid stiffness", { suggestions: { setSuggestions() {}, values: [] } });
   clock.advance(250);
-  await Promise.resolve();
-  await Promise.resolve();
+  await flushPromises();
   assert.strictEqual(notices.length, 1);
   assert.ok(notices[0].includes("pplx service"), notices[0]);
   assert.ok(!notices[0].includes("Ollama"), notices[0]);

@@ -42,7 +42,10 @@ export interface BM25SearchResult {
   bestChunkIndex?: number;
 }
 
-const FIELD_WEIGHTS: Record<string, number> = {
+type Field = "title" | "authors" | "citekey" | "journal" | "tags" | "collections" | "abstract";
+
+/** BM25F weight per paper field. Scores are summed over fields in this key order. */
+const FIELD_WEIGHTS: Record<Field, number> = {
   title: 3.0,
   authors: 3.0,
   citekey: 3.0,
@@ -50,6 +53,17 @@ const FIELD_WEIGHTS: Record<string, number> = {
   tags: 2.0,
   collections: 2.0,
   abstract: 1.5,
+};
+
+/** The text of each field of a paper. */
+const FIELD_TEXT: Record<Field, (p: PaperMetadata) => string> = {
+  title: (p) => p.title || "",
+  authors: (p) => p.authors.join(" "),
+  citekey: (p) => p.citekey || "",
+  journal: (p) => p.journal || "",
+  tags: (p) => p.tags.join(" "),
+  collections: (p) => p.collections.join(" "),
+  abstract: (p) => p.abstract || "",
 };
 
 /**
@@ -121,22 +135,14 @@ export class BM25Index {
     };
 
     // 1. Papers: per field, term id -> frequency
-    const fieldNames = Object.keys(FIELD_WEIGHTS);
+    const fieldNames = Object.keys(FIELD_WEIGHTS) as Field[];
     const totalFieldLengths = new Float64Array(fieldNames.length);
     const paperFields: { ids: Int32Array; tfs: Int32Array; len: number }[][] = [];
     const counts = new Map<number, number>();
     const seen = new Set<number>();
 
     for (const paper of this.papers) {
-      const fieldTexts = [
-        paper.title || "",
-        paper.authors.join(" "),
-        paper.citekey || "",
-        paper.journal || "",
-        paper.tags.join(" "),
-        paper.collections.join(" "),
-        paper.abstract || "",
-      ];
+      const fieldTexts = fieldNames.map((name) => FIELD_TEXT[name](paper));
       seen.clear();
       const perField: { ids: Int32Array; tfs: Int32Array; len: number }[] = [];
       for (let f = 0; f < fieldNames.length; f++) {

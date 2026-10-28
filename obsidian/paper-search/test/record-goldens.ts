@@ -1,10 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { BM25Index, type PaperMetadata, type ChunkDocument } from "../src/bm25.ts";
-import { tokenize, bestSnippet } from "../src/text.ts";
-import { topK } from "../src/vectors.ts";
-import { scorePaperSemantic, mergeRRF, type PaperRowRef } from "../src/rank.ts";
+import { BM25Index, type PaperMetadata, type ChunkDocument } from "../src/core/bm25.ts";
+import { tokenize, bestSnippet } from "../src/core/text.ts";
 
 const FIXTURES_DIR = path.resolve(import.meta.dirname, "../../../tests/fixtures/search/index_small");
 
@@ -17,6 +15,60 @@ const vectors = new Float32Array(vecBuf.buffer, vecBuf.byteOffset, vecBuf.byteLe
 const bm25 = new BM25Index(papers, chunks);
 const dims = manifest.dims; // 8
 const totalRows = Math.floor(vectors.length / dims);
+
+// The reference the goldens were recorded from: the original modal's ranking, written out here so that it stays
+// independent of src/ (engine, bm25 and rowscores tests compare the production path against these goldens).
+interface PaperRowRef {
+  abstractRow: number | null;
+  chunkRows: number[];
+}
+
+/** Dot product of the query with every row. */
+function allRowScores(queryVec: Float32Array): Map<number, number> {
+  const out = new Map<number, number>();
+  for (let r = 0; r < totalRows; r++) {
+    let dot = 0;
+    for (let d = 0; d < dims; d++) dot += vectors[r * dims + d] * queryVec[d];
+    out.set(r, dot);
+  }
+  return out;
+}
+
+/** A paper's score: its best row (abstract first, then chunks; ties keep the earlier row). */
+function scorePaperSemantic(paper: PaperRowRef, rowScores: Map<number, number>) {
+  let bestScore = -Infinity;
+  let winningRow: number | null = null;
+  let isAbstract = false;
+  if (paper.abstractRow !== null && paper.abstractRow !== undefined) {
+    const s = rowScores.get(paper.abstractRow);
+    if (s !== undefined && s > bestScore) {
+      bestScore = s;
+      winningRow = paper.abstractRow;
+      isAbstract = true;
+    }
+  }
+  for (const cRow of paper.chunkRows) {
+    const s = rowScores.get(cRow);
+    if (s !== undefined && s > bestScore) {
+      bestScore = s;
+      winningRow = cRow;
+      isAbstract = false;
+    }
+  }
+  return { score: bestScore === -Infinity ? 0 : bestScore, winningRow, isAbstract };
+}
+
+/** Reciprocal rank fusion (k = 60); ties keep first-seen order. */
+function mergeRRF(rankedLists: number[][], k: number = 60): { paperIndex: number; score: number }[] {
+  const rrfScores = new Map<number, number>();
+  for (const list of rankedLists) {
+    for (let rank = 1; rank <= list.length; rank++) {
+      const pIdx = list[rank - 1];
+      rrfScores.set(pIdx, (rrfScores.get(pIdx) || 0) + 1.0 / (k + rank));
+    }
+  }
+  return [...rrfScores.entries()].map(([paperIndex, score]) => ({ paperIndex, score })).sort((a, b) => b.score - a.score);
+}
 
 const paperRowRefs: PaperRowRef[] = papers.map((p: any, i: number) => ({
   paperIndex: i,
@@ -115,11 +167,7 @@ function runCurrentModalCode(query: string, limit = 10) {
   // 2. Semantic search
   const queryVec = getDeterministicVector(query, dims);
   const qVecF32 = new Float32Array(queryVec);
-  const matches = topK(qVecF32, vectors, totalRows, dims, totalRows);
-  const rowScores = new Map<number, number>();
-  for (const m of matches) {
-    rowScores.set(m.row, m.score);
-  }
+  const rowScores = allRowScores(qVecF32);
 
   const semanticList: { paperIndex: number; score: number; winningRow?: number; isAbstract?: boolean }[] = [];
   for (let pIdx = 0; pIdx < papers.length; pIdx++) {

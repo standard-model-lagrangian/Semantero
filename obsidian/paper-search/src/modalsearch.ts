@@ -1,10 +1,10 @@
-import { keyword, hybridSearchFromScores, type Hit, type LoadedIndex } from "./engine.ts";
-import { semanticText, shouldRunSemantic } from "./rank.ts";
+import { keyword, hybridSearchFromScores, type Hit, type LoadedIndex } from "./core/engine.ts";
+import { semanticText, shouldRunSemantic } from "./core/rank.ts";
 import { QueryJobs } from "./queryjobs.ts";
-import { embedderName } from "./semantic.ts";
+import { embedderName } from "./core/semantic.ts";
 import { indexedKeys } from "./zoterolive.ts";
 import { ensureLiteratureNote, type LitNoteSettings, type MetadataCacheLike, type VaultLike } from "./litnote.ts";
-import type { PaperMetadata } from "./bm25.ts";
+import type { PaperMetadata } from "./core/bm25.ts";
 
 /**
  * The search modal's logic without Obsidian (modal.ts is the view): keyword results at once, then, after the debounce,
@@ -66,7 +66,7 @@ export interface ModalIndexStoreLike {
 
 export class ModalSearchController {
   private indexStore: ModalIndexStoreLike;
-  private semanticScores: (ix: LoadedIndex, text: string, instruction: string | undefined) => Promise<ArrayLike<number> | null>;
+  private semanticScores: (ix: LoadedIndex, text: string) => Promise<ArrayLike<number> | null>;
   private zotero: { search(query: string, known: Set<string>): Promise<PaperMetadata[]> };
   private settings: ModalSearchSettings;
   private view: ModalListView;
@@ -87,8 +87,8 @@ export class ModalSearchController {
 
   constructor(options: {
     indexStore: ModalIndexStoreLike;
-    /** Per-row semantic scores (semantic.ts); throws when the embedder is down. */
-    semanticScores: (ix: LoadedIndex, text: string, instruction: string | undefined) => Promise<ArrayLike<number> | null>;
+    /** Per-row semantic scores (semantic.ts), with the index's own query instruction; throws when the embedder is down. */
+    semanticScores: (ix: LoadedIndex, text: string) => Promise<ArrayLike<number> | null>;
     zotero: { search(query: string, known: Set<string>): Promise<PaperMetadata[]> };
     settings: ModalSearchSettings;
     view: ModalListView;
@@ -169,7 +169,7 @@ export class ModalSearchController {
   private async runSemantic(query: string, ix: LoadedIndex, token: number): Promise<void> {
     let scores: ArrayLike<number> | null;
     try {
-      scores = await this.semanticScores(ix, semanticText(query), ix.manifest?.query_instruction);
+      scores = await this.semanticScores(ix, semanticText(query));
     } catch {
       if (this.jobs.isCurrent(token)) this.view.setFooter(`semantic off: ${embedderName(ix)} not reachable`);
       return;

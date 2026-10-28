@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { QueryJobs } from "../src/queryjobs.ts";
-import { FakeClock } from "./fakes.ts";
+import { FakeClock, flushPromises } from "./fakes.ts";
 
 function jobs(clock: FakeClock) {
   return new QueryJobs((fn, ms) => clock.setTimeout(fn, ms), (id) => clock.clearTimeout(id));
@@ -46,8 +46,7 @@ test("QJ3 work already in flight learns it is stale once the query changes", asy
   clock.advance(200);   // the request is out
   q.restart();          // the user typed on (or backspaced below the threshold)
   release();
-  await reply;
-  await Promise.resolve();
+  await flushPromises();
   assert.equal(applied, false);
 });
 

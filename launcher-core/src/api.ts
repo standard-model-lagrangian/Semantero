@@ -3,14 +3,17 @@
  * except the large inputs, which are ArrayBuffers (or strings) and the vector arguments (ArrayBuffers).
  * No Node or DOM globals are used.
  */
-import { shouldRunSemantic } from "../../obsidian/paper-search/src/rank.ts";
+import { shouldRunSemantic } from "../../obsidian/paper-search/src/core/rank.ts";
 import { buildCorpora, type RawCorpus } from "./corpora.ts";
 import { Engine, type RowScoreInput, type Scope } from "./query.ts";
-import pkg from "../package.json" with { type: "json" };
-import { loadTimings, parseJsonPart, toFloat32 } from "./util.ts";
+import { parseJsonPart, toFloat32, type LoadTimings } from "./util.ts";
+
+/** package.json's version, put in by build.mjs (esbuild `define`), so the bundle doesn't carry the whole package.json.
+ * Unbundled (Node tests) it is "dev"; test R28 checks the bundle's against package.json. */
+declare const __SEMANTERO_VERSION__: string | undefined;
 
 /** The ranker/bundle version the app checks before using it: bump package.json when the API changes. */
-export const VERSION: string = pkg.version;
+export const VERSION: string = typeof __SEMANTERO_VERSION__ === "string" ? __SEMANTERO_VERSION__ : "dev";
 
 type Part = string | ArrayBuffer | ArrayBufferView;
 export interface CorpusPart {
@@ -22,12 +25,12 @@ export interface CorpusPart {
 
 let engine: Engine | null = null;
 
-function raw(part: CorpusPart | null | undefined): RawCorpus | null {
+function raw(part: CorpusPart | null | undefined, timings?: LoadTimings): RawCorpus | null {
   if (!part) return null;
   return {
-    manifest: parseJsonPart(part.manifest),
-    papers: parseJsonPart(part.papers),
-    chunks: parseJsonPart(part.chunks),
+    manifest: parseJsonPart(part.manifest, timings),
+    papers: parseJsonPart(part.papers, timings),
+    chunks: parseJsonPart(part.chunks, timings),
     vectors: part.vectors ?? null,
   };
 }
@@ -46,14 +49,14 @@ const api = {
 
   /** Build both corpora; swaps the engine only on success. Returns the status as JSON. */
   load(papers: CorpusPart | null, notes: CorpusPart | null): string {
-    loadTimings.decode = loadTimings.parse = loadTimings.build = 0;
-    const rawPapers = raw(papers);
-    const rawNotes = raw(notes);
+    const timings: LoadTimings = { decode: 0, parse: 0, build: 0 };
+    const rawPapers = raw(papers, timings);
+    const rawNotes = raw(notes, timings);
     const t = Date.now();
     const next = new Engine(buildCorpora(rawPapers, rawNotes));
-    loadTimings.build = Date.now() - t;
+    timings.build = Date.now() - t;
     engine = next;
-    return JSON.stringify({ ...next.status(), timings: { ...loadTimings } });
+    return JSON.stringify({ ...next.status(), timings });
   },
 
   /** Replace only the notes corpus, reusing the loaded papers corpus. Returns the status as JSON. */
@@ -89,10 +92,6 @@ const api = {
   ): string {
     const scores: RowScoreInput = { papers: f32(papersScores), notes: f32(notesScores) };
     return JSON.stringify(need().hybridFromRowScores(query, scores, scope, limit));
-  },
-
-  lookup(ids: string[]): string {
-    return JSON.stringify(need().lookup(ids));
   },
 
   recent(limit: number): string {

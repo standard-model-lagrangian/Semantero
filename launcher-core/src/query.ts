@@ -1,5 +1,5 @@
-import { fillSnippets, keyword, rowScores, semanticFromRowScores, type Hit } from "../../obsidian/paper-search/src/engine.ts";
-import { bestSnippet, tokenize } from "../../obsidian/paper-search/src/text.ts";
+import { fillSnippets, keyword, rowScores, semanticFromRowScores, type Hit } from "../../obsidian/paper-search/src/core/engine.ts";
+import { bestSnippet, tokenize } from "../../obsidian/paper-search/src/core/text.ts";
 import { assembleCorpora, buildCorpus, type Corpora, type Corpus, type CorpusName, type RawCorpus } from "./corpora.ts";
 import { collapseLitnotes, interleave, rrf, sortByCosine, type CHit, type Row } from "./merge.ts";
 import { buildVM, type ResultVM } from "./vm.ts";
@@ -86,28 +86,6 @@ export class Engine {
       };
       return { note: { corpus: "notes", hit }, winner: "note" };
     });
-    return rows.map((r) => buildVM(r, this.corpora, []));
-  }
-
-  /** Results for known ids ("P:<itemKey>", "N:<noteKey>"), in the order asked; unknown ids are skipped.
-   * Spotlight uses this to turn a remembered id back into a result. */
-  lookup(ids: string[]): ResultVM[] {
-    const rows: Row[] = [];
-    for (const id of ids) {
-      const corpus = id.startsWith("P:") ? this.corpora.papers : id.startsWith("N:") ? this.corpora.notes : null;
-      if (!corpus) continue;
-      const key = id.slice(2);
-      const i = corpus.ix.papers.findIndex((p) => p.key === key);
-      if (i < 0) continue;
-      const p = corpus.ix.papers[i];
-      const hit: Hit = {
-        paper: i, score: 0, source: "keyword", fromAbstract: true,
-        snippet: bestSnippet(p.abstract || p.title, []).text,
-        attachmentKey: p.pdfs?.[0]?.attachmentKey ?? p.snapshots?.[0]?.attachmentKey,
-      };
-      const ch: CHit = { corpus: corpus.name, hit };
-      rows.push(corpus.name === "papers" ? { paper: ch, winner: "paper" } : { note: ch, winner: "note" });
-    }
     return rows.map((r) => buildVM(r, this.corpora, []));
   }
 

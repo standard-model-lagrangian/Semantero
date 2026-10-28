@@ -3,7 +3,7 @@ import assert from "node:assert";
 import { chooseAttachment, resolveInside, resolveNoteFile, resolvePaperFile } from "../src/paths.ts";
 import { lastHeading, obsidianNewUrl, obsidianOpenUrl } from "../src/urls.ts";
 import { fixtureEngine } from "./helpers.ts";
-import type { PaperMetadata } from "../../obsidian/paper-search/src/bm25.ts";
+import type { PaperMetadata } from "../../obsidian/paper-search/src/core/bm25.ts";
 
 const paper = (extra: Partial<PaperMetadata>): PaperMetadata => ({
   key: "K", citekey: "k", title: "t", authors: [], year: null, journal: null, doi: null, tags: [], collections: [], abstract: null, ...extra,

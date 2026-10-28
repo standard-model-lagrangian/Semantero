@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert";
-import { tokenize, splitSentences, bestSnippet } from "../src/text.ts";
+import { tokenize, splitSentences, bestSnippet } from "../src/core/text.ts";
 
 test("tokenises numbers and drops stopwords", () => {
   const res = tokenize("IL-6 in the 3D gels");

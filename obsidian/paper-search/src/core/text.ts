@@ -1,3 +1,6 @@
+// The entries with an apostrophe ("aren't", "it's", ...) never match: tokenize splits on every character outside
+// [a-z0-9], so "it's" becomes "it" and "s". They are kept as they are because removing them changes nothing, and
+// splitting them into their parts would change ranking ("s", "t" and "ll" would become stopwords).
 const STOPWORDS = new Set([
   "a", "about", "above", "after", "again", "against", "all", "am", "an", "and", "any", "are", "aren't",
   "as", "at", "be", "because", "been", "before", "being", "below", "between", "both", "but", "by",

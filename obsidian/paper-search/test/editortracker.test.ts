@@ -81,7 +81,7 @@ test("ET6 editorSnapshot reads text, cursor offset, selection and path", () => {
 
 test("ET7 no source file looks up views by a string type (it throws in Obsidian)", () => {
   const srcDir = path.join(import.meta.dirname, "..", "src");
-  for (const f of fs.readdirSync(srcDir).filter((n) => n.endsWith(".ts"))) {
+  for (const f of fs.readdirSync(srcDir, { recursive: true, encoding: "utf8" }).filter((n) => n.endsWith(".ts"))) {
     const code = fs.readFileSync(path.join(srcDir, f), "utf8");
     assert.ok(!/getActiveViewOfType\??\.?\(\s*["'`]/.test(code), `${f} calls getActiveViewOfType with a string`);
   }

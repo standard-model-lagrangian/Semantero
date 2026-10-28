@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert";
-import { TextStore, compactChunkTexts } from "../../obsidian/paper-search/src/textstore.ts";
+import { TextStore, compactChunkTexts } from "../../obsidian/paper-search/src/core/textstore.ts";
 import { fixtureEngine, rawFixtures } from "./helpers.ts";
 
 test("R33 TextStore round-trips every kind of string exactly, including unpaired surrogates", () => {

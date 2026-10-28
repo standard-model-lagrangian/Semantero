@@ -2,9 +2,9 @@ import test from "node:test";
 import assert from "node:assert";
 import fs from "node:fs";
 import path from "node:path";
-import { BM25Index, type PaperMetadata, type ChunkDocument } from "../src/bm25.ts";
-import { IndexStore } from "../src/indexstore.ts";
-import { keyword, semantic, hybrid } from "../src/engine.ts";
+import { BM25Index, type PaperMetadata, type ChunkDocument } from "../src/core/bm25.ts";
+import { IndexStore } from "../src/core/indexstore.ts";
+import { keyword, semantic, hybrid } from "../src/core/engine.ts";
 import { findTrigger, isExcludedContext } from "../src/cite.ts";
 import { extractPassage } from "../src/passage.ts";
 import { maintainSelection, type FakeSuggestLike, type SuggestionItem } from "../src/inline.ts";
@@ -480,8 +480,8 @@ test("PF8 B9: Panel refresh end-to-end latency with warm Ollama", { skip: !proce
   const loadedIndex = IndexStore.precomputeIndex(manifest, papers, chunks, vectors, dims, 1);
 
   const { RelatedPapersController } = await import("../src/related.ts");
-  const { FakeVault } = await import("./fakes.ts");
-  const { embedQuery, warmUp } = await import("../src/ollama.ts");
+  const { FakeVault, vectorScorer } = await import("./fakes.ts");
+  const { embedQuery, warmUp } = await import("../src/core/ollama.ts");
 
   const reqUrl = async (req: any) => {
     const res = await fetch(req.url, {
@@ -496,7 +496,7 @@ test("PF8 B9: Panel refresh end-to-end latency with warm Ollama", { skip: !proce
   const model = "qwen3-embedding:0.6b";
   await warmUp(reqUrl, { url: "http://127.0.0.1:11434", model });
 
-  const embedder = {
+  const embedder = vectorScorer({
     async embedQuery(text: string, instruction?: string) {
       return embedQuery(reqUrl, {
         url: "http://127.0.0.1:11434",
@@ -506,7 +506,7 @@ test("PF8 B9: Panel refresh end-to-end latency with warm Ollama", { skip: !proce
         dims,
       });
     },
-  };
+  });
 
   const controller = new RelatedPapersController({
     indexStore: {

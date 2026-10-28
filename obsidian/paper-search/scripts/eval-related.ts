@@ -1,10 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { extractPassage } from "../src/passage.ts";
-import { semantic, type Hit, type LoadedIndex } from "../src/engine.ts";
-import { embedQuery, warmUp } from "../src/ollama.ts";
-import { IndexStore } from "../src/indexstore.ts";
-import { type PaperMetadata } from "../src/bm25.ts";
+import { semantic, type Hit, type LoadedIndex } from "../src/core/engine.ts";
+import { embedQuery, warmUp } from "../src/core/ollama.ts";
+import { IndexStore } from "../src/core/indexstore.ts";
+import { type PaperMetadata } from "../src/core/bm25.ts";
 
 interface EvalNoteEntry {
   note: string;

@@ -2,9 +2,9 @@ import test from "node:test";
 import assert from "node:assert";
 import fs from "node:fs";
 import path from "node:path";
-import { hybridSearch, hybridSearchFromScores, rowScores, type LoadedIndex } from "../src/engine.ts";
-import { IndexStore } from "../src/indexstore.ts";
-import { pplxRowScores, semanticScores, warmSemantic } from "../src/semantic.ts";
+import { hybridSearch, hybridSearchFromScores, rowScores, type LoadedIndex } from "../src/core/engine.ts";
+import { IndexStore } from "../src/core/indexstore.ts";
+import { pplxRowScores, semanticScores, warmSemantic } from "../src/core/semantic.ts";
 
 const FIXTURES_DIR = path.resolve(import.meta.dirname, "../../../tests/fixtures/search/index_small");
 

@@ -1,9 +1,33 @@
 import { BM25Index, type PaperMetadata, type ChunkDocument } from "./bm25.ts";
 import { tokenize, bestSnippet } from "./text.ts";
+import { reciprocalRankFusion } from "./rank.ts";
+
+/**
+ * manifest.json of an index folder (planner/indexfiles.py `manifest`). Only the fields readers use are named; the
+ * corpus adds its own (counts, chunker, ...), and a reader ignores fields it doesn't know.
+ */
+export interface Manifest {
+  format?: number;
+  built_at?: string;
+  /** What readers compare to decide whether to reload (absent in old indexes: they compare built_at). */
+  content_hash?: string;
+  model?: string;
+  dims?: number;
+  query_instruction?: string;
+  /** "pplx": rows are scored by that service at backend_url (semantic.ts). Absent: Ollama, one vector per row. */
+  backend?: string;
+  backend_url?: string;
+  /** Papers index: Zotero's storage folder. */
+  zotero_storage?: string;
+  /** Notes index: the vault's path and folder name. */
+  vault?: string;
+  vault_name?: string;
+  [field: string]: unknown;
+}
 
 export interface LoadedIndex {
   id?: string | number; // index identity for atomic swap verification
-  manifest: any;
+  manifest: Manifest;
   papers: PaperMetadata[];
   chunks: (ChunkDocument & { row?: number })[];
   vectors: Float32Array | null;
@@ -242,63 +266,22 @@ export function hybrid(
     return semanticHits.slice(0, limit);
   }
 
-  // RRF: mergeRRF unchanged behaviour from rank.ts
-  const rankedLists = [
-    keywordHits.map((h) => h.paper),
-    semanticHits.map((h) => h.paper),
-  ];
-
-  const rrfScores = new Map<number, number>();
-  for (const list of rankedLists) {
-    for (let rank = 1; rank <= list.length; rank++) {
-      const pIdx = list[rank - 1];
-      const cur = rrfScores.get(pIdx) || 0;
-      rrfScores.set(pIdx, cur + 1.0 / (k + rank));
-    }
-  }
-
-  const results: { paper: number; rrfScore: number }[] = [];
-  for (const [pIdx, score] of rrfScores.entries()) {
-    results.push({ paper: pIdx, rrfScore: score });
-  }
-
-  // Stable sort preserves Map insertion order for ties
-  results.sort((a, b) => b.rrfScore - a.rrfScore);
-
-  const keywordMap = new Map<number, Hit>();
-  for (const h of keywordHits) keywordMap.set(h.paper, h);
-  const semanticMap = new Map<number, Hit>();
-  for (const h of semanticHits) semanticMap.set(h.paper, h);
-
-  const hits: Hit[] = [];
-  const top = results.slice(0, limit);
-
-  for (let i = 0; i < top.length; i++) {
-    const item = top[i];
-    const sHit = semanticMap.get(item.paper);
-    const kHit = keywordMap.get(item.paper);
-
-    let source: "keyword" | "semantic" | "both" = "keyword";
-    if (sHit && kHit) source = "both";
-    else if (sHit) source = "semantic";
-    else source = "keyword";
-
-    // Snippet preference matching modal code: semantic hit if present, else keyword hit
-    const baseHit = (sHit || kHit)!;
-
-    hits.push({
-      paper: item.paper,
-      score: item.rrfScore,
-      source,
-      snippet: baseHit.snippet,
-      page: baseHit.page,
-      attachmentKey: baseHit.attachmentKey,
-      fromAbstract: baseHit.fromAbstract,
-      chunkIndex: baseHit.chunkIndex,
+  return reciprocalRankFusion([keywordHits, semanticHits], (h) => h.paper, k)
+    .slice(0, limit)
+    .map(({ score, from: [kHit, sHit] }): Hit => {
+      // Text and location from the semantic hit if there is one, else the keyword hit
+      const base = (sHit ?? kHit)!;
+      return {
+        paper: base.paper,
+        score,
+        source: sHit && kHit ? "both" : sHit ? "semantic" : "keyword",
+        snippet: base.snippet,
+        page: base.page,
+        attachmentKey: base.attachmentKey,
+        fromAbstract: base.fromAbstract,
+        chunkIndex: base.chunkIndex,
+      };
     });
-  }
-
-  return hits;
 }
 
 /**

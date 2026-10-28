@@ -71,7 +71,7 @@ test("R4 bad vectors length → keyword-only for that corpus, no throw", () => {
   assert.strictEqual(c2.notes!.reason, "no vectors");
 
   const h = rawFixtures();
-  h.notes.manifest = { ...h.notes.manifest, dims: "x" };
+  h.notes.manifest = { ...h.notes.manifest, dims: "x" as unknown as number }; // a malformed manifest.json
   assert.strictEqual(buildCorpora(h.papers, h.notes).notes!.semantic, false);
 });
 

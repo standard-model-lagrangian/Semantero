@@ -1,13 +1,15 @@
-// Evaluation of the launcher search against eval/queries.toml.
+// Evaluation of the launcher search against eval/queries.toml, ranked by the production path (Engine, the shared
+// core's semantic scorer for whichever backend built the index: Ollama, or the pplx service for a pplx index).
+// `--scope papers` is the plugin's ranking of the papers index.
 //   node scripts/eval.ts --vault <dir> [--scope all|papers|notes|compare] [--keyword-only]
 //                        [--per-corpus-instruction] [--url http://127.0.0.1:11434] [--kind finding]
-// `expect` lists acceptable paper citekeys, `expect_note` acceptable vault-relative note paths.
+// `expect` lists acceptable paper citekeys, `expect_note` acceptable vault-relative note paths. A pplx index is scored
+// by the running service, which must have the same build of the index loaded (the vault's live index).
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { rowScores } from "../../obsidian/paper-search/src/engine.ts";
-import { embedQuery, warmUp } from "../../obsidian/paper-search/src/ollama.ts";
-import { buildCorpora } from "../src/corpora.ts";
+import { semanticScores, warmSemantic } from "../../obsidian/paper-search/src/core/semantic.ts";
+import { buildCorpora, type Corpus } from "../src/corpora.ts";
 import { Engine, type Scope } from "../src/query.ts";
 import type { ResultVM } from "../src/vm.ts";
 import { readCorpus, vaultDirs } from "../node/fsload.ts";
@@ -64,24 +66,28 @@ async function main() {
   const corpora = buildCorpora(readCorpus(dirs.papers), readCorpus(dirs.notes));
   const engine = new Engine(corpora, { interleaveSemantic: perCorpus });
   const model = corpora.model ?? "", dims = corpora.dims ?? 0, instruction = corpora.queryInstruction ?? "";
-  console.log(`Loaded ${corpora.papers?.ix.papers.length ?? 0} papers, ${corpora.notes?.ix.papers.length ?? 0} notes (${model}, ${dims} dims). ${corpora.flags.join("; ")}`);
+  const backend = (corpora.papers ?? corpora.notes)?.ix.manifest.backend ?? "ollama";
+  console.log(`Loaded ${corpora.papers?.ix.papers.length ?? 0} papers, ${corpora.notes?.ix.papers.length ?? 0} notes (${model}, ${dims} dims, ${backend}). ${corpora.flags.join("; ")}`);
 
   const http = async (p: { url: string; method?: string; headers?: Record<string, string>; body?: string }) => {
     const res = await fetch(p.url, { method: p.method ?? "POST", headers: p.headers, body: p.body });
     return { status: res.status, json: await res.json() };
   };
   let semantic = !keywordOnly;
-  if (semantic) { try { await warmUp(http, { url, model }); } catch { /* ignore */ } }
+  const ref = corpora.papers ?? corpora.notes;
+  if (semantic && ref) await warmSemantic(http, ref.ix, url);
 
   const all = parseQueries(fs.readFileSync(path.resolve(import.meta.dirname, "../../eval/queries.toml"), "utf8"));
   const queries = all.filter((q) => !onlyKind || q.kind === onlyKind);
   console.log(`Evaluating ${queries.length} queries (${keywordOnly ? "keyword only" : "hybrid"}).\n`);
 
-  const vecCache = new Map<string, Float32Array>();
-  const embed = async (text: string, instr: string) => {
-    const k = `${instr}\n${text}`;
-    if (!vecCache.has(k)) vecCache.set(k, await embedQuery(http, { url, model, instruction: instr, query: text, dims }));
-    return vecCache.get(k)!;
+  // Row scores per corpus, query and instruction (compare mode ranks every query twice).
+  const scoreCache = new Map<string, Float64Array | null>();
+  const scores = async (c: Corpus | null, text: string, instr: string) => {
+    if (!c?.semantic) return null;
+    const k = `${c.name}\n${instr}\n${text}`;
+    if (!scoreCache.has(k)) scoreCache.set(k, (await semanticScores(http, c.ix, text, { ollamaUrl: url, instruction: instr, corpus: c.name === "papers" ? "search" : "notes" })).scores);
+    return scoreCache.get(k)!;
   };
 
   async function run(scope: Scope) {
@@ -93,14 +99,10 @@ async function main() {
       kwMs.push(performance.now() - t);
       if (semantic) {
         try {
+          const papers = await scores(corpora.papers, q.text, instruction);
+          const notes = await scores(corpora.notes, q.text, perCorpus ? NOTE_INSTRUCTION : instruction);
           t = performance.now();
-          const pv = await embed(q.text, instruction);
-          const nv = perCorpus ? await embed(q.text, NOTE_INSTRUCTION) : pv;
-          t = performance.now();
-          res = engine.hybridFromRowScores(q.text, {
-            papers: corpora.papers?.semantic ? rowScores(corpora.papers.ix, pv) : null,
-            notes: corpora.notes?.semantic ? rowScores(corpora.notes.ix, nv) : null,
-          }, scope, 20);
+          res = engine.hybridFromRowScores(q.text, { papers, notes }, scope, 20);
           semMs.push(performance.now() - t);
         } catch (e) { console.warn(`semantic off: ${(e as Error).message}`); semantic = false; }
       }
@@ -125,7 +127,7 @@ async function main() {
     console.log(line("overall", stat(r.rows)));
     for (const k of [...new Set(r.rows.map((x) => x.q.kind))]) console.log(line(k, stat(r.rows.filter((x) => x.q.kind === k))));
     console.log(`  keyword latency p50 ${pct(r.kwMs, 50).toFixed(2)} ms, p95 ${pct(r.kwMs, 95).toFixed(2)} ms`);
-    if (r.semMs.length) console.log(`  semantic scoring+merge (warm, excl. embedding) p50 ${pct(r.semMs, 50).toFixed(1)} ms, p95 ${pct(r.semMs, 95).toFixed(1)} ms`);
+    if (r.semMs.length) console.log(`  semantic merge (warm, excl. embedding and row scoring) p50 ${pct(r.semMs, 50).toFixed(1)} ms, p95 ${pct(r.semMs, 95).toFixed(1)} ms`);
     const misses = r.rows.filter((x) => x.rank === 0 || x.rank > 5);
     if (misses.length) {
       console.log(`  misses (${misses.length}):`);

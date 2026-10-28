@@ -1,13 +1,14 @@
-import type { ChunkDocument, PaperMetadata } from "../../obsidian/paper-search/src/bm25.ts";
-import type { LoadedIndex } from "../../obsidian/paper-search/src/engine.ts";
-import { IndexStore } from "../../obsidian/paper-search/src/indexstore.ts";
+import type { ChunkDocument, PaperMetadata } from "../../obsidian/paper-search/src/core/bm25.ts";
+import type { LoadedIndex, Manifest } from "../../obsidian/paper-search/src/core/engine.ts";
+import { IndexStore } from "../../obsidian/paper-search/src/core/indexstore.ts";
+import { checkVectors } from "../../obsidian/paper-search/src/core/vectors.ts";
 import { toFloat32 } from "./util.ts";
 
 export type CorpusName = "papers" | "notes";
 
 /** One corpus as read from disk (or handed over by the app). */
 export interface RawCorpus {
-  manifest: any;
+  manifest: Manifest;
   papers: PaperMetadata[];
   chunks: (Omit<ChunkDocument, "row"> & { row?: number | null })[];
   vectors: ArrayBuffer | ArrayBufferView | null;
@@ -42,20 +43,9 @@ export interface Corpora {
 
 export function buildCorpus(name: CorpusName, raw: RawCorpus): Corpus {
   const manifest = raw.manifest ?? {};
-  const dimsOk = Number.isInteger(manifest.dims) && manifest.dims > 0;
-  const dims = dimsOk ? (manifest.dims as number) : 1024;
   const rows = IndexStore.countRows(raw.papers, raw.chunks);
-
-  let vectors: Float32Array | null = null;
-  let reason: string | null = null;
-  if (raw.vectors === null || raw.vectors === undefined) {
-    reason = rows > 0 ? "no vectors" : null;
-  } else if (!dimsOk) {
-    reason = "index dims invalid";
-  } else {
-    if (raw.vectors.byteLength !== rows * dims * 4) reason = "vectors file invalid";
-    else if (rows > 0) vectors = toFloat32(raw.vectors);
-  }
+  const { dims, reason } = checkVectors(manifest.dims, rows, raw.vectors ? raw.vectors.byteLength : null);
+  const vectors = raw.vectors && !reason && rows > 0 ? toFloat32(raw.vectors) : null;
   const chunks = raw.chunks.map((c): ChunkDocument => ({ ...c, row: c.row === null ? undefined : c.row }));
   const ix = IndexStore.precomputeIndex(manifest, raw.papers, chunks, vectors, dims, name);
   return { name, ix, semantic: vectors !== null, reason };

@@ -24,7 +24,7 @@ test("R28 dist/ranker.js evaluates in a bare context with no Node globals; versi
   for (const g of ["process", "require", "Buffer", "TextDecoder", "setTimeout"]) {
     assert.strictEqual(vm.runInContext(`typeof ${g}`, ctx), "undefined", g);
   }
-  for (const fn of ["load", "status", "keyword", "hybrid", "hybridFromRowScores", "recent", "shouldRunSemantic", "lookup"]) assert.strictEqual(typeof ctx.semantero[fn], "function", fn);
+  for (const fn of ["load", "status", "keyword", "hybrid", "hybridFromRowScores", "recent", "shouldRunSemantic"]) assert.strictEqual(typeof ctx.semantero[fn], "function", fn);
 });
 
 test("R29 api round trip: load (JSON as UTF-8 bytes) → keyword → hybrid returns JSON that parses to ResultVM[]", () => {

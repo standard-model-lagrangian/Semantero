@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert";
-import { BM25Index, type PaperMetadata, type ChunkDocument } from "../src/bm25.ts";
+import { BM25Index, type PaperMetadata, type ChunkDocument } from "../src/core/bm25.ts";
 
 const samplePapers: PaperMetadata[] = [
   {

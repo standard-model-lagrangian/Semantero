@@ -1,11 +1,11 @@
-import { keyword, hybridSearchFromScores, rowScores, type LoadedIndex } from "./engine.ts";
+import { keyword, hybridSearchFromScores, type LoadedIndex } from "./core/engine.ts";
 import { findTrigger, isExcludedContext, formatCitation, DEFAULT_CITATION_FORMAT } from "./cite.ts";
-import { semanticText, shouldRunSemantic } from "./rank.ts";
+import { semanticText, shouldRunSemantic } from "./core/rank.ts";
 import { ensureLiteratureNote, type LitNoteSettings, type VaultLike, type MetadataCacheLike } from "./litnote.ts";
-import type { PaperMetadata } from "./bm25.ts";
+import type { PaperMetadata } from "./core/bm25.ts";
 import { indexedKeys } from "./zoterolive.ts";
 import { QueryJobs } from "./queryjobs.ts";
-import { embedderName } from "./semantic.ts";
+import { embedderName } from "./core/semantic.ts";
 
 /** How long `@@` waits after the last keystroke before the semantic merge and the Zotero lookup. */
 const INLINE_DEBOUNCE_MS = 250;
@@ -141,9 +141,9 @@ export interface InlineSuggestSettings extends LitNoteSettings {
 }
 
 export interface EmbedderLike {
-  embedQuery(text: string): Promise<Float32Array | null>;
-  /** Per-row scores for any backend (semantic.ts); when present it is used instead of embedQuery. Throws when down. */
-  rowScores?(text: string, ix: LoadedIndex): Promise<ArrayLike<number> | null>;
+  /** Per-row semantic scores of `text` over `ix`, from the backend that built it (semantic.ts); null when there is
+   * nothing to score. Throws when the backend is down. */
+  rowScores(text: string, ix: LoadedIndex): Promise<ArrayLike<number> | null>;
 }
 
 /** Asks Zotero for papers the index doesn't list yet (zoterolive.ts); [] when it can't. */
@@ -163,7 +163,7 @@ export function withLive(items: SuggestionItem[], live: SuggestionItem[]): Sugge
 
 export interface IndexStoreLike {
   isReady(): boolean;
-  getIndex(): any;
+  getIndex(): LoadedIndex | null;
   /** Throttled check that swaps in a newer index from disk; optional so fakes can omit it. */
   ensureFresh?(): Promise<boolean>;
 }
@@ -266,7 +266,8 @@ export class InlineSuggestController {
     this.indexStore.ensureFresh?.().catch(() => {});
 
     // 1. If index not ready yet
-    if (!this.indexStore.isReady()) {
+    const index = this.indexStore.getIndex();
+    if (!this.indexStore.isReady() || !index) {
       return [{ type: "loading", message: "Loading paper index…" }];
     }
 
@@ -276,7 +277,6 @@ export class InlineSuggestController {
     }
 
     // 3. Cached results (adapter fallback or repeated query), dropped when the index changes
-    const index = this.indexStore.getIndex();
     const version = indexVersion(index);
     if (version !== this.cacheVersion) {
       this.queryCache.clear();
@@ -299,26 +299,12 @@ export class InlineSuggestController {
       score: h.score,
     }));
 
-    if (shouldRunSemantic(query, this.settings.minCharsSemantic ?? 12) && this.embedder) {
+    const embedder = this.embedder;
+    if (shouldRunSemantic(query, this.settings.minCharsSemantic ?? 12) && embedder) {
       this.jobs.after(INLINE_DEBOUNCE_MS, async () => {
         try {
-          let scores: ArrayLike<number> | null;
-          if (this.embedder!.rowScores) {
-            scores = await this.embedder!.rowScores(semanticText(query), index);
-            if (!this.jobs.isCurrent(token)) return; // Outdated response (I5): drop it
-          } else {
-            const qVec = await this.embedder!.embedQuery(semanticText(query));
-            if (!this.jobs.isCurrent(token)) {
-              // Outdated response (I5): drop it
-              return;
-            }
-
-            if (!qVec) {
-              this.handleEmbedderDown(initialItems, suggestInstance);
-              return;
-            }
-            scores = rowScores(index, qVec);
-          }
+          const scores = await embedder.rowScores(semanticText(query), index);
+          if (!this.jobs.isCurrent(token)) return; // Outdated response (I5): drop it
 
           const merged = hybridSearchFromScores(index, query, scores, limit);
           const mergedItems = withLive(merged.map((h): SuggestionItem => ({

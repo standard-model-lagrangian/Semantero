@@ -4,7 +4,7 @@ import test from "node:test";
 import assert from "node:assert";
 import fs from "node:fs";
 import path from "node:path";
-import { rowScores } from "../../obsidian/paper-search/src/engine.ts";
+import { rowScores } from "../../obsidian/paper-search/src/core/engine.ts";
 import { buildSyntheticIndex } from "../../obsidian/paper-search/scripts/make-synthetic-index.ts";
 import { buildCorpora, type RawCorpus } from "../src/corpora.ts";
 import { Engine } from "../src/query.ts";

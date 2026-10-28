@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert";
-import { formatQuery, embedQuery, warmUp } from "../src/ollama.ts";
+import { formatQuery, embedQuery, warmUp } from "../src/core/ollama.ts";
 
 test("query is wrapped in the instruction format exactly", async () => {
   const instruction = "Given a description of what a paper found or showed, retrieve that paper";
@@ -57,7 +57,7 @@ test("warm-up request sends keep_alive and empty input", async () => {
 });
 
 test("keep_alive defaults to 5 minutes when not given (the model's process holds ~400 MB while loaded)", async () => {
-  const { embedQuery, warmUp, DEFAULT_KEEP_ALIVE } = await import("../src/ollama.ts");
+  const { embedQuery, warmUp, DEFAULT_KEEP_ALIVE } = await import("../src/core/ollama.ts");
   const bodies: any[] = [];
   const fake = async (p: { body?: string }) => { bodies.push(JSON.parse(p.body!)); return { status: 200, json: { embeddings: [[1, 0]] } }; };
   await embedQuery(fake, { url: "http://x", model: "m", instruction: "i", query: "q" });

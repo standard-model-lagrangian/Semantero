@@ -1,6 +1,8 @@
 import esbuild from "esbuild";
 import fs from "node:fs";
 
+const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+
 const result = await esbuild.build({
   entryPoints: ["src/api.ts"],
   bundle: true,
@@ -11,6 +13,8 @@ const result = await esbuild.build({
   logLevel: "info",
   legalComments: "none",
   metafile: true,
+  // Only the version from package.json goes into the bundle (src/api.ts), not the whole file.
+  define: { __SEMANTERO_VERSION__: JSON.stringify(pkg.version) },
 });
 
 // The bundle runs in a bare JSContext: nothing from Node or the browser may be pulled in.

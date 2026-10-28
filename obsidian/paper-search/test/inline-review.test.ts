@@ -8,8 +8,8 @@ import {
   type FakeSuggestLike,
 } from "../src/inline.ts";
 import { isExcludedContext } from "../src/cite.ts";
-import { BM25Index, type PaperMetadata } from "../src/bm25.ts";
-import { FakeClock, FakeVault } from "./fakes.ts";
+import { BM25Index, type PaperMetadata } from "../src/core/bm25.ts";
+import { FakeClock, FakeVault, vectorScorer, flushPromises } from "./fakes.ts";
 
 function paper(citekey: string, title: string): PaperMetadata {
   return { citekey, title, authors: ["Roth"], year: 2023, abstract: `About ${title}`, journal: "J", doi: "", tags: [], collections: [] } as any;
@@ -55,12 +55,12 @@ function setup(embedQuery: (q: string) => Promise<Float32Array | null>, settings
   const store = makeStore();
   const controller = new InlineSuggestController({
     indexStore: store as any,
-    embedder: {
+    embedder: vectorScorer({
       embedQuery: (q: string) => {
         calls.push(q);
         return embedQuery(q);
       },
-    },
+    }),
     vault: new FakeVault() as any,
     settings: { createLiteratureNotes: false, ...settings },
     showNotice: () => {},
@@ -70,9 +70,6 @@ function setup(embedQuery: (q: string) => Promise<Float32Array | null>, settings
   return { clock, calls, controller, store };
 }
 
-const flush = async () => {
-  for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
-};
 
 function fakeEl() {
   const el: any = {
@@ -126,12 +123,12 @@ test("IM2 semantic gate uses shouldRunSemantic: 'stiff g' does not embed, 'stiff
   const { clock, calls, controller } = setup(async () => new Float32Array(4).fill(1), { minCharsSemantic: 12 });
   await controller.getSuggestions("stiff g", {});
   clock.advance(300);
-  await flush();
+  await flushPromises();
   assert.deepStrictEqual(calls, [], "the last word is too short to count: no embed");
 
   await controller.getSuggestions("stiff gels ", {});
   clock.advance(300);
-  await flush();
+  await flushPromises();
   assert.deepStrictEqual(calls, ["stiff gels"]);
 });
 
@@ -139,7 +136,7 @@ test("IM3 minCharsSemantic setting is honoured", async () => {
   const { clock, calls, controller } = setup(async () => new Float32Array(4).fill(1), { minCharsSemantic: 5 });
   await controller.getSuggestions("hydro", {});
   clock.advance(300);
-  await flush();
+  await flushPromises();
   assert.deepStrictEqual(calls, ["hydro"]);
 });
 
@@ -148,12 +145,12 @@ test("IM4 Ollama-down results are not cached in the LRU fallback", async () => {
   const noSet: FakeSuggestLike = { suggestions: { values: [] } };
   await controller.getSuggestions("stiff gels relax", noSet);
   clock.advance(300);
-  await flush();
+  await flushPromises();
   assert.strictEqual(controller.queryCache.has("stiff gels relax"), false);
   // A later query retries semantic search instead of serving keyword-only results forever.
   await controller.getSuggestions("stiff gels relax", noSet);
   clock.advance(300);
-  await flush();
+  await flushPromises();
   assert.strictEqual(calls.length, 2);
 });
 
@@ -163,7 +160,7 @@ test("IM5 a failed (thrown) embed is not cached either", async () => {
   });
   await controller.getSuggestions("stiff gels relax", { suggestions: { values: [] } });
   clock.advance(300);
-  await flush();
+  await flushPromises();
   assert.strictEqual(controller.queryCache.size(), 0);
 });
 
@@ -172,7 +169,7 @@ test("IM6 the LRU cache is cleared when the index content_hash changes", async (
   const noSet: FakeSuggestLike = { suggestions: { values: [] } };
   await controller.getSuggestions("stiff gels relax", noSet);
   clock.advance(300);
-  await flush();
+  await flushPromises();
   assert.ok(controller.queryCache.has("stiff gels relax"));
   store.contentHash = "h2";
   await controller.getSuggestions("other query", noSet);
@@ -186,7 +183,7 @@ test("IM7 'Semantic search unavailable' is a single footer row, not one per pape
     suggestions: { setSuggestions: (items) => (latest = items), values: [] },
   });
   clock.advance(300);
-  await flush();
+  await flushPromises();
   const papers = latest.filter((i) => i.type === "paper");
   assert.ok(papers.length > 0);
   let footers = 0;
@@ -258,7 +255,7 @@ test("a whitespace edit keeps the merged list instead of flashing keyword-only r
   const suggest: FakeSuggestLike = { suggestions: { values: [], setSuggestions(items) { shown.push(items); this.values = items; } } };
   await controller.getSuggestions("stiff gels", suggest);
   clock.advance(300);
-  await flush();
+  await flushPromises();
   assert.strictEqual(shown.length, 1, "the semantic merge was applied");
   const merged = shown[0];
 
@@ -266,7 +263,7 @@ test("a whitespace edit keeps the merged list instead of flashing keyword-only r
     assert.strictEqual(await controller.getSuggestions(q, suggest), merged, JSON.stringify(q));
   }
   clock.advance(300);
-  await flush();
+  await flushPromises();
   assert.deepStrictEqual(calls, ["stiff gels"], "no new embedding");
   assert.strictEqual(shown.length, 1, "no re-render");
 });
@@ -279,13 +276,13 @@ test("a whitespace edit while semantic is pending lets the merge land", async ()
   clock.advance(100);
   assert.strictEqual(await controller.getSuggestions("stiff gels ", suggest), first);
   clock.advance(200);
-  await flush();
+  await flushPromises();
   assert.deepStrictEqual(calls, ["stiff gels"]);
   assert.strictEqual(shown.length, 1, "the pending merge was not cancelled");
 
   // a real edit still re-ranks
   await controller.getSuggestions("stiff gel", suggest);
   clock.advance(300);
-  await flush();
+  await flushPromises();
   assert.deepStrictEqual(calls, ["stiff gels", "stiff gel"]);
 });

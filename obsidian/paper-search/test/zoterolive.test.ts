@@ -2,8 +2,8 @@ import test from "node:test";
 import assert from "node:assert";
 import { ZoteroLive, paperFromApiItem, indexedKeys } from "../src/zoterolive.ts";
 import { InlineSuggestController, withLive, type SuggestionItem } from "../src/inline.ts";
-import { BM25Index, type PaperMetadata } from "../src/bm25.ts";
-import { FakeClock, FakeRequestUrl, FakeVault } from "./fakes.ts";
+import { BM25Index, type PaperMetadata } from "../src/core/bm25.ts";
+import { FakeClock, FakeRequestUrl, FakeVault, vectorScorer, flushPromises } from "./fakes.ts";
 
 function apiItem(key: string, title: string, extra: Record<string, unknown> = {}) {
   return {
@@ -95,12 +95,13 @@ test("@@ lists a paper Zotero has before the index does, and keeps it through th
   const papers = [paper("OLD00001", "Stress relaxation in hydrogels")];
   const index = {
     papers, chunks: [], bm25: new BM25Index(papers, []), vectors: new Float32Array(4).fill(1), dims: 4,
-    totalRows: 1, rowToChunk: new Int32Array(1), rowToPaper: new Int32Array([0]), manifest: { content_hash: "h1" },
+    totalRows: 1, rowToChunk: new Int32Array([-1]), rowToPaper: new Int32Array([0]), rowIsAbstract: new Uint8Array([1]),
+    paperAbstractRow: new Int32Array([0]), paperChunkRows: [new Int32Array(0)], manifest: { content_hash: "h1" },
   };
   const asked: string[] = [];
   const controller = new InlineSuggestController({
     indexStore: { isReady: () => true, getIndex: () => index },
-    embedder: { embedQuery: async () => new Float32Array(4).fill(1) },
+    embedder: vectorScorer({ embedQuery: async () => new Float32Array(4).fill(1) }),
     zotero: {
       search: async (q, known) => {
         asked.push(q);
@@ -119,7 +120,7 @@ test("@@ lists a paper Zotero has before the index does, and keeps it through th
   const first = await controller.getSuggestions("hydrogels", suggest);
   assert.deepStrictEqual(first.map((i) => i.paper?.key), ["OLD00001"]);
   clock.runAll();
-  await new Promise((r) => setTimeout(r, 0));
+  await flushPromises();
   assert.deepStrictEqual(asked, ["hydrogels"]);
   assert.deepStrictEqual(shown.map((i) => i.paper?.key), ["OLD00001", "NEW00001"]);
   assert.strictEqual(shown[1].source, "zotero");
@@ -128,6 +129,6 @@ test("@@ lists a paper Zotero has before the index does, and keeps it through th
   await controller.getSuggestions("relaxation", suggest);
   controller.cancel();
   clock.runAll();
-  await new Promise((r) => setTimeout(r, 0));
+  await flushPromises();
   assert.deepStrictEqual(asked, ["hydrogels"]);
 });

@@ -1,6 +1,7 @@
 import { BM25Index, type PaperMetadata, type ChunkDocument } from "./bm25.ts";
-import type { LoadedIndex } from "./engine.ts";
+import type { LoadedIndex, Manifest } from "./engine.ts";
 import { compactChunkTexts } from "./textstore.ts";
+import { checkVectors } from "./vectors.ts";
 
 export interface IndexStoreAdapter {
   read(path: string): Promise<string>;
@@ -60,7 +61,7 @@ export class IndexStore {
    * Precomputes index lookup tables in O(chunks) one pass.
    */
   public static precomputeIndex(
-    manifest: any,
+    manifest: Manifest,
     papers: PaperMetadata[],
     chunks: (ChunkDocument & { row?: number })[],
     vectors: Float32Array | null,
@@ -68,20 +69,7 @@ export class IndexStore {
     id: string | number
   ): LoadedIndex {
     // 1. Determine total rows
-    let maxRow = -1;
-    for (let i = 0; i < papers.length; i++) {
-      const ar = papers[i].abstractRow;
-      if (ar !== undefined && ar !== null && ar > maxRow) {
-        maxRow = ar;
-      }
-    }
-    for (let i = 0; i < chunks.length; i++) {
-      const r = chunks[i].row;
-      if (r !== undefined && r !== null && r > maxRow) {
-        maxRow = r;
-      }
-    }
-    const totalRows = maxRow >= 0 ? maxRow + 1 : 0;
+    const totalRows = IndexStore.countRows(papers, chunks);
 
     // 2. Allocate lookup arrays
     const rowToChunk = new Int32Array(totalRows).fill(-1);
@@ -175,7 +163,7 @@ export class IndexStore {
       return false;
     }
 
-    let manifest: any;
+    let manifest: Manifest;
     try {
       const manifestStr = await this.adapter.read(manifestPath);
       manifest = JSON.parse(manifestStr);
@@ -200,24 +188,21 @@ export class IndexStore {
     this.failedContentHash = null;
 
     // 3. Read vectors and check integrity: exactly rows x dims float32 values
-    const dimsValid = Number.isInteger(manifest.dims) && manifest.dims > 0;
-    const dims = dimsValid ? manifest.dims : 1024;
-    let vectors: Float32Array | null = null;
-    const invalidVectors = () =>
-      this.notifyOnce("invalid_vectors", "Paper search: vectors file invalid, falling back to keyword-only");
-
+    let bin: ArrayBuffer | null = null;
+    let unreadable = false;
     if (await this.adapter.exists(vectorsPath)) {
       try {
-        const bin = await this.adapter.readBinary(vectorsPath);
-        const expectedBytes = IndexStore.countRows(papers, chunks) * dims * 4;
-        if (!dimsValid || bin.byteLength !== expectedBytes) {
-          invalidVectors();
-        } else {
-          vectors = new Float32Array(bin);
-        }
+        bin = await this.adapter.readBinary(vectorsPath);
       } catch {
-        invalidVectors();
+        unreadable = true;
       }
+    }
+    const { dims, reason } = checkVectors(manifest.dims, IndexStore.countRows(papers, chunks), bin ? bin.byteLength : null);
+    let vectors: Float32Array | null = null;
+    if (unreadable || (bin && reason)) {
+      this.notifyOnce("invalid_vectors", "Paper search: vectors file invalid, falling back to keyword-only");
+    } else if (bin) {
+      vectors = new Float32Array(bin);
     }
 
     // 4. Precompute LoadedIndex
@@ -247,7 +232,7 @@ export class IndexStore {
       return false;
     }
 
-    let manifest: any;
+    let manifest: Manifest;
     try {
       const manifestStr = await this.adapter.read(manifestPath);
       manifest = JSON.parse(manifestStr);

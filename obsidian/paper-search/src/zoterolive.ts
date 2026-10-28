@@ -3,8 +3,8 @@
  * Settings → Advanced → "Allow other applications on this computer to communicate with Zotero"; until then (or while
  * Zotero is closed) every lookup returns [] after one quick refused request a minute. */
 
-import type { PaperMetadata } from "./bm25.ts";
-import type { RequestUrlFn } from "./ollama.ts";
+import type { PaperMetadata } from "./core/bm25.ts";
+import type { RequestUrlFn } from "./core/ollama.ts";
 
 export const DEFAULT_ZOTERO_API = "http://localhost:23119/api";
 /** Shortest query sent to Zotero; shorter ones match half the library by title. */

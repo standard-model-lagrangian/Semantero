@@ -20,13 +20,12 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // src/main.ts
 var main_exports = {};
 __export(main_exports, {
-  DEFAULT_SETTINGS: () => DEFAULT_SETTINGS,
   default: () => PaperSearchPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian2 = require("obsidian");
+var import_obsidian3 = require("obsidian");
 
-// src/text.ts
+// src/core/text.ts
 var STOPWORDS = /* @__PURE__ */ new Set([
   "a",
   "about",
@@ -294,7 +293,7 @@ function bestSnippet(text, queryTokens, maxLen = 160) {
   return { text: snippet, sentence: bestSent };
 }
 
-// src/bm25.ts
+// src/core/bm25.ts
 var FIELD_WEIGHTS = {
   title: 3,
   authors: 3,
@@ -303,6 +302,15 @@ var FIELD_WEIGHTS = {
   tags: 2,
   collections: 2,
   abstract: 1.5
+};
+var FIELD_TEXT = {
+  title: (p) => p.title || "",
+  authors: (p) => p.authors.join(" "),
+  citekey: (p) => p.citekey || "",
+  journal: (p) => p.journal || "",
+  tags: (p) => p.tags.join(" "),
+  collections: (p) => p.collections.join(" "),
+  abstract: (p) => p.abstract || ""
 };
 var BM25Index = class {
   k1 = 1.2;
@@ -354,15 +362,7 @@ var BM25Index = class {
     const counts = /* @__PURE__ */ new Map();
     const seen = /* @__PURE__ */ new Set();
     for (const paper of this.papers) {
-      const fieldTexts = [
-        paper.title || "",
-        paper.authors.join(" "),
-        paper.citekey || "",
-        paper.journal || "",
-        paper.tags.join(" "),
-        paper.collections.join(" "),
-        paper.abstract || ""
-      ];
+      const fieldTexts = fieldNames.map((name) => FIELD_TEXT[name](paper));
       seen.clear();
       const perField = [];
       for (let f = 0; f < fieldNames.length; f++) {
@@ -633,7 +633,7 @@ var BM25Index = class {
   }
 };
 
-// src/textstore.ts
+// src/core/textstore.ts
 var TextStore = class _TextStore {
   bytes;
   offsets;
@@ -758,7 +758,35 @@ function compactChunkTexts(chunks) {
   return store;
 }
 
-// src/indexstore.ts
+// src/core/vectors.ts
+var FALLBACK_DIMS = 1024;
+function checkVectors(manifestDims, rows, byteLength) {
+  const dimsOk = Number.isInteger(manifestDims) && manifestDims > 0;
+  const dims = dimsOk ? manifestDims : FALLBACK_DIMS;
+  if (byteLength === null) return { dims, reason: rows > 0 ? "no vectors" : null };
+  if (!dimsOk) return { dims, reason: "index dims invalid" };
+  if (byteLength !== rows * dims * 4) return { dims, reason: "vectors file invalid" };
+  return { dims, reason: null };
+}
+function truncateAndNormalize(vec, targetDims) {
+  const out = new Float32Array(targetDims);
+  const n = Math.min(vec.length, targetDims);
+  let sumSq = 0;
+  for (let i = 0; i < n; i++) {
+    const v = vec[i];
+    out[i] = v;
+    sumSq += v * v;
+  }
+  const norm = Math.sqrt(sumSq);
+  if (norm > 0) {
+    for (let i = 0; i < targetDims; i++) {
+      out[i] /= norm;
+    }
+  }
+  return out;
+}
+
+// src/core/indexstore.ts
 var IndexStore = class _IndexStore {
   adapter;
   basePath;
@@ -799,20 +827,7 @@ var IndexStore = class _IndexStore {
    * Precomputes index lookup tables in O(chunks) one pass.
    */
   static precomputeIndex(manifest, papers, chunks, vectors, dims, id) {
-    let maxRow = -1;
-    for (let i = 0; i < papers.length; i++) {
-      const ar = papers[i].abstractRow;
-      if (ar !== void 0 && ar !== null && ar > maxRow) {
-        maxRow = ar;
-      }
-    }
-    for (let i = 0; i < chunks.length; i++) {
-      const r = chunks[i].row;
-      if (r !== void 0 && r !== null && r > maxRow) {
-        maxRow = r;
-      }
-    }
-    const totalRows = maxRow >= 0 ? maxRow + 1 : 0;
+    const totalRows = _IndexStore.countRows(papers, chunks);
     const rowToChunk = new Int32Array(totalRows).fill(-1);
     const rowToPaper = new Int32Array(totalRows).fill(-1);
     const rowIsAbstract = new Uint8Array(totalRows);
@@ -910,22 +925,21 @@ var IndexStore = class _IndexStore {
       return this.currentIndex !== null;
     }
     this.failedContentHash = null;
-    const dimsValid = Number.isInteger(manifest.dims) && manifest.dims > 0;
-    const dims = dimsValid ? manifest.dims : 1024;
-    let vectors = null;
-    const invalidVectors = () => this.notifyOnce("invalid_vectors", "Paper search: vectors file invalid, falling back to keyword-only");
+    let bin = null;
+    let unreadable = false;
     if (await this.adapter.exists(vectorsPath)) {
       try {
-        const bin = await this.adapter.readBinary(vectorsPath);
-        const expectedBytes = _IndexStore.countRows(papers, chunks) * dims * 4;
-        if (!dimsValid || bin.byteLength !== expectedBytes) {
-          invalidVectors();
-        } else {
-          vectors = new Float32Array(bin);
-        }
+        bin = await this.adapter.readBinary(vectorsPath);
       } catch {
-        invalidVectors();
+        unreadable = true;
       }
+    }
+    const { dims, reason } = checkVectors(manifest.dims, _IndexStore.countRows(papers, chunks), bin ? bin.byteLength : null);
+    let vectors = null;
+    if (unreadable || bin && reason) {
+      this.notifyOnce("invalid_vectors", "Paper search: vectors file invalid, falling back to keyword-only");
+    } else if (bin) {
+      vectors = new Float32Array(bin);
     }
     const id = this.nextIndexId++;
     const loaded = _IndexStore.precomputeIndex(manifest, papers, chunks, vectors, dims, id);
@@ -979,26 +993,7 @@ var IndexStore = class _IndexStore {
 // src/modal.ts
 var import_obsidian = require("obsidian");
 
-// src/vectors.ts
-function truncateAndNormalize(vec, targetDims) {
-  const out = new Float32Array(targetDims);
-  const n = Math.min(vec.length, targetDims);
-  let sumSq = 0;
-  for (let i = 0; i < n; i++) {
-    const v = vec[i];
-    out[i] = v;
-    sumSq += v * v;
-  }
-  const norm = Math.sqrt(sumSq);
-  if (norm > 0) {
-    for (let i = 0; i < targetDims; i++) {
-      out[i] /= norm;
-    }
-  }
-  return out;
-}
-
-// src/ollama.ts
+// src/core/ollama.ts
 var DEFAULT_KEEP_ALIVE = "5m";
 function formatQuery(instruction, query) {
   return instruction === void 0 ? query : `Instruct: ${instruction}
@@ -1045,7 +1040,34 @@ async function warmUp(requestUrl3, options) {
   }
 }
 
-// src/engine.ts
+// src/core/rank.ts
+function shouldRunSemantic(query, minChars = 12) {
+  if (semanticText(query).length >= minChars) {
+    return true;
+  }
+  const { tokens, lastIncomplete } = tokenize(query);
+  const last = tokens[tokens.length - 1] ?? "";
+  const lastCounts = !lastIncomplete || last.length >= 3 || /\d/.test(last);
+  return (lastCounts ? tokens.length : tokens.length - 1) >= 2;
+}
+function semanticText(query) {
+  return query.trim().replace(/\s+/g, " ");
+}
+function reciprocalRankFusion(lists, key, k = 60) {
+  const byKey = /* @__PURE__ */ new Map();
+  lists.forEach((list, li) => {
+    list.forEach((item, i) => {
+      const id = key(item);
+      let f = byKey.get(id);
+      if (!f) byKey.set(id, f = { score: 0, from: new Array(lists.length).fill(void 0) });
+      f.score += 1 / (k + i + 1);
+      f.from[li] = item;
+    });
+  });
+  return [...byKey.values()].sort((a, b) => b.score - a.score);
+}
+
+// src/core/engine.ts
 function snippetFor(ix, hit, tokens) {
   if (hit.chunkIndex !== void 0 && hit.chunkIndex >= 0) return bestSnippet(ix.chunks[hit.chunkIndex].text, tokens).text;
   const paper = ix.papers[hit.paper];
@@ -1182,50 +1204,19 @@ function hybrid(keywordHits, semanticHits, limit = 10, k = 60) {
   if (keywordHits.length === 0) {
     return semanticHits.slice(0, limit);
   }
-  const rankedLists = [
-    keywordHits.map((h) => h.paper),
-    semanticHits.map((h) => h.paper)
-  ];
-  const rrfScores = /* @__PURE__ */ new Map();
-  for (const list of rankedLists) {
-    for (let rank = 1; rank <= list.length; rank++) {
-      const pIdx = list[rank - 1];
-      const cur = rrfScores.get(pIdx) || 0;
-      rrfScores.set(pIdx, cur + 1 / (k + rank));
-    }
-  }
-  const results = [];
-  for (const [pIdx, score] of rrfScores.entries()) {
-    results.push({ paper: pIdx, rrfScore: score });
-  }
-  results.sort((a, b) => b.rrfScore - a.rrfScore);
-  const keywordMap = /* @__PURE__ */ new Map();
-  for (const h of keywordHits) keywordMap.set(h.paper, h);
-  const semanticMap = /* @__PURE__ */ new Map();
-  for (const h of semanticHits) semanticMap.set(h.paper, h);
-  const hits = [];
-  const top = results.slice(0, limit);
-  for (let i = 0; i < top.length; i++) {
-    const item = top[i];
-    const sHit = semanticMap.get(item.paper);
-    const kHit = keywordMap.get(item.paper);
-    let source = "keyword";
-    if (sHit && kHit) source = "both";
-    else if (sHit) source = "semantic";
-    else source = "keyword";
-    const baseHit = sHit || kHit;
-    hits.push({
-      paper: item.paper,
-      score: item.rrfScore,
-      source,
-      snippet: baseHit.snippet,
-      page: baseHit.page,
-      attachmentKey: baseHit.attachmentKey,
-      fromAbstract: baseHit.fromAbstract,
-      chunkIndex: baseHit.chunkIndex
-    });
-  }
-  return hits;
+  return reciprocalRankFusion([keywordHits, semanticHits], (h) => h.paper, k).slice(0, limit).map(({ score, from: [kHit, sHit] }) => {
+    const base = sHit ?? kHit;
+    return {
+      paper: base.paper,
+      score,
+      source: sHit && kHit ? "both" : sHit ? "semantic" : "keyword",
+      snippet: base.snippet,
+      page: base.page,
+      attachmentKey: base.attachmentKey,
+      fromAbstract: base.fromAbstract,
+      chunkIndex: base.chunkIndex
+    };
+  });
 }
 function hybridSearchFromScores(ix, query, scores, limit) {
   const n = ix.papers.length;
@@ -1234,8 +1225,11 @@ function hybridSearchFromScores(ix, query, scores, limit) {
   return fillSnippets(ix, hybrid(kw, sem, limit), query);
 }
 
-// src/semantic.ts
+// src/core/semantic.ts
 var DEFAULT_QUERY_INSTRUCTION = "Given a query, retrieve relevant research papers";
+function queryInstruction(ix) {
+  return ix.manifest.query_instruction || DEFAULT_QUERY_INSTRUCTION;
+}
 function isPplx(ix) {
   return ix.manifest?.backend === "pplx";
 }
@@ -1245,7 +1239,7 @@ function embedderName(ix) {
 async function semanticScores(requestUrl3, ix, text, opts) {
   if (!ix.vectors || ix.totalRows === 0) return { scores: null };
   if (isPplx(ix)) {
-    const scores = await pplxRowScores(requestUrl3, ix.manifest.backend_url, text, "search", ix.manifest.content_hash);
+    const scores = await pplxRowScores(requestUrl3, ix.manifest.backend_url ?? "", text, opts.corpus ?? "search", ix.manifest.content_hash);
     if (scores.length !== ix.totalRows) throw new Error("pplx scores do not match the loaded index");
     if (opts.exclude && opts.exclude.size > 0) {
       for (let r = 0; r < scores.length; r++) if (opts.exclude.has(ix.rowToPaper[r])) scores[r] = 0;
@@ -1254,7 +1248,7 @@ async function semanticScores(requestUrl3, ix, text, opts) {
   }
   const qVec = await embedQuery(requestUrl3, {
     url: opts.ollamaUrl,
-    model: ix.manifest.model,
+    model: ix.manifest.model ?? "",
     instruction: opts.instruction,
     query: text,
     dims: ix.dims,
@@ -1291,7 +1285,7 @@ async function warmSemantic(requestUrl3, ix, ollamaUrl, keepAlive) {
     }
     return;
   }
-  await warmUp(requestUrl3, { url: ollamaUrl, model: ix.manifest.model, keepAlive });
+  await warmUp(requestUrl3, { url: ollamaUrl, model: ix.manifest.model ?? "", keepAlive });
 }
 
 // src/cite.ts
@@ -1435,7 +1429,7 @@ function citedKeys(noteText) {
   return result;
 }
 
-// src/zotero.ts
+// src/core/zotero.ts
 function selectItemUrl(itemKey) {
   return `zotero://select/library/items/${itemKey}`;
 }
@@ -1453,19 +1447,10 @@ function hitUrl(paper, hit) {
   if (snapshots.some((s) => s.attachmentKey === attKey)) return openAttachmentUrl(attKey);
   return openPdfUrl(attKey, hit?.attachmentKey ? hit.page : 1);
 }
-
-// src/rank.ts
-function shouldRunSemantic(query, minChars = 12) {
-  if (semanticText(query).length >= minChars) {
-    return true;
-  }
-  const { tokens, lastIncomplete } = tokenize(query);
-  const last = tokens[tokens.length - 1] ?? "";
-  const lastCounts = !lastIncomplete || last.length >= 3 || /\d/.test(last);
-  return (lastCounts ? tokens.length : tokens.length - 1) >= 2;
-}
-function semanticText(query) {
-  return query.trim().replace(/\s+/g, " ");
+function hitLocation(paper, hit, snapshotLabel = "snapshot") {
+  if (hit.fromAbstract) return "abstract";
+  if (hit.attachmentKey && (paper.snapshots ?? []).some((s) => s.attachmentKey === hit.attachmentKey)) return snapshotLabel;
+  return hit.page && hit.page > 0 ? `p. ${hit.page}` : "abstract";
 }
 
 // src/queryjobs.ts
@@ -1876,7 +1861,7 @@ var ModalSearchController = class {
   async runSemantic(query, ix, token) {
     let scores;
     try {
-      scores = await this.semanticScores(ix, semanticText(query), ix.manifest?.query_instruction);
+      scores = await this.semanticScores(ix, semanticText(query));
     } catch {
       if (this.jobs.isCurrent(token)) this.view.setFooter(`semantic off: ${embedderName(ix)} not reachable`);
       return;
@@ -1906,7 +1891,7 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
     this.plugin = plugin;
     this.controller = new ModalSearchController({
       indexStore: plugin.indexStore,
-      semanticScores: (ix, text, instruction) => plugin.semanticScoresFor(ix, text, instruction || DEFAULT_QUERY_INSTRUCTION),
+      semanticScores: (ix, text) => plugin.semanticScoresFor(ix, text, queryInstruction(ix)),
       zotero: plugin.zotero,
       settings: plugin.settings,
       view: chooserView(() => this.chooser(), (msg) => this.footerEl?.setText(msg)),
@@ -1994,13 +1979,7 @@ var PaperSearchModal = class extends import_obsidian.SuggestModal {
       badge.style.borderRadius = "3px";
       badge.style.marginRight = "6px";
       badge.style.backgroundColor = "var(--background-secondary)";
-      if (hit.fromAbstract) {
-        badge.setText("abstract");
-      } else if (hit.page) {
-        badge.setText(`p. ${hit.page}`);
-      } else {
-        badge.setText("web page");
-      }
+      badge.setText(hitLocation(paper, hit, "web page"));
       snippetContainer.createSpan({ text: hit.snippet, cls: "paper-snippet-text" });
     }
   }
@@ -2051,6 +2030,313 @@ function checkHotkeyConflict(customHotkeys, targetModifiers = ["Mod", "Shift"], 
     }
   }
   return null;
+}
+
+// src/inline.ts
+var INLINE_DEBOUNCE_MS = 250;
+var LRUQueryCache = class {
+  map = /* @__PURE__ */ new Map();
+  maxEntries;
+  constructor(maxEntries = 16) {
+    this.maxEntries = maxEntries;
+  }
+  get(key) {
+    if (!this.map.has(key)) return void 0;
+    const val = this.map.get(key);
+    this.map.delete(key);
+    this.map.set(key, val);
+    return val;
+  }
+  set(key, val) {
+    if (this.map.has(key)) {
+      this.map.delete(key);
+    } else if (this.map.size >= this.maxEntries) {
+      const oldestKey = this.map.keys().next().value;
+      if (oldestKey !== void 0) {
+        this.map.delete(oldestKey);
+      }
+    }
+    this.map.set(key, val);
+  }
+  has(key) {
+    return this.map.has(key);
+  }
+  clear() {
+    this.map.clear();
+  }
+  size() {
+    return this.map.size;
+  }
+};
+function selectionAfterRefresh(oldHits, oldSelected, newHits) {
+  const oldPaper = oldHits[oldSelected]?.paper;
+  if (!oldPaper) return 0;
+  const idx = newHits.findIndex((h) => h.paper && h.paper.citekey === oldPaper.citekey);
+  return idx === -1 ? 0 : idx;
+}
+function indexVersion(index) {
+  return index?.manifest?.content_hash ?? index?.manifest?.built_at ?? index?.id;
+}
+function refreshSuggestions(suggest, hits, query, cache) {
+  if (!suggest) return;
+  const s = suggest.suggestions;
+  if (s && typeof s.setSuggestions === "function") {
+    const newIdx = selectionAfterRefresh(s.values || [], s.selectedItem ?? 0, hits);
+    s.setSuggestions(hits);
+    if (s.values !== hits) s.values = hits;
+    if (typeof s.setSelectedItem === "function") s.setSelectedItem(newIdx);
+    else s.selectedItem = newIdx;
+  } else if (query && cache) {
+    cache.set(query, hits);
+  }
+}
+function withLive(items, live) {
+  const rest = items.filter((it) => it.source !== "zotero");
+  const have = new Set(rest.map((it) => it.paper?.key).filter(Boolean));
+  const add = live.filter((it) => !have.has(it.paper?.key));
+  if (add.length === 0) return rest.length === items.length ? items : rest;
+  const footer = rest.findIndex((it) => it.type === "footer");
+  return footer === -1 ? [...rest, ...add] : [...rest.slice(0, footer), ...add, ...rest.slice(footer)];
+}
+var InlineSuggestController = class {
+  indexStore;
+  embedder;
+  zotero;
+  vault;
+  metadataCache;
+  settings;
+  queryCache = new LRUQueryCache(16);
+  /** Rows for papers Zotero has and the index doesn't yet, for the query on screen. */
+  liveItems = [];
+  /** The semantic merge and the Zotero lookup for the query on screen; a new query or closing the list drops them. */
+  jobs;
+  ollamaDownNotified = false;
+  /** content_hash (or load id) of the index the query cache was filled from. */
+  cacheVersion = void 0;
+  /** The list on screen, its query (as `semanticText`) and the version of the index it came from. */
+  shown = null;
+  sessionNotices;
+  showNotice;
+  constructor(options) {
+    this.sessionNotices = options.sessionNotices ?? /* @__PURE__ */ new Set();
+    this.indexStore = options.indexStore;
+    this.embedder = options.embedder;
+    this.zotero = options.zotero;
+    this.vault = options.vault;
+    this.metadataCache = options.metadataCache;
+    this.settings = options.settings || {};
+    this.showNotice = options.showNotice;
+    this.jobs = new QueryJobs(options.setTimeoutFn, options.clearTimeoutFn);
+  }
+  onTrigger(cursor, lineText, sections) {
+    const trigger = this.settings.inlineTrigger || "@@";
+    const res = findTrigger(lineText, cursor.ch, trigger);
+    if (!res) return null;
+    if (isExcludedContext(sections, cursor.line, lineText, cursor.ch)) {
+      return null;
+    }
+    return {
+      start: { line: cursor.line, ch: res.start },
+      end: { line: cursor.line, ch: res.end },
+      query: res.query
+    };
+  }
+  /** Drop any pending or in-flight semantic request (list closed, or the query changed). */
+  cancel() {
+    this.restart();
+  }
+  /** Forget the list on screen and supersede its jobs; returns the token for the next query's. */
+  restart() {
+    this.shown = null;
+    this.liveItems = [];
+    return this.jobs.restart();
+  }
+  async getSuggestions(query, suggestInstance) {
+    const shown = this.shown;
+    if (shown && shown.key === semanticText(query) && shown.version === indexVersion(this.indexStore.getIndex())) return shown.items;
+    const token = this.restart();
+    this.indexStore.ensureFresh?.().catch(() => {
+    });
+    const index = this.indexStore.getIndex();
+    if (!this.indexStore.isReady() || !index) {
+      return [{ type: "loading", message: "Loading paper index\u2026" }];
+    }
+    if (query === "") {
+      return [{ type: "hint", message: "Type to search your papers" }];
+    }
+    const version = indexVersion(index);
+    if (version !== this.cacheVersion) {
+      this.queryCache.clear();
+      this.cacheVersion = version;
+    }
+    if (this.queryCache.has(query)) {
+      const cached = this.queryCache.get(query);
+      this.shown = { key: semanticText(query), version, items: cached };
+      return cached;
+    }
+    const limit = this.settings.inlineLimit || 8;
+    const kwHits = keyword(index, query, limit);
+    const initialItems = kwHits.map((h) => ({
+      type: "paper",
+      paper: index.papers[h.paper],
+      snippet: h.snippet,
+      source: h.source,
+      score: h.score
+    }));
+    const embedder = this.embedder;
+    if (shouldRunSemantic(query, this.settings.minCharsSemantic ?? 12) && embedder) {
+      this.jobs.after(INLINE_DEBOUNCE_MS, async () => {
+        try {
+          const scores = await embedder.rowScores(semanticText(query), index);
+          if (!this.jobs.isCurrent(token)) return;
+          const merged = hybridSearchFromScores(index, query, scores, limit);
+          const mergedItems = withLive(merged.map((h) => ({
+            type: "paper",
+            paper: index.papers[h.paper],
+            snippet: h.snippet,
+            source: h.source,
+            score: h.score
+          })), this.liveItems);
+          if (this.shown) this.shown.items = mergedItems;
+          refreshSuggestions(suggestInstance, mergedItems, query, this.queryCache);
+        } catch {
+          if (!this.jobs.isCurrent(token)) return;
+          this.handleEmbedderDown(initialItems, suggestInstance);
+        }
+      });
+    }
+    if (this.zotero) {
+      const zotero = this.zotero;
+      this.jobs.after(INLINE_DEBOUNCE_MS, async () => {
+        const found = await zotero.search(query, indexedKeys(index));
+        if (!this.jobs.isCurrent(token) || found.length === 0) return;
+        this.liveItems = found.map((paper) => ({ type: "paper", paper, source: "zotero" }));
+        const items = withLive(this.shown?.items ?? initialItems, this.liveItems);
+        if (this.shown) this.shown.items = items;
+        refreshSuggestions(suggestInstance, items, query, this.queryCache);
+      });
+    }
+    this.shown = { key: semanticText(query), version, items: initialItems };
+    return initialItems;
+  }
+  /** Keyword-only results with one footer row. Never cached, so the next query retries semantic. */
+  handleEmbedderDown(items, suggestInstance) {
+    if (!this.ollamaDownNotified) {
+      this.ollamaDownNotified = true;
+      this.showNotice?.(`Paper search: ${embedderName(this.indexStore.getIndex())} is not running. Using keyword-only search.`);
+    }
+    const withSemanticOff = withLive(items, this.liveItems).map((it) => ({ ...it, semanticOff: true }));
+    withSemanticOff.push({ type: "footer", message: "Semantic search unavailable" });
+    this.shown = null;
+    refreshSuggestions(suggestInstance, withSemanticOff);
+  }
+  async selectSuggestion(item, editor, context) {
+    if (item.type !== "paper" || !item.paper) {
+      return;
+    }
+    if (!item.paper.citekey) {
+      this.showNotice?.("Paper search: paper has no citekey. Ensure Better BibTeX is installed in Zotero.");
+      return;
+    }
+    const citation = formatCitation(
+      this.settings.citationFormat || DEFAULT_CITATION_FORMAT,
+      item.paper.citekey
+    );
+    editor.replaceRange(citation, context.start, context.end);
+    if (editor.setCursor) {
+      editor.setCursor({
+        line: context.start.line,
+        ch: context.start.ch + citation.length
+      });
+    }
+    if (this.settings.createLiteratureNotes !== false) {
+      try {
+        await ensureLiteratureNote(
+          this.vault,
+          this.metadataCache,
+          item.paper,
+          this.settings,
+          {
+            showNotice: this.showNotice,
+            sessionNotices: this.sessionNotices
+          }
+        );
+      } catch {
+      }
+    }
+  }
+  renderSuggestion(item, el) {
+    el.empty?.();
+    if (item.type === "loading") {
+      const row = el.createDiv?.({ cls: "semantero-suggest-loading" }) || el;
+      row.setText?.(item.message || "Loading paper index\u2026");
+      return;
+    }
+    if (item.type === "footer") {
+      const row = el.createDiv?.({ cls: "semantero-suggest-footer" }) || el;
+      row.setText?.(item.message || "Semantic search unavailable");
+      return;
+    }
+    if (item.type === "hint") {
+      const row = el.createDiv?.({ cls: "semantero-suggest-hint" }) || el;
+      row.setText?.(item.message || "Type to search your papers");
+      return;
+    }
+    if (item.type === "paper" && item.paper) {
+      const container = el.createDiv?.({ cls: "semantero-suggest-paper" }) || el;
+      let title = item.paper.title || "Untitled";
+      if (title.length > 80) {
+        title = title.slice(0, 79) + "\u2026";
+      }
+      const titleEl = container.createDiv?.({ cls: "semantero-suggest-title" });
+      titleEl?.setText?.(title);
+      const firstAuthor = item.paper.authors && item.paper.authors.length > 0 ? item.paper.authors[0] : "Unknown author";
+      const year = item.paper.year ? String(item.paper.year) : "n.d.";
+      const metaEl = container.createDiv?.({ cls: "semantero-suggest-meta" });
+      metaEl?.setText?.(`${firstAuthor} \xB7 ${year}${item.source === "zotero" ? " \xB7 new in Zotero" : ""}`);
+      if (this.settings.inlineShowSnippet !== false && item.snippet) {
+        const snippetEl = container.createDiv?.({ cls: "semantero-suggest-snippet" });
+        snippetEl?.setText?.(item.snippet);
+      }
+    }
+  }
+};
+function createPaperSearchSuggestClass(BaseClass) {
+  return class PaperSearchSuggest extends BaseClass {
+    controller;
+    constructor(app, controller) {
+      super(app);
+      this.controller = controller;
+      this.scope?.register?.([], "Tab", (evt) => {
+        if (typeof this.suggestions?.useSelectedItem !== "function") return true;
+        this.suggestions.useSelectedItem(evt);
+        return false;
+      });
+    }
+    onTrigger(cursor, editor, file) {
+      const lineText = editor.getLine(cursor.line);
+      const cache = this.app.metadataCache.getFileCache(file);
+      return this.controller.onTrigger(cursor, lineText, cache?.sections);
+    }
+    getSuggestions(context) {
+      return this.controller.getSuggestions(context.query, this);
+    }
+    renderSuggestion(value, el) {
+      this.controller.renderSuggestion(value, el);
+    }
+    close() {
+      this.controller.cancel();
+      super.close();
+    }
+    selectSuggestion(value, evt) {
+      if (this.context) {
+        this.controller.selectSuggestion(value, this.context.editor, {
+          start: this.context.start,
+          end: this.context.end
+        });
+      }
+    }
+  };
 }
 
 // src/passage.ts
@@ -2114,13 +2400,28 @@ function shortenSentences(sentences, cursorIdx, maxChars = 2e3) {
   chosen.sort((a, b) => a - b);
   return chosen.map((idx) => sentences[idx]).join(" ");
 }
+function aroundCursor(clean, noteText, start, cursorOffset, maxChars) {
+  const sentences = splitSentences(clean);
+  if (sentences.length === 0) return clean.slice(0, maxChars);
+  const cleanOffset = cleanMarkdown(noteText.slice(start, Math.max(start, cursorOffset))).length;
+  let cursorSentenceIdx = 0;
+  let accumulated = 0;
+  for (let i = 0; i < sentences.length; i++) {
+    accumulated += sentences[i].length + 1;
+    if (accumulated >= cleanOffset) {
+      cursorSentenceIdx = i;
+      break;
+    }
+  }
+  return shortenSentences(sentences, cursorSentenceIdx, maxChars);
+}
 function extractPassage(noteText, cursorOffset, selection = "", maxChars = 2e3) {
   if (selection) {
     const cleanSel = cleanMarkdown(selection);
     if (cleanSel.length >= 20) {
-      const sentences2 = splitSentences(cleanSel);
-      if (sentences2.length === 0) return cleanSel.slice(0, maxChars);
-      return shortenSentences(sentences2, 0, maxChars);
+      const sentences = splitSentences(cleanSel);
+      if (sentences.length === 0) return cleanSel.slice(0, maxChars);
+      return shortenSentences(sentences, 0, maxChars);
     }
   }
   const headingRegex = /^#{1,6}\s+.+$/gm;
@@ -2140,37 +2441,13 @@ function extractPassage(noteText, cursorOffset, selection = "", maxChars = 2e3) 
   const sectionRaw = noteText.slice(prevHeadingEnd, nextHeadingStart);
   const cleanSec = cleanMarkdown(sectionRaw);
   if (cleanSec.length >= 200) {
-    const sentences2 = splitSentences(cleanSec);
-    if (sentences2.length === 0) return cleanSec.slice(0, maxChars);
-    const approxCleanOffset2 = cleanMarkdown(noteText.slice(prevHeadingEnd, Math.max(prevHeadingEnd, cursorOffset))).length;
-    let cursorSentenceIdx2 = 0;
-    let accumulated2 = 0;
-    for (let i = 0; i < sentences2.length; i++) {
-      accumulated2 += sentences2[i].length + 1;
-      if (accumulated2 >= approxCleanOffset2) {
-        cursorSentenceIdx2 = i;
-        break;
-      }
-    }
-    return shortenSentences(sentences2, cursorSentenceIdx2, maxChars);
+    return aroundCursor(cleanSec, noteText, prevHeadingEnd, cursorOffset, maxChars);
   }
   const cleanWhole = cleanMarkdown(noteText);
   if (cleanWhole.length < 30) {
     return null;
   }
-  const sentences = splitSentences(cleanWhole);
-  if (sentences.length === 0) return cleanWhole.slice(0, maxChars);
-  const approxCleanOffset = cleanMarkdown(noteText.slice(0, Math.max(0, cursorOffset))).length;
-  let cursorSentenceIdx = 0;
-  let accumulated = 0;
-  for (let i = 0; i < sentences.length; i++) {
-    accumulated += sentences[i].length + 1;
-    if (accumulated >= approxCleanOffset) {
-      cursorSentenceIdx = i;
-      break;
-    }
-  }
-  return shortenSentences(sentences, cursorSentenceIdx, maxChars);
+  return aroundCursor(cleanWhole, noteText, 0, cursorOffset, maxChars);
 }
 
 // src/editortracker.ts
@@ -2312,26 +2589,13 @@ var RelatedPapersController = class {
       if (!stillCurrent()) return;
     }
     try {
-      const instruction = this.settings.relatedInstruction;
-      const byScores = !!this.embedder.rowScores;
-      const qVec = byScores ? null : await this.embedder.embedQuery(passage, instruction);
-      if (!stillCurrent()) return;
       const ix = this.indexStore.isReady() ? this.indexStore.getIndex() : null;
       if (!ix) {
         this.setState("index-loading");
         return;
       }
-      let scores;
-      if (byScores) {
-        scores = await this.embedder.rowScores(passage, ix, instruction);
-        if (!stillCurrent()) return;
-      } else {
-        if (!qVec) {
-          this.handleEmbedderDown();
-          return;
-        }
-        scores = rowScores(ix, qVec);
-      }
+      const scores = await this.embedder.rowScores(passage, ix, this.settings.relatedInstruction);
+      if (!stillCurrent()) return;
       const minScore = this.settings.relatedMinScore ?? DEFAULT_RELATED_MIN_SCORE;
       const candidates = scores ? semanticFromRowScores(ix, scores, passage, { limit: 50, minScore }) : [];
       this.citedKeysSet = new Set([...citedKeys(noteText)].map((k) => k.toLowerCase()));
@@ -2531,7 +2795,7 @@ function createRelatedPapersViewClass(ItemViewBase) {
           const meta = row?.createDiv?.({ cls: "semantero-related-meta" });
           const author = item.paper.authors?.[0] || "Unknown";
           const year = item.paper.year ? String(item.paper.year) : "n.d.";
-          const badge = item.hit.page ? `p. ${item.hit.page}` : item.hit.fromAbstract === false ? "web page" : "abstract";
+          const badge = hitLocation(item.paper, item.hit, "web page");
           meta?.setText?.(`${author} \xB7 ${year} \xB7 [${badge}]`);
           if (item.hit.snippet) {
             const snippet = row?.createDiv?.({ cls: "semantero-related-snippet" });
@@ -2567,326 +2831,8 @@ function createRelatedPapersViewClass(ItemViewBase) {
   };
 }
 
-// src/inline.ts
-var INLINE_DEBOUNCE_MS = 250;
-var LRUQueryCache = class {
-  map = /* @__PURE__ */ new Map();
-  maxEntries;
-  constructor(maxEntries = 16) {
-    this.maxEntries = maxEntries;
-  }
-  get(key) {
-    if (!this.map.has(key)) return void 0;
-    const val = this.map.get(key);
-    this.map.delete(key);
-    this.map.set(key, val);
-    return val;
-  }
-  set(key, val) {
-    if (this.map.has(key)) {
-      this.map.delete(key);
-    } else if (this.map.size >= this.maxEntries) {
-      const oldestKey = this.map.keys().next().value;
-      if (oldestKey !== void 0) {
-        this.map.delete(oldestKey);
-      }
-    }
-    this.map.set(key, val);
-  }
-  has(key) {
-    return this.map.has(key);
-  }
-  clear() {
-    this.map.clear();
-  }
-  size() {
-    return this.map.size;
-  }
-};
-function selectionAfterRefresh(oldHits, oldSelected, newHits) {
-  const oldPaper = oldHits[oldSelected]?.paper;
-  if (!oldPaper) return 0;
-  const idx = newHits.findIndex((h) => h.paper && h.paper.citekey === oldPaper.citekey);
-  return idx === -1 ? 0 : idx;
-}
-function indexVersion(index) {
-  return index?.manifest?.content_hash ?? index?.manifest?.built_at ?? index?.id;
-}
-function refreshSuggestions(suggest, hits, query, cache) {
-  if (!suggest) return;
-  const s = suggest.suggestions;
-  if (s && typeof s.setSuggestions === "function") {
-    const newIdx = selectionAfterRefresh(s.values || [], s.selectedItem ?? 0, hits);
-    s.setSuggestions(hits);
-    if (s.values !== hits) s.values = hits;
-    if (typeof s.setSelectedItem === "function") s.setSelectedItem(newIdx);
-    else s.selectedItem = newIdx;
-  } else if (query && cache) {
-    cache.set(query, hits);
-  }
-}
-function withLive(items, live) {
-  const rest = items.filter((it) => it.source !== "zotero");
-  const have = new Set(rest.map((it) => it.paper?.key).filter(Boolean));
-  const add = live.filter((it) => !have.has(it.paper?.key));
-  if (add.length === 0) return rest.length === items.length ? items : rest;
-  const footer = rest.findIndex((it) => it.type === "footer");
-  return footer === -1 ? [...rest, ...add] : [...rest.slice(0, footer), ...add, ...rest.slice(footer)];
-}
-var InlineSuggestController = class {
-  indexStore;
-  embedder;
-  zotero;
-  vault;
-  metadataCache;
-  settings;
-  queryCache = new LRUQueryCache(16);
-  /** Rows for papers Zotero has and the index doesn't yet, for the query on screen. */
-  liveItems = [];
-  /** The semantic merge and the Zotero lookup for the query on screen; a new query or closing the list drops them. */
-  jobs;
-  ollamaDownNotified = false;
-  /** content_hash (or load id) of the index the query cache was filled from. */
-  cacheVersion = void 0;
-  /** The list on screen, its query (as `semanticText`) and the version of the index it came from. */
-  shown = null;
-  sessionNotices;
-  showNotice;
-  constructor(options) {
-    this.sessionNotices = options.sessionNotices ?? /* @__PURE__ */ new Set();
-    this.indexStore = options.indexStore;
-    this.embedder = options.embedder;
-    this.zotero = options.zotero;
-    this.vault = options.vault;
-    this.metadataCache = options.metadataCache;
-    this.settings = options.settings || {};
-    this.showNotice = options.showNotice;
-    this.jobs = new QueryJobs(options.setTimeoutFn, options.clearTimeoutFn);
-  }
-  onTrigger(cursor, lineText, sections) {
-    const trigger = this.settings.inlineTrigger || "@@";
-    const res = findTrigger(lineText, cursor.ch, trigger);
-    if (!res) return null;
-    if (isExcludedContext(sections, cursor.line, lineText, cursor.ch)) {
-      return null;
-    }
-    return {
-      start: { line: cursor.line, ch: res.start },
-      end: { line: cursor.line, ch: res.end },
-      query: res.query
-    };
-  }
-  /** Drop any pending or in-flight semantic request (list closed, or the query changed). */
-  cancel() {
-    this.restart();
-  }
-  /** Forget the list on screen and supersede its jobs; returns the token for the next query's. */
-  restart() {
-    this.shown = null;
-    this.liveItems = [];
-    return this.jobs.restart();
-  }
-  async getSuggestions(query, suggestInstance) {
-    const shown = this.shown;
-    if (shown && shown.key === semanticText(query) && shown.version === indexVersion(this.indexStore.getIndex())) return shown.items;
-    const token = this.restart();
-    this.indexStore.ensureFresh?.().catch(() => {
-    });
-    if (!this.indexStore.isReady()) {
-      return [{ type: "loading", message: "Loading paper index\u2026" }];
-    }
-    if (query === "") {
-      return [{ type: "hint", message: "Type to search your papers" }];
-    }
-    const index = this.indexStore.getIndex();
-    const version = indexVersion(index);
-    if (version !== this.cacheVersion) {
-      this.queryCache.clear();
-      this.cacheVersion = version;
-    }
-    if (this.queryCache.has(query)) {
-      const cached = this.queryCache.get(query);
-      this.shown = { key: semanticText(query), version, items: cached };
-      return cached;
-    }
-    const limit = this.settings.inlineLimit || 8;
-    const kwHits = keyword(index, query, limit);
-    const initialItems = kwHits.map((h) => ({
-      type: "paper",
-      paper: index.papers[h.paper],
-      snippet: h.snippet,
-      source: h.source,
-      score: h.score
-    }));
-    if (shouldRunSemantic(query, this.settings.minCharsSemantic ?? 12) && this.embedder) {
-      this.jobs.after(INLINE_DEBOUNCE_MS, async () => {
-        try {
-          let scores;
-          if (this.embedder.rowScores) {
-            scores = await this.embedder.rowScores(semanticText(query), index);
-            if (!this.jobs.isCurrent(token)) return;
-          } else {
-            const qVec = await this.embedder.embedQuery(semanticText(query));
-            if (!this.jobs.isCurrent(token)) {
-              return;
-            }
-            if (!qVec) {
-              this.handleEmbedderDown(initialItems, suggestInstance);
-              return;
-            }
-            scores = rowScores(index, qVec);
-          }
-          const merged = hybridSearchFromScores(index, query, scores, limit);
-          const mergedItems = withLive(merged.map((h) => ({
-            type: "paper",
-            paper: index.papers[h.paper],
-            snippet: h.snippet,
-            source: h.source,
-            score: h.score
-          })), this.liveItems);
-          if (this.shown) this.shown.items = mergedItems;
-          refreshSuggestions(suggestInstance, mergedItems, query, this.queryCache);
-        } catch {
-          if (!this.jobs.isCurrent(token)) return;
-          this.handleEmbedderDown(initialItems, suggestInstance);
-        }
-      });
-    }
-    if (this.zotero) {
-      const zotero = this.zotero;
-      this.jobs.after(INLINE_DEBOUNCE_MS, async () => {
-        const found = await zotero.search(query, indexedKeys(index));
-        if (!this.jobs.isCurrent(token) || found.length === 0) return;
-        this.liveItems = found.map((paper) => ({ type: "paper", paper, source: "zotero" }));
-        const items = withLive(this.shown?.items ?? initialItems, this.liveItems);
-        if (this.shown) this.shown.items = items;
-        refreshSuggestions(suggestInstance, items, query, this.queryCache);
-      });
-    }
-    this.shown = { key: semanticText(query), version, items: initialItems };
-    return initialItems;
-  }
-  /** Keyword-only results with one footer row. Never cached, so the next query retries semantic. */
-  handleEmbedderDown(items, suggestInstance) {
-    if (!this.ollamaDownNotified) {
-      this.ollamaDownNotified = true;
-      this.showNotice?.(`Paper search: ${embedderName(this.indexStore.getIndex())} is not running. Using keyword-only search.`);
-    }
-    const withSemanticOff = withLive(items, this.liveItems).map((it) => ({ ...it, semanticOff: true }));
-    withSemanticOff.push({ type: "footer", message: "Semantic search unavailable" });
-    this.shown = null;
-    refreshSuggestions(suggestInstance, withSemanticOff);
-  }
-  async selectSuggestion(item, editor, context) {
-    if (item.type !== "paper" || !item.paper) {
-      return;
-    }
-    if (!item.paper.citekey) {
-      this.showNotice?.("Paper search: paper has no citekey. Ensure Better BibTeX is installed in Zotero.");
-      return;
-    }
-    const citation = formatCitation(
-      this.settings.citationFormat || DEFAULT_CITATION_FORMAT,
-      item.paper.citekey
-    );
-    editor.replaceRange(citation, context.start, context.end);
-    if (editor.setCursor) {
-      editor.setCursor({
-        line: context.start.line,
-        ch: context.start.ch + citation.length
-      });
-    }
-    if (this.settings.createLiteratureNotes !== false) {
-      try {
-        await ensureLiteratureNote(
-          this.vault,
-          this.metadataCache,
-          item.paper,
-          this.settings,
-          {
-            showNotice: this.showNotice,
-            sessionNotices: this.sessionNotices
-          }
-        );
-      } catch {
-      }
-    }
-  }
-  renderSuggestion(item, el) {
-    el.empty?.();
-    if (item.type === "loading") {
-      const row = el.createDiv?.({ cls: "semantero-suggest-loading" }) || el;
-      row.setText?.(item.message || "Loading paper index\u2026");
-      return;
-    }
-    if (item.type === "footer") {
-      const row = el.createDiv?.({ cls: "semantero-suggest-footer" }) || el;
-      row.setText?.(item.message || "Semantic search unavailable");
-      return;
-    }
-    if (item.type === "hint") {
-      const row = el.createDiv?.({ cls: "semantero-suggest-hint" }) || el;
-      row.setText?.(item.message || "Type to search your papers");
-      return;
-    }
-    if (item.type === "paper" && item.paper) {
-      const container = el.createDiv?.({ cls: "semantero-suggest-paper" }) || el;
-      let title = item.paper.title || "Untitled";
-      if (title.length > 80) {
-        title = title.slice(0, 79) + "\u2026";
-      }
-      const titleEl = container.createDiv?.({ cls: "semantero-suggest-title" });
-      titleEl?.setText?.(title);
-      const firstAuthor = item.paper.authors && item.paper.authors.length > 0 ? item.paper.authors[0] : "Unknown author";
-      const year = item.paper.year ? String(item.paper.year) : "n.d.";
-      const metaEl = container.createDiv?.({ cls: "semantero-suggest-meta" });
-      metaEl?.setText?.(`${firstAuthor} \xB7 ${year}${item.source === "zotero" ? " \xB7 new in Zotero" : ""}`);
-      if (this.settings.inlineShowSnippet !== false && item.snippet) {
-        const snippetEl = container.createDiv?.({ cls: "semantero-suggest-snippet" });
-        snippetEl?.setText?.(item.snippet);
-      }
-    }
-  }
-};
-function createPaperSearchSuggestClass(BaseClass) {
-  return class PaperSearchSuggest extends BaseClass {
-    controller;
-    constructor(app, controller) {
-      super(app);
-      this.controller = controller;
-      this.scope?.register?.([], "Tab", (evt) => {
-        if (typeof this.suggestions?.useSelectedItem !== "function") return true;
-        this.suggestions.useSelectedItem(evt);
-        return false;
-      });
-    }
-    onTrigger(cursor, editor, file) {
-      const lineText = editor.getLine(cursor.line);
-      const cache = this.app.metadataCache.getFileCache(file);
-      return this.controller.onTrigger(cursor, lineText, cache?.sections);
-    }
-    getSuggestions(context) {
-      return this.controller.getSuggestions(context.query, this);
-    }
-    renderSuggestion(value, el) {
-      this.controller.renderSuggestion(value, el);
-    }
-    close() {
-      this.controller.cancel();
-      super.close();
-    }
-    selectSuggestion(value, evt) {
-      if (this.context) {
-        this.controller.selectSuggestion(value, this.context.editor, {
-          start: this.context.start,
-          end: this.context.end
-        });
-      }
-    }
-  };
-}
-
-// src/main.ts
+// src/settings.ts
+var import_obsidian2 = require("obsidian");
 var DEFAULT_SETTINGS = {
   ollamaUrl: "http://127.0.0.1:11434",
   debounceMs: 200,
@@ -2905,13 +2851,123 @@ var DEFAULT_SETTINGS = {
   relatedInstruction: "Given a passage from my research notes, retrieve papers that report the findings or methods it discusses",
   askZotero: true
 };
-var PaperSearchPlugin = class extends import_obsidian2.Plugin {
+var PaperSearchSettingTab = class extends import_obsidian2.PluginSettingTab {
+  plugin;
+  constructor(app, plugin) {
+    super(app, plugin);
+    this.plugin = plugin;
+  }
+  display() {
+    const { containerEl } = this;
+    containerEl.empty();
+    containerEl.createEl("h2", { text: "Paper Search Settings" });
+    const s = this.plugin.settings;
+    this.addText("Ollama URL", "Address of the local Ollama server for embedding search queries", "ollamaUrl", {
+      placeholder: DEFAULT_SETTINGS.ollamaUrl,
+      parse: (v) => v.trim() || DEFAULT_SETTINGS.ollamaUrl
+    });
+    this.addText("Citation Format", "Format used when inserting citations (must include {{citekey}})", "citationFormat", {
+      placeholder: DEFAULT_CITATION_FORMAT,
+      parse: (v) => {
+        const trimmed = v.trim();
+        try {
+          formatCitation(trimmed, "test");
+          return trimmed;
+        } catch {
+          new import_obsidian2.Notice("Citation format must include {{citekey}}");
+          return null;
+        }
+      }
+    });
+    this.addToggle("Create Literature Notes", "Automatically create literature notes when citing papers", "createLiteratureNotes");
+    this.addText(
+      "Literature Note Folder",
+      "Folder inside vault where new literature notes will be created (leave empty for vault root)",
+      "literatureNoteFolder",
+      { placeholder: "vault root", parse: (v) => v.trim() }
+    );
+    this.addText("Literature Note Template", "Vault path to Markdown template file (e.g. Zotero Template.md)", "literatureNoteTemplate", {
+      placeholder: DEFAULT_SETTINGS.literatureNoteTemplate,
+      parse: (v) => v.trim() || DEFAULT_SETTINGS.literatureNoteTemplate
+    });
+    this.addText("Inline Suggestion Trigger", "Trigger characters to invoke paper citation search while typing", "inlineTrigger", {
+      placeholder: DEFAULT_SETTINGS.inlineTrigger,
+      parse: (v) => v.trim() || DEFAULT_SETTINGS.inlineTrigger
+    });
+    this.addIntSetting("Inline Suggestion Limit", "Maximum number of suggestions shown while typing (default 8)", "inlineLimit");
+    this.addToggle(
+      "Ask Zotero for new papers",
+      `Lists papers saved in Zotero since the index was last built, so they can be cited at once. Needs Zotero's Settings \u2192 Advanced \u2192 "Allow other applications on this computer to communicate with Zotero".`,
+      "askZotero"
+    );
+    this.addToggle("Inline Show Snippets", "Show matched snippet text below each paper in the inline suggestion list", "inlineShowSnippet");
+    this.addIntSetting("Related Papers Limit", "Maximum number of related papers shown in the right sidebar (default 5)", "relatedLimit");
+    this.addNumber(
+      "Related Minimum Score",
+      "Minimum cosine similarity threshold to display related papers (default 0.50)",
+      "relatedMinScore",
+      DEFAULT_RELATED_MIN_SCORE.toFixed(2),
+      String(s.relatedMinScore ?? DEFAULT_RELATED_MIN_SCORE),
+      (v) => {
+        const parsed = parseFloat(v.trim());
+        return !isNaN(parsed) && parsed >= 0 ? parsed : null;
+      }
+    );
+    this.addToggle("Related Auto-Refresh", "Automatically refresh related papers 1s after switching active note", "relatedAutoRefresh");
+    this.addText("Related Retrieval Instruction", "Embedding instruction prefix used to query related papers", "relatedInstruction", {
+      placeholder: DEFAULT_SETTINGS.relatedInstruction,
+      parse: (v) => v.trim() || DEFAULT_SETTINGS.relatedInstruction,
+      area: true
+    });
+  }
+  async save(key, value) {
+    this.plugin.settings[key] = value;
+    await this.plugin.saveSettings();
+  }
+  addToggle(name, desc, key) {
+    new import_obsidian2.Setting(this.containerEl).setName(name).setDesc(desc).addToggle((toggle) => toggle.setValue(this.plugin.settings[key]).onChange((value) => this.save(key, value)));
+  }
+  /** A text (or text area) setting; `parse` returns null to keep the stored value. */
+  addText(name, desc, key, opts) {
+    const setting = new import_obsidian2.Setting(this.containerEl).setName(name).setDesc(desc);
+    const wire = (text) => {
+      text.setPlaceholder(opts.placeholder);
+      text.setValue(this.plugin.settings[key]);
+      text.onChange(async (value) => {
+        const parsed = opts.parse(value);
+        if (parsed !== null) await this.save(key, parsed);
+      });
+    };
+    if (opts.area) setting.addTextArea(wire);
+    else setting.addText(wire);
+  }
+  /** A number typed into a text field; `parse` returns null to keep the stored value. */
+  addNumber(name, desc, key, placeholder, shown, parse) {
+    new import_obsidian2.Setting(this.containerEl).setName(name).setDesc(desc).addText(
+      (text) => text.setPlaceholder(placeholder).setValue(shown).onChange(async (value) => {
+        const parsed = parse(value);
+        if (parsed !== null) await this.save(key, parsed);
+      })
+    );
+  }
+  /** A positive whole number; anything else typed keeps the stored value. Unset shows the default. */
+  addIntSetting(name, desc, key) {
+    const fallback = DEFAULT_SETTINGS[key];
+    this.addNumber(name, desc, key, String(fallback), String(this.plugin.settings[key] || fallback), (v) => {
+      const parsed = parseInt(v.trim(), 10);
+      return !isNaN(parsed) && parsed > 0 ? parsed : null;
+    });
+  }
+};
+
+// src/main.ts
+var PaperSearchPlugin = class extends import_obsidian3.Plugin {
   settings = DEFAULT_SETTINGS;
   indexStore;
   /** Once-per-session literature-note notices, shared by the modal, @@ and the panel. */
   litNoteNotices = /* @__PURE__ */ new Set();
   editorTracker = new ActiveEditorTracker();
-  zoteroLive = new ZoteroLive(import_obsidian2.requestUrl);
+  zoteroLive = new ZoteroLive(import_obsidian3.requestUrl);
   /** Papers saved since the last index build, straight from Zotero ([] when the setting is off). */
   zotero = {
     search: (q, known) => this.settings.askZotero ? this.zoteroLive.search(q, known) : Promise.resolve([])
@@ -2922,7 +2978,7 @@ var PaperSearchPlugin = class extends import_obsidian2.Plugin {
       read: (p) => this.app.vault.adapter.read(p),
       readBinary: (p) => this.app.vault.adapter.readBinary(p),
       exists: (p) => this.app.vault.adapter.exists(p),
-      showNotice: (m) => new import_obsidian2.Notice(m)
+      showNotice: (m) => new import_obsidian3.Notice(m)
     };
     this.indexStore = new IndexStore(adapter, ".planner/search");
     this.app.workspace.onLayoutReady(() => {
@@ -2939,18 +2995,7 @@ var PaperSearchPlugin = class extends import_obsidian2.Plugin {
       }
     });
     const embedder = {
-      embedQuery: async (queryText) => {
-        const ix = this.indexStore.getIndex();
-        if (!ix) return null;
-        return embedQuery(import_obsidian2.requestUrl, {
-          url: this.settings.ollamaUrl,
-          model: ix.manifest?.model || "qwen3-embedding:0.6b",
-          instruction: ix.manifest?.query_instruction || DEFAULT_QUERY_INSTRUCTION,
-          query: queryText,
-          dims: ix.dims
-        });
-      },
-      rowScores: (queryText, ix) => this.semanticScoresFor(ix, queryText, ix.manifest?.query_instruction || DEFAULT_QUERY_INSTRUCTION)
+      rowScores: (queryText, ix) => this.semanticScoresFor(ix, queryText, queryInstruction(ix))
     };
     const suggestController = new InlineSuggestController({
       indexStore: this.indexStore,
@@ -2959,23 +3004,12 @@ var PaperSearchPlugin = class extends import_obsidian2.Plugin {
       vault: this.app.vault,
       metadataCache: this.app.metadataCache,
       settings: this.settings,
-      showNotice: (msg) => new import_obsidian2.Notice(msg),
+      showNotice: (msg) => new import_obsidian3.Notice(msg),
       sessionNotices: this.litNoteNotices
     });
-    const PaperSearchSuggest = createPaperSearchSuggestClass(import_obsidian2.EditorSuggest);
+    const PaperSearchSuggest = createPaperSearchSuggestClass(import_obsidian3.EditorSuggest);
     this.registerEditorSuggest(new PaperSearchSuggest(this.app, suggestController));
     const relatedEmbedder = {
-      embedQuery: async (text, instruction) => {
-        const ix = this.indexStore.getIndex();
-        if (!ix) return null;
-        return embedQuery(import_obsidian2.requestUrl, {
-          url: this.settings.ollamaUrl,
-          model: ix.manifest?.model || "qwen3-embedding:0.6b",
-          instruction: instruction ?? this.settings.relatedInstruction,
-          query: text,
-          dims: ix.dims
-        });
-      },
       rowScores: (text, ix, instruction) => this.semanticScoresFor(ix, text, instruction ?? this.settings.relatedInstruction)
     };
     const relatedController = new RelatedPapersController({
@@ -2984,12 +3018,12 @@ var PaperSearchPlugin = class extends import_obsidian2.Plugin {
       vault: this.app.vault,
       metadataCache: this.app.metadataCache,
       settings: this.settings,
-      showNotice: (msg) => new import_obsidian2.Notice(msg),
+      showNotice: (msg) => new import_obsidian3.Notice(msg),
       sessionNotices: this.litNoteNotices
     });
     this.registerEvent(this.app.workspace.on("active-leaf-change", (leaf) => this.editorTracker.onActiveLeafChange(leaf)));
-    this.app.workspace.onLayoutReady(() => this.editorTracker.seed(this.app.workspace.getActiveViewOfType(import_obsidian2.MarkdownView)));
-    const RelatedPapersView = createRelatedPapersViewClass(import_obsidian2.ItemView);
+    this.app.workspace.onLayoutReady(() => this.editorTracker.seed(this.app.workspace.getActiveViewOfType(import_obsidian3.MarkdownView)));
+    const RelatedPapersView = createRelatedPapersViewClass(import_obsidian3.ItemView);
     this.registerView(
       "semantero-related-papers",
       (leaf) => new RelatedPapersView(leaf, relatedController, this.editorTracker)
@@ -3046,7 +3080,7 @@ var PaperSearchPlugin = class extends import_obsidian2.Plugin {
       const customKeys = this.app.hotkeyManager?.customKeys || {};
       const conflict = checkHotkeyConflict(customKeys, ["Mod", "Shift"], "0");
       if (conflict) {
-        new import_obsidian2.Notice(
+        new import_obsidian3.Notice(
           `Paper search hotkey (Mod+Shift+0) conflicts with command: ${conflict}`
         );
       }
@@ -3055,119 +3089,12 @@ var PaperSearchPlugin = class extends import_obsidian2.Plugin {
   }
   /** Per-row semantic scores of `text` over `ix`, from the backend that built it (semantic.ts). Throws when it is down. */
   async semanticScoresFor(ix, text, instruction) {
-    return (await semanticScores(import_obsidian2.requestUrl, ix, text, { ollamaUrl: this.settings.ollamaUrl, instruction })).scores;
+    return (await semanticScores(import_obsidian3.requestUrl, ix, text, { ollamaUrl: this.settings.ollamaUrl, instruction })).scores;
   }
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
   }
   async saveSettings() {
     await this.saveData(this.settings);
-  }
-};
-var PaperSearchSettingTab = class extends import_obsidian2.PluginSettingTab {
-  plugin;
-  constructor(app, plugin) {
-    super(app, plugin);
-    this.plugin = plugin;
-  }
-  display() {
-    const { containerEl } = this;
-    containerEl.empty();
-    containerEl.createEl("h2", { text: "Paper Search Settings" });
-    new import_obsidian2.Setting(containerEl).setName("Ollama URL").setDesc("Address of the local Ollama server for embedding search queries").addText(
-      (text) => text.setPlaceholder("http://127.0.0.1:11434").setValue(this.plugin.settings.ollamaUrl).onChange(async (value) => {
-        this.plugin.settings.ollamaUrl = value.trim() || DEFAULT_SETTINGS.ollamaUrl;
-        await this.plugin.saveSettings();
-      })
-    );
-    new import_obsidian2.Setting(containerEl).setName("Citation Format").setDesc("Format used when inserting citations (must include {{citekey}})").addText(
-      (text) => text.setPlaceholder(DEFAULT_CITATION_FORMAT).setValue(this.plugin.settings.citationFormat).onChange(async (value) => {
-        const trimmed = value.trim();
-        try {
-          formatCitation(trimmed, "test");
-          this.plugin.settings.citationFormat = trimmed;
-          await this.plugin.saveSettings();
-        } catch {
-          new import_obsidian2.Notice("Citation format must include {{citekey}}");
-        }
-      })
-    );
-    new import_obsidian2.Setting(containerEl).setName("Create Literature Notes").setDesc("Automatically create literature notes when citing papers").addToggle(
-      (toggle) => toggle.setValue(this.plugin.settings.createLiteratureNotes).onChange(async (value) => {
-        this.plugin.settings.createLiteratureNotes = value;
-        await this.plugin.saveSettings();
-      })
-    );
-    new import_obsidian2.Setting(containerEl).setName("Literature Note Folder").setDesc("Folder inside vault where new literature notes will be created (leave empty for vault root)").addText(
-      (text) => text.setPlaceholder("vault root").setValue(this.plugin.settings.literatureNoteFolder).onChange(async (value) => {
-        this.plugin.settings.literatureNoteFolder = value.trim();
-        await this.plugin.saveSettings();
-      })
-    );
-    new import_obsidian2.Setting(containerEl).setName("Literature Note Template").setDesc("Vault path to Markdown template file (e.g. Zotero Template.md)").addText(
-      (text) => text.setPlaceholder("Zotero Template.md").setValue(this.plugin.settings.literatureNoteTemplate).onChange(async (value) => {
-        this.plugin.settings.literatureNoteTemplate = value.trim() || "Zotero Template.md";
-        await this.plugin.saveSettings();
-      })
-    );
-    new import_obsidian2.Setting(containerEl).setName("Inline Suggestion Trigger").setDesc("Trigger characters to invoke paper citation search while typing").addText(
-      (text) => text.setPlaceholder("@@").setValue(this.plugin.settings.inlineTrigger).onChange(async (value) => {
-        this.plugin.settings.inlineTrigger = value.trim() || "@@";
-        await this.plugin.saveSettings();
-      })
-    );
-    new import_obsidian2.Setting(containerEl).setName("Inline Suggestion Limit").setDesc("Maximum number of suggestions shown while typing (default 8)").addText(
-      (text) => text.setPlaceholder("8").setValue(String(this.plugin.settings.inlineLimit || 8)).onChange(async (value) => {
-        const parsed = parseInt(value.trim(), 10);
-        if (!isNaN(parsed) && parsed > 0) {
-          this.plugin.settings.inlineLimit = parsed;
-          await this.plugin.saveSettings();
-        }
-      })
-    );
-    new import_obsidian2.Setting(containerEl).setName("Ask Zotero for new papers").setDesc(
-      `Lists papers saved in Zotero since the index was last built, so they can be cited at once. Needs Zotero's Settings \u2192 Advanced \u2192 "Allow other applications on this computer to communicate with Zotero".`
-    ).addToggle(
-      (toggle) => toggle.setValue(this.plugin.settings.askZotero).onChange(async (value) => {
-        this.plugin.settings.askZotero = value;
-        await this.plugin.saveSettings();
-      })
-    );
-    new import_obsidian2.Setting(containerEl).setName("Inline Show Snippets").setDesc("Show matched snippet text below each paper in the inline suggestion list").addToggle(
-      (toggle) => toggle.setValue(this.plugin.settings.inlineShowSnippet).onChange(async (value) => {
-        this.plugin.settings.inlineShowSnippet = value;
-        await this.plugin.saveSettings();
-      })
-    );
-    new import_obsidian2.Setting(containerEl).setName("Related Papers Limit").setDesc("Maximum number of related papers shown in the right sidebar (default 5)").addText(
-      (text) => text.setPlaceholder("5").setValue(String(this.plugin.settings.relatedLimit || 5)).onChange(async (value) => {
-        const parsed = parseInt(value.trim(), 10);
-        if (!isNaN(parsed) && parsed > 0) {
-          this.plugin.settings.relatedLimit = parsed;
-          await this.plugin.saveSettings();
-        }
-      })
-    );
-    new import_obsidian2.Setting(containerEl).setName("Related Minimum Score").setDesc("Minimum cosine similarity threshold to display related papers (default 0.50)").addText(
-      (text) => text.setPlaceholder("0.50").setValue(String(this.plugin.settings.relatedMinScore ?? DEFAULT_RELATED_MIN_SCORE)).onChange(async (value) => {
-        const parsed = parseFloat(value.trim());
-        if (!isNaN(parsed) && parsed >= 0) {
-          this.plugin.settings.relatedMinScore = parsed;
-          await this.plugin.saveSettings();
-        }
-      })
-    );
-    new import_obsidian2.Setting(containerEl).setName("Related Auto-Refresh").setDesc("Automatically refresh related papers 1s after switching active note").addToggle(
-      (toggle) => toggle.setValue(this.plugin.settings.relatedAutoRefresh).onChange(async (value) => {
-        this.plugin.settings.relatedAutoRefresh = value;
-        await this.plugin.saveSettings();
-      })
-    );
-    new import_obsidian2.Setting(containerEl).setName("Related Retrieval Instruction").setDesc("Embedding instruction prefix used to query related papers").addTextArea(
-      (text) => text.setPlaceholder(DEFAULT_SETTINGS.relatedInstruction).setValue(this.plugin.settings.relatedInstruction).onChange(async (value) => {
-        this.plugin.settings.relatedInstruction = value.trim() || DEFAULT_SETTINGS.relatedInstruction;
-        await this.plugin.saveSettings();
-      })
-    );
   }
 };

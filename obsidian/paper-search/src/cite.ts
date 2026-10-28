@@ -1,4 +1,4 @@
-import type { PaperMetadata } from "./bm25.ts";
+import type { PaperMetadata } from "./core/bm25.ts";
 
 export interface TriggerResult {
   start: number;

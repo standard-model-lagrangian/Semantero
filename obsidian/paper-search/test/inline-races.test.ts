@@ -6,8 +6,8 @@ import {
   createPaperSearchSuggestClass,
   type SuggestionItem,
 } from "../src/inline.ts";
-import { BM25Index, type PaperMetadata } from "../src/bm25.ts";
-import { FakeClock, FakeVault } from "./fakes.ts";
+import { BM25Index, type PaperMetadata } from "../src/core/bm25.ts";
+import { FakeClock, FakeVault, vectorScorer, flushPromises } from "./fakes.ts";
 
 function paper(citekey: string, title: string): PaperMetadata {
   return { citekey, title, authors: ["Roth"], year: 2023, abstract: `About ${title}`, journal: "J", doi: "", tags: [], collections: [] } as any;
@@ -72,7 +72,7 @@ function setup() {
   const suggestions = new ObsidianLikeSuggestions();
   const controller = new InlineSuggestController({
     indexStore: store as any,
-    embedder,
+    embedder: vectorScorer(embedder),
     vault: new FakeVault() as any,
     settings: { createLiteratureNotes: false },
     setTimeoutFn: (fn, ms) => clock.setTimeout(fn, ms),
@@ -81,7 +81,6 @@ function setup() {
   return { clock, embedder, suggestions, controller, suggest: { suggestions } };
 }
 
-const flush = () => new Promise((r) => setImmediate(r));
 
 test("IR1 backspacing to a shorter query before the pause cancels the longer query's semantic run", async () => {
   const { clock, embedder, suggestions, controller, suggest } = setup();
@@ -89,7 +88,7 @@ test("IR1 backspacing to a shorter query before the pause cancels the longer que
   clock.advance(100);
   await controller.getSuggestions("stif", suggest); // below the semantic gate
   clock.advance(500);
-  await flush();
+  await flushPromises();
   assert.deepStrictEqual(embedder.calls.map((c) => c.query), [], "no embed for an abandoned query");
   assert.deepStrictEqual(suggestions.log, []);
 });
@@ -101,7 +100,7 @@ test("IR2 a response that arrives after the query changed is ignored, even below
   assert.strictEqual(embedder.calls.length, 1);
   await controller.getSuggestions("stif", suggest);
   embedder.calls[0].resolve(new Float32Array(4).fill(1));
-  await flush();
+  await flushPromises();
   assert.deepStrictEqual(suggestions.log, []);
 });
 
@@ -117,7 +116,7 @@ test("IR3 closing the list cancels both a pending timer and an in-flight request
   clock.advance(260);
   controller.cancel();
   embedder.calls[0].resolve(new Float32Array(4).fill(1));
-  await flush();
+  await flushPromises();
   assert.deepStrictEqual(suggestions.log, [], "in-flight result dropped after close");
 });
 
@@ -128,10 +127,10 @@ test("IR4 a late failure of an older query does not overwrite the current list",
   await controller.getSuggestions("stiff gels ", suggest);
   clock.advance(260); // request #2 in flight
   embedder.calls[1].resolve(new Float32Array(4).fill(1));
-  await flush();
+  await flushPromises();
   assert.strictEqual(suggestions.log.filter((l) => l.startsWith("setSuggestions")).length, 1);
   embedder.calls[0].reject(new Error("timeout"));
-  await flush();
+  await flushPromises();
   const sets = suggestions.log.filter((l) => l.startsWith("setSuggestions"));
   assert.strictEqual(sets.length, 1, "old failure must not apply its keyword list");
   assert.ok(!sets[0].includes("(off)"));
@@ -142,7 +141,7 @@ test("IR5 a failure of the CURRENT query still falls back to keyword results wit
   await controller.getSuggestions("stiff gels ", suggest);
   clock.advance(260);
   embedder.calls[0].reject(new Error("Connection refused"));
-  await flush();
+  await flushPromises();
   const sets = suggestions.log.filter((l) => l.startsWith("setSuggestions"));
   assert.strictEqual(sets.length, 1);
   assert.ok(sets[0].includes("(off)"));

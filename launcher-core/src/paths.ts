@@ -1,4 +1,4 @@
-import type { PaperMetadata } from "../../obsidian/paper-search/src/bm25.ts";
+import type { PaperMetadata } from "../../obsidian/paper-search/src/core/bm25.ts";
 
 export interface AttachmentRef {
   attachmentKey: string;

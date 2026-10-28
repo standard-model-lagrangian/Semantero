@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert";
-import { rowScores } from "../../obsidian/paper-search/src/engine.ts";
+import { rowScores } from "../../obsidian/paper-search/src/core/engine.ts";
 import { Engine } from "../src/query.ts";
 import { fakeVec, fixtureCorpora, fixtureEngine } from "./helpers.ts";
 
@@ -69,18 +69,3 @@ test("R14b interleaveSemantic alternates the two corpora's semantic lists instea
   assert.ok(b.length >= a.length - 1);
 });
 
-test("R16c lookup resolves ids from the current engine, in order, skipping unknown ones", () => {
-  const e = fixtureEngine();
-  const found = e.keyword("stress relaxation", "all", 5);
-  const ids = found.map((r) => r.id);
-  const looked = e.lookup([...ids].reverse().concat(["P:NOPE", "N:NOPE", "X:1"]));
-  assert.deepStrictEqual(looked.map((r) => r.id), [...ids].reverse());
-  const paper = e.lookup(["P:KEY0001"])[0];
-  assert.strictEqual(paper.kind, "paper");
-  assert.strictEqual(paper.title, "Tunable hydrogel viscoelasticity modulates human neural maturation");
-  assert.strictEqual(paper.accessory, "abstract");
-  assert.ok(paper.filePath);
-  const note = e.lookup([e.recent(1)[0].id])[0];
-  assert.strictEqual(note.kind, "litnote");
-  assert.deepStrictEqual(e.lookup([]), []);
-});
