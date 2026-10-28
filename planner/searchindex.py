@@ -278,6 +278,7 @@ def build_index(
     lock_timeout: float = 60.0,
     allow_fallback: bool | None = None,
     keyword_only: bool = False,
+    fingerprint: str | None = None,
 ) -> dict:
     """Build or incrementally update search index.
 
@@ -285,6 +286,7 @@ def build_index(
     row: keyword search still finds them, and the index is marked degraded until a later build embeds them.
     keyword_only skips embedding on purpose and writes that same degraded index: the watcher publishes one first so a
     new paper is citable within seconds, then runs a normal build for its vectors.
+    fingerprint: the library's, if the caller just computed it (the watcher); otherwise computed here.
     """
     if allow_fallback is None:
         allow_fallback = (embed_fn is None)
@@ -298,7 +300,10 @@ def build_index(
 
         # Cheap no-op check (0.05 s, ~30 MB) before the full reconcile (~0.2 s, ~400 MB): the library fingerprint
         # covers items, edits and every attachment's path, size and mtime. Recorded after each successful build.
-        fingerprint = zotlib.compute_fingerprint(s.zotero_dir) if limit is None else None
+        if limit is not None:
+            fingerprint = None   # a partial build must not claim the whole library
+        elif fingerprint is None:
+            fingerprint = zotlib.compute_fingerprint(s.zotero_dir)
         if not full and limit is None:
             shortcut = _unchanged_result(dirs.live, old_state, fingerprint, s, t0)
             if shortcut is not None:

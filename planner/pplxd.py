@@ -132,11 +132,18 @@ class Encoder:
         self.head, self.proj, self.llama = head, proj, llama
         self.skip = np.asarray(head["skiplist_ids"], dtype=np.int64)
 
-    def encode(self, texts: list[str], kind: str) -> list[np.ndarray]:
+    def token_ids(self, texts: list[str], kind: str) -> list[list[int]]:
+        """The prefix token, then the text's tokens cut to the model's length for `kind`."""
         doc = kind == "document"
         prefix = self.head["document_prefix_id" if doc else "query_prefix_id"]
         limit = min(self.head["document_length" if doc else "query_length"], UBATCH) - 1
-        ids = [[prefix] + self.llama.tokenize(t)[:limit] for t in texts]
+        return [[prefix] + self.llama.tokenize(t)[:limit] for t in texts]
+
+    def encode(self, texts: list[str], kind: str) -> list[np.ndarray]:
+        return self.encode_ids(self.token_ids(texts, kind), kind)
+
+    def encode_ids(self, ids: list[list[int]], kind: str) -> list[np.ndarray]:
+        doc = kind == "document"
         out = []
         for i, h in zip(ids, self.llama.hidden(ids)):
             v = h @ self.proj.T

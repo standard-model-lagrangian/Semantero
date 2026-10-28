@@ -202,6 +202,41 @@ class TestEncoder(ServiceCase):
         self.assertEqual(v.shape, (1, 4))
 
 
+class TestParity(ServiceCase):
+    """pplx/convert/parity.py checks the service's own Encoder (not a copy of it) against a reference encoding."""
+
+    def setUp(self):
+        super().setUp()
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "parity", Path(__file__).resolve().parent.parent / "pplx" / "convert" / "parity.py")
+        self.parity = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.parity)
+        self.texts = {"documents": ["ab , cde", "a bb ccc", "dddd , e"], "queries": ["ab cde", "dddd e"]}
+
+    def reference(self, noise: float = 0.0) -> dict:
+        """What sentence-transformers would give: every token's vector (skiplist ones too) and the keep mask."""
+        rng = np.random.default_rng(3)
+        ref = {}
+        for key, kind in (("documents", "document"), ("queries", "query")):
+            ref[key] = []
+            for ids in self.enc.token_ids(self.texts[key], kind):
+                h = self.llama.table[np.asarray(ids)] + 0.01 * np.arange(len(ids))[:, None]
+                v = h @ self.proj.T + noise * rng.standard_normal((len(ids), 4))
+                mask = [not (kind == "document" and i in self.HEAD["skiplist_ids"]) for i in ids]
+                ref[key].append({"ids": ids, "vecs": v.tolist(), "mask": mask})
+        return ref
+
+    def test_the_services_encoder_matches_its_own_reference(self):
+        checks, problems, _ = self.parity.compare(self.enc, self.texts, self.reference(), q8=False)
+        self.assertEqual(problems, [])
+        self.assertTrue(all(ok for _, _, ok in checks), checks)
+
+    def test_a_drifted_encoder_fails(self):
+        checks, _, _ = self.parity.compare(self.enc, self.texts, self.reference(noise=1.0), q8=False)
+        self.assertFalse(all(ok for _, _, ok in checks))
+
+
 class TestLlamaRequests(ServiceCase):
     def test_hidden_states_requested_a_few_texts_at_a_time_in_order(self):
         llama = pplxd.Llama.__new__(pplxd.Llama)

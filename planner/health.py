@@ -3,15 +3,19 @@ background jobs and the launcher app. Network checks only ask a service for its 
 import json
 import os
 import subprocess
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from . import embed
+from . import embed, zotlib
 from .config import ROOT, SearchSettings
+from .store import load_json
 
 REBUILD = 'cd "{root}" && rm -rf .venv && python3 -m venv .venv'
 NOTES_JOB = "com.planner.notes"
+# An index more than this far behind its source (Zotero, the vault) has missed a change; its job runs within minutes.
+CATCH_UP_S = 15 * 60
 APP_PATHS = [Path("/Applications/Semantero.app"), Path.home() / "Applications" / "Semantero.app"]
 
 
@@ -111,21 +115,17 @@ def check_search_index(cfg) -> Result | None:
             f"keyword search still works. Start it ({start}): the watcher retries hourly, or run: planner search index",
         )
 
-    # Check age (< 3 days old)
-    built_at_str = manifest.get("built_at")
-    if built_at_str:
-        try:
-            built_dt = datetime.fromisoformat(built_at_str)
-            diff = datetime.now() - built_dt
-            if diff > timedelta(days=3):
-                return Result(
-                    "search index",
-                    False,
-                    f"Search index is {diff.days} days old (> 3 days). Run: planner search index",
-                )
-        except (TypeError, ValueError):
-            pass
-
+    # Did the index follow the library? Not its age: a no-op build never moves `built_at`, so an unchanged library
+    # would look stale forever. Only once Zotero has been quiet a while: until then the watcher is still due.
+    state = load_json(cfg.data_dir / "search" / "state.json", {}) or {}
+    s = SearchSettings.of(cfg)
+    written = [f.stat().st_mtime for f in zotlib.db_files(s.zotero_dir) if f.exists()]
+    if state.get("fingerprint") and written and time.time() - max(written) > CATCH_UP_S:
+        current = zotlib.compute_fingerprint(s.zotero_dir)
+        if current and current != state["fingerprint"]:
+            return Result("search index", False,
+                          "Zotero has changes the search index hasn't picked up (the watcher builds within a minute "
+                          "of a change; see logs/zotero-watch.log). Run: planner search index")
     return None
 
 
@@ -162,8 +162,18 @@ def check_notes_index(cfg) -> Result | None:
             "notes index", False,
             f"Notes index has been degraded for over a day: semantic search is off for "
             f"{manifest.get('missing_vectors', 0)} texts. Start {name} ({start}); the next tick embeds them")
-    if age is not None and age > timedelta(days=1):
-        return Result("notes index", False, f"Notes index is {age.days} days old (> 1 day). Run: planner notes index")
+    # Did the index follow the vault? A no-op run writes nothing, so "caught up" is the later of the last build and the
+    # last run that saw a touched note (it rewrites state.json). Edits less than CATCH_UP_S old are still due.
+    from . import notesindex
+    state_file = cfg.data_dir / "notes" / "state.json"
+    caught_up = max(state_file.stat().st_mtime if state_file.exists() else 0,
+                    (datetime.now() - age).timestamp() if age is not None else 0)
+    files, _ = notesindex.scan(cfg.vault, notesindex.compile_excludes(notesindex.settings(cfg)["exclude"]))
+    newest = max((p.stat().st_mtime for _, p in files), default=0)
+    if newest > caught_up and time.time() - newest > CATCH_UP_S:
+        return Result("notes index", False,
+                      f"The notes index hasn't picked up edits since {datetime.fromtimestamp(caught_up):%d %b %H:%M} "
+                      "(the notes job runs every 5 minutes; see logs/notes.log). Run: planner notes index")
     return None
 
 
@@ -225,26 +235,13 @@ def check_zotero_watch(cfg) -> Result | None:
             "Not scheduled: com.planner.zotero-watch. Install with: ./setup-search.sh start"
         )
 
-    # 2. Check 3 consecutive failed builds in logs/zotero-watch.log
-    log_file = ROOT / "logs" / "zotero-watch.log"
-    if log_file.exists():
-        try:
-            lines = log_file.read_text().splitlines()
-            consecutive_fails = 0
-            for line in lines:
-                if "build failed" in line:
-                    consecutive_fails += 1
-                    if consecutive_fails >= 3:
-                        return Result(
-                            "zotero watch",
-                            False,
-                            "Zotero watch log has 3 consecutive failed builds. Check logs/zotero-watch.log"
-                        )
-                elif "build completed" in line or "no changes" in line:
-                    consecutive_fails = 0
-        except OSError:
-            pass
-
+    # 2. The watcher's own record of failed rounds (planner/zotwatch.py)
+    from . import zotwatch
+    status = load_json(cfg.data_dir / zotwatch.STATUS_FILE, {}) or {}
+    if status.get("consecutive_failures", 0) >= 3:
+        return Result("zotero watch", False,
+                      f"The watcher failed {status['consecutive_failures']} times in a row "
+                      f"(last: {status.get('last_error', '?')}). Check logs/zotero-watch.log")
     return None
 
 

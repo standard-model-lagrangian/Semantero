@@ -1,4 +1,3 @@
-import hashlib
 import io
 import json
 import os
@@ -10,8 +9,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from tests.helpers import fake_embed, make_cfg
 from planner import searchindex, store, zotwatch
-from planner.config import Config
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures" / "search"
 
@@ -42,39 +41,13 @@ class TestZotwatch(unittest.TestCase):
             sp.mkdir(parents=True, exist_ok=True)
             (sp / fname).write_bytes((FIXTURES_DIR / "sample.pdf").read_bytes())
 
-        self.cfg = Config(
-            vault=self.vault_dir,
-            daily_dir=self.vault_dir,
-            data_dir=self.data_dir,
-            search={
-                "zotero_dir": str(self.zotero_dir),
-                "model": "qwen3-embedding:0.6b",
-                "dims": 8,
-                "batch_size": 32,
-                "chunk_words": 300,
-                "chunk_overlap_words": 50,
-                "max_chunks_per_paper": 150,
-            },
-        )
+        self.cfg = make_cfg(self.vault_dir, self.data_dir, zotero_dir=str(self.zotero_dir), model="qwen3-embedding:0.6b",
+                            dims=8)
 
     def tearDown(self):
         self.tmp.cleanup()
 
-    def fake_embed(self, texts, **kwargs):
-        import math
-        dims = kwargs.get("dims", 8)
-        vectors = []
-        for text in texts:
-            vec = [0.0] * dims
-            words = text.lower().split()
-            for w in words:
-                h = int(hashlib.md5(w.encode()).hexdigest(), 16)
-                vec[h % dims] += 1.0
-            if not any(vec):
-                vec[0] = 1.0
-            norm = math.sqrt(sum(x * x for x in vec))
-            vectors.append([x / norm for x in vec])
-        return vectors
+    fake_embed = staticmethod(fake_embed)
 
     # W1 no change -> no build, no writes, finished in under 1.5s
     def test_w1_no_change_no_build_no_writes(self):
@@ -94,10 +67,8 @@ class TestZotwatch(unittest.TestCase):
         t0 = time.time()
         stdout = io.StringIO()
         with patch("sys.stdout", stdout):
-            ret = zotwatch.watch_run(self.cfg, quiet_s=0.01)
+            zotwatch.watch_run(self.cfg, quiet_s=0.01)
         elapsed = time.time() - t0
-
-        self.assertEqual(ret, 0)
         self.assertLess(elapsed, 1.5)
         self.assertIn("no changes", stdout.getvalue())
 
@@ -143,8 +114,8 @@ class TestZotwatch(unittest.TestCase):
         fp3 = zotwatch.compute_fingerprint(self.zotero_dir)
         self.assertNotEqual(fp3, fp2)
 
-    # W3 lock held -> busy, exit 0, no build
-    def test_w3_lock_held_busy_exit_0(self):
+    # W3 lock held past the timeout -> busy, no build
+    def test_w3_lock_held_busy(self):
         import fcntl
         lock_file = self.data_dir / "search.lock"
         f = open(lock_file, "w")
@@ -153,15 +124,14 @@ class TestZotwatch(unittest.TestCase):
         stdout = io.StringIO()
         try:
             with patch("sys.stdout", stdout):
-                ret = zotwatch.watch_run(self.cfg)
-            self.assertEqual(ret, 0)
+                zotwatch.watch_run(self.cfg, quiet_s=0.0, lock_timeout_s=0.2)
             self.assertIn("busy", stdout.getvalue())
         finally:
             fcntl.flock(f.fileno(), fcntl.LOCK_UN)
             f.close()
 
     # W4 quiet wait: countdown restarts on new change, gives up after max_wait_s
-    def test_w4_quiet_wait(self):
+    def test_w4_quiet_wait_restarts_on_a_change_and_gives_up_after_max_wait(self):
         db_path = self.zotero_dir / "zotero.sqlite"
         simulated_time = 1000.0
 
@@ -217,9 +187,7 @@ class TestZotwatch(unittest.TestCase):
         with patch("planner.searchindex.build_index", side_effect=RuntimeError("Ollama offline")):
             stdout = io.StringIO()
             with patch("sys.stdout", stdout):
-                ret = zotwatch.watch_run(self.cfg, quiet_s=0.01)
-
-            self.assertEqual(ret, 0)
+                zotwatch.watch_run(self.cfg, quiet_s=0.01)
             self.assertIn("build failed", stdout.getvalue())
 
         # Old fingerprint preserved so next run retries
@@ -250,9 +218,7 @@ class TestZotwatch(unittest.TestCase):
         with patch("planner.searchindex.build_index", side_effect=changing_build):
             stdout = io.StringIO()
             with patch("sys.stdout", stdout):
-                ret = zotwatch.watch_run(self.cfg, quiet_s=0.01)
-
-            self.assertEqual(ret, 0)
+                zotwatch.watch_run(self.cfg, quiet_s=0.01)
             # Reached max 3 rounds
             self.assertEqual(rounds, 3)
 
@@ -262,9 +228,7 @@ class TestZotwatch(unittest.TestCase):
 
         stdout = io.StringIO()
         with patch("sys.stdout", stdout):
-            ret = zotwatch.watch_run(self.cfg, quiet_s=0.01)
-
-        self.assertEqual(ret, 0)
+            zotwatch.watch_run(self.cfg, quiet_s=0.01)
         self.assertIn("does not exist", stdout.getvalue())
 
     # W8 plist validation
@@ -302,7 +266,7 @@ class TestZotwatch(unittest.TestCase):
                 patch("planner.searchindex.build_index") as mock_build:
             stdout = io.StringIO()
             with patch("sys.stdout", stdout):
-                self.assertEqual(zotwatch.watch_run(self.cfg, quiet_s=0.01), 0)
+                zotwatch.watch_run(self.cfg, quiet_s=0.01)
             mock_build.assert_not_called()
             self.assertIn("Ollama still unavailable", stdout.getvalue())
 
@@ -310,9 +274,9 @@ class TestZotwatch(unittest.TestCase):
         real_build = searchindex.build_index
         with patch("planner.zotwatch.ollama_up", return_value=True), \
                 patch("planner.searchindex.build_index",
-                      side_effect=lambda cfg, full=False: real_build(cfg, full=full, embed_fn=self.fake_embed)):
+                      side_effect=lambda cfg, **kw: real_build(cfg, embed_fn=self.fake_embed, **kw)):
             with patch("sys.stdout", io.StringIO()):
-                self.assertEqual(zotwatch.watch_run(self.cfg, quiet_s=0.01), 0)
+                zotwatch.watch_run(self.cfg, quiet_s=0.01)
         state_after = json.loads(state_file.read_text())
         self.assertNotIn("degraded", state_after)
         manifest = json.loads((self.data_dir / "search" / "manifest.json").read_text())
@@ -335,20 +299,6 @@ class TestZotwatch(unittest.TestCase):
             self.assertFalse(res.ok)
             self.assertIn("./setup-search.sh start", res.message)
 
-        # 2. Watch log has 3 consecutive build failed -> warning. A log in a scratch root: the real
-        # logs/zotero-watch.log belongs to the running watcher (this test used to overwrite and delete it).
-        log_dir = self.tmp_path / "logs"
-        log_dir.mkdir(parents=True, exist_ok=True)
-        (log_dir / "zotero-watch.log").write_text(
-            "zotero watch: build failed (1)\nzotero watch: build failed (2)\nzotero watch: build failed (3)\n")
-
-        with patch("subprocess.run") as mock_run, patch("planner.health.ROOT", self.tmp_path):
-            mock_run.return_value = MagicMock(returncode=0)
-            res = health.check_zotero_watch(self.cfg)
-            self.assertIsNotNone(res)
-            self.assertFalse(res.ok)
-            self.assertIn("3 consecutive failed builds", res.message)
-
     # W10 a manual build and the watcher at once: one builds, other busy, index consistent
     def test_w10_concurrent_watcher_and_build(self):
         import fcntl
@@ -363,8 +313,7 @@ class TestZotwatch(unittest.TestCase):
             # Watcher runs while lock is held
             stdout = io.StringIO()
             with patch("sys.stdout", stdout):
-                ret = zotwatch.watch_run(self.cfg, quiet_s=0.01)
-            self.assertEqual(ret, 0)
+                zotwatch.watch_run(self.cfg, quiet_s=0.01, lock_timeout_s=0.2)
             self.assertIn("busy", stdout.getvalue())
         finally:
             fcntl.flock(f.fileno(), fcntl.LOCK_UN)
@@ -385,9 +334,8 @@ class TestZotwatch(unittest.TestCase):
         times = []
         for _ in range(10):
             t0 = time.time()
-            ret = zotwatch.watch_run(self.cfg, quiet_s=0.01)
+            zotwatch.watch_run(self.cfg, quiet_s=0.01)
             times.append(time.time() - t0)
-            self.assertEqual(ret, 0)
 
         times.sort()
         p95 = times[int(0.95 * len(times))]
@@ -410,10 +358,9 @@ class TestZotwatch(unittest.TestCase):
         with patch("planner.searchindex.build_index", functools.partial(real_build, lock_timeout=1.0)), \
              patch("planner.embed.embed", side_effect=lambda texts, **kw: self.fake_embed(texts, **kw)), \
              patch("sys.stdout", stdout):
-            ret = zotwatch.watch_run(self.cfg, quiet_s=0.0)
+            zotwatch.watch_run(self.cfg, quiet_s=0.0)
 
         log = stdout.getvalue()
-        self.assertEqual(ret, 0)
         self.assertIn("build completed", log, log)
         self.assertNotIn("build failed", log)
         state = json.loads((self.data_dir / "search" / "state.json").read_text())
@@ -463,7 +410,7 @@ class TestZotwatch(unittest.TestCase):
 
         stdout = io.StringIO()
         with patch("planner.searchindex.build_index", side_effect=recording_build), patch("sys.stdout", stdout):
-            self.assertEqual(zotwatch.watch_run(self.cfg, quiet_s=0.0), 0)
+            zotwatch.watch_run(self.cfg, quiet_s=0.0)
         log = stdout.getvalue()
         self.assertEqual([k for k, _, _ in seen], [True, False], log)
         (_, missing, n_first), (_, missing_after, n_after) = seen
@@ -495,6 +442,60 @@ class TestZotwatch(unittest.TestCase):
         self.cfg.search["backend"] = "ollama"
         with patch("planner.zotwatch.ollama_up", return_value=True):
             self.assertEqual(zotwatch.embedder_up(self.cfg), ("Ollama", True))
+
+    # W16 waiting for Zotero to go quiet holds no lock: a manual build meanwhile must not time out on the watcher
+    def test_w16_quiet_wait_holds_no_lock(self):
+        held_while_waiting = []
+        db = self.zotero_dir / "zotero.sqlite"
+        os.utime(db, None)   # just written: the watcher has to wait
+        clock = [time.time()]
+
+        def sleep_fn(s):
+            held_while_waiting.append(bool(store._held_locks))
+            clock[0] += s
+
+        with patch("planner.embed.embed", side_effect=lambda texts, **kw: self.fake_embed(texts, **kw)), \
+                patch("sys.stdout", io.StringIO()):
+            zotwatch.watch_run(self.cfg, quiet_s=1.0, time_fn=lambda: clock[0], sleep_fn=sleep_fn)
+        self.assertTrue(held_while_waiting)
+        self.assertFalse(any(held_while_waiting))
+
+    # W17 one round copies the library for a fingerprint at most twice: before the build and the recheck after it
+    def test_w17_fingerprint_at_most_twice_per_round(self):
+        from planner import zotlib
+        real = zotlib.compute_fingerprint
+        calls = []
+        counting = lambda d: (calls.append(1), real(d))[1]
+        with patch.object(zotlib, "compute_fingerprint", counting), \
+                patch.object(zotwatch, "compute_fingerprint", counting), \
+                patch("planner.embed.embed", side_effect=lambda texts, **kw: self.fake_embed(texts, **kw)), \
+                patch("sys.stdout", io.StringIO()):
+            zotwatch.watch_run(self.cfg, quiet_s=0.0)
+        self.assertLessEqual(len(calls), 2)
+        state = json.loads((self.data_dir / "search" / "state.json").read_text())
+        self.assertEqual(state.get("fingerprint"), real(self.zotero_dir))
+
+    # W18 the watcher's outcome is a status file doctor reads, not log text it greps
+    def test_w18_failures_counted_in_a_status_file(self):
+        from planner import health
+        with patch.object(searchindex, "build_index", side_effect=RuntimeError("disk full")), \
+                patch("sys.stdout", io.StringIO()), patch("sys.stderr", io.StringIO()):
+            for _ in range(3):
+                zotwatch.watch_run(self.cfg, quiet_s=0.0)
+        status = json.loads((self.data_dir / zotwatch.STATUS_FILE).read_text())
+        self.assertEqual(status["consecutive_failures"], 3)
+        self.assertIn("disk full", status["last_error"])
+        with patch("subprocess.run", return_value=MagicMock(returncode=0)):
+            res = health.check_zotero_watch(self.cfg)
+        self.assertFalse(res.ok)
+        self.assertIn("disk full", res.message)
+
+        with patch("planner.embed.embed", side_effect=lambda texts, **kw: self.fake_embed(texts, **kw)), \
+                patch("sys.stdout", io.StringIO()):
+            zotwatch.watch_run(self.cfg, quiet_s=0.0)
+        self.assertEqual(json.loads((self.data_dir / zotwatch.STATUS_FILE).read_text())["consecutive_failures"], 0)
+        with patch("subprocess.run", return_value=MagicMock(returncode=0)):
+            self.assertIsNone(health.check_zotero_watch(self.cfg))
 
     # W12 the lock still excludes a different process while held re-entrantly in this one
     def test_w12_reentrant_lock_still_excludes_other_processes(self):

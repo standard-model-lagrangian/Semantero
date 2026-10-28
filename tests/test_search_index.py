@@ -3,10 +3,12 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from tests.helpers import fake_embed, make_cfg
 from planner import pdftext, store, zotlib
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures" / "search"
@@ -416,40 +418,13 @@ class TestSearchIndex(unittest.TestCase):
             sp.mkdir(parents=True, exist_ok=True)
             (sp / fname).write_bytes((FIXTURES_DIR / "sample.pdf").read_bytes())
 
-        from planner.config import Config
-        self.cfg = Config(
-            vault=self.vault_dir,
-            daily_dir=self.vault_dir,
-            data_dir=self.data_dir,
-            search={
-                "zotero_dir": str(self.zotero_dir),
-                "model": "qwen3-embedding:0.6b",
-                "dims": 8,
-                "batch_size": 32,
-                "chunk_words": 300,
-                "chunk_overlap_words": 50,
-                "max_chunks_per_paper": 150,
-            }
-        )
+        self.cfg = make_cfg(self.vault_dir, self.data_dir, zotero_dir=str(self.zotero_dir), model="qwen3-embedding:0.6b",
+                            dims=8)
 
     def tearDown(self):
         self.tmp.cleanup()
 
-    def fake_embed(self, texts, **kwargs):
-        import hashlib, math
-        dims = kwargs.get("dims", 8)
-        vectors = []
-        for text in texts:
-            vec = [0.0] * dims
-            words = text.lower().split()
-            for w in words:
-                h = int(hashlib.md5(w.encode()).hexdigest(), 16)
-                vec[h % dims] += 1.0
-            if not any(vec):
-                vec[0] = 1.0
-            norm = math.sqrt(sum(x * x for x in vec))
-            vectors.append([x / norm for x in vec])
-        return vectors
+    fake_embed = staticmethod(fake_embed)
 
     # 20. Full build writes all files consistently
     def test_full_build_writes_all_files_consistently(self):
@@ -976,7 +951,7 @@ class TestSearchIndex(unittest.TestCase):
         p9999_chunks_after = [c for c in chunks2 if c["attachmentKey"] == "ATT9999"]
         self.assertTrue(len(p9999_chunks_after) > 0)
 
-    def test_n5_shared_lock(self):
+    def test_n5_a_build_never_runs_while_another_holds_the_lock(self):
         import fcntl
         from planner import searchindex
 
@@ -1017,13 +992,8 @@ class TestCliAndDoctor(unittest.TestCase):
         self.template_path.parent.mkdir(parents=True)
         self.template_path.write_text("Flow\n- \n\ntype A\n- \n\nstatus/done\n- \n")
 
-        from planner.config import Config
-        self.cfg = Config(
-            vault=self.vault_dir,
-            daily_dir=self.vault_dir,
-            data_dir=self.data_dir,
-            search={"model": "qwen3-embedding:0.6b", "dims": 1024, "zotero_dir": str(FIXTURES_DIR)},
-        )
+        self.cfg = make_cfg(self.vault_dir, self.data_dir, model="qwen3-embedding:0.6b", dims=1024,
+                            zotero_dir=str(FIXTURES_DIR))
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -1051,22 +1021,29 @@ class TestCliAndDoctor(unittest.TestCase):
         search_dir = self.data_dir / "search"
         search_dir.mkdir(parents=True, exist_ok=True)
 
-        # 1. Stale index: 4 days old
-        stale_date = (datetime.now() - timedelta(days=4)).strftime("%Y-%m-%dT%H:%M")
-        manifest = {
-            "format": 1,
-            "built_at": stale_date,
-            "model": "qwen3-embedding:0.6b",
-            "dims": 1024,
-            "papers": 10,
-            "chunks": 20,
-        }
+        # 1. The index is judged by whether it followed the library, not by its age. A copy of the fixture library
+        # whose files were last written an hour ago (the watcher has had its chance).
+        zot = Path(self.tmp.name) / "zotero"
+        shutil.copytree(FIXTURES_DIR, zot)
+        hour_ago = time.time() - 3600
+        os.utime(zot / "zotero.sqlite", (hour_ago, hour_ago))
+        self.cfg.search["zotero_dir"] = str(zot)
+        old = (datetime.now() - timedelta(days=4)).strftime("%Y-%m-%dT%H:%M")
+        manifest = {"format": 1, "built_at": old, "model": "qwen3-embedding:0.6b", "dims": 1024,
+                    "papers": 10, "chunks": 20}
         (search_dir / "manifest.json").write_text(json.dumps(manifest))
+        current = zotlib.compute_fingerprint(zot)
+        (search_dir / "state.json").write_text(json.dumps({"fingerprint": current}))
+        self.assertIsNone(health.check_search_index(self.cfg))   # 4 days old but up to date: fine
 
+        (search_dir / "state.json").write_text(json.dumps({"fingerprint": "an older library"}))
         res = health.check_search_index(self.cfg)
         self.assertIsNotNone(res)
         self.assertFalse(res.ok)
         self.assertIn("planner search index", res.message)
+
+        os.utime(zot / "zotero.sqlite", None)   # Zotero just wrote: the watcher is still due, no warning yet
+        self.assertIsNone(health.check_search_index(self.cfg))
 
         # 2. Mismatched model/dims
         manifest["built_at"] = datetime.now().strftime("%Y-%m-%dT%H:%M")
@@ -1190,12 +1167,8 @@ class TestPaperFilePaths(unittest.TestCase):
         self.assertEqual(snap.to_dict()["file"], "ATTSNAP/index.html")
 
     def _cfg(self, vault):
-        from planner.config import Config
-        data_dir = vault / ".planner"
-        data_dir.mkdir(parents=True)
-        return Config(
-            vault=vault, daily_dir=vault, data_dir=data_dir, search={"zotero_dir": str(self.zotero_dir), "model": "m", "dims": 8},
-        )
+        (vault / ".planner").mkdir(parents=True)
+        return make_cfg(vault, zotero_dir=str(self.zotero_dir), model="m", dims=8)
 
     def _fake_embed(self, texts, **kw):
         return [[1.0] + [0.0] * 7 for _ in texts]

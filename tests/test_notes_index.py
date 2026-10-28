@@ -1,18 +1,18 @@
 """Launcher spec Py 6-36: Markdown cleaning, the notes index, the tick hook and the doctor checks."""
 import array
-import hashlib
 import json
 import math
 import os
 import shutil
 import tempfile
+import time
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
+from tests.helpers import fake_embed, make_cfg
 from planner import mdtext, notesindex
-from planner.config import Config
 
 VAULT_FIXTURE = Path(__file__).parent / "fixtures" / "notes" / "vault_small"
 WORDS = lambda n, p="w": " ".join(f"{p}{i}" for i in range(n))  # noqa: E731
@@ -162,18 +162,6 @@ class TestCleaning(unittest.TestCase):
         self.assertEqual(ch[0].heading, "S0")  # first sections kept
 
 
-def fake_embed(texts, **kwargs):
-    dims = kwargs.get("dims", 8)
-    out = []
-    for text in texts:
-        vec = [0.0] * dims
-        for w in text.lower().split():
-            vec[int(hashlib.md5(w.encode()).hexdigest(), 16) % dims] += 1.0
-        if not any(vec):
-            vec[0] = 1.0
-        norm = math.sqrt(sum(x * x for x in vec))
-        out.append([x / norm for x in vec])
-    return out
 
 
 class NotesCase(unittest.TestCase):
@@ -189,10 +177,8 @@ class NotesCase(unittest.TestCase):
                   {"key": "K2", "citekey": "lesavage2022next", "title": "LeSavage"}]
         (self.data_dir / "search" / "papers.json").write_text(json.dumps(papers))
         (self.data_dir / "search" / "manifest.json").write_text(json.dumps({"content_hash": "abc"}))
-        self.cfg = Config(
-            vault=self.vault, daily_dir=self.vault, data_dir=self.data_dir, search={"model": "qwen3-embedding:0.6b", "dims": 8, "batch_size": 32},
-            notes={"exclude": [*notesindex.DEFAULTS["exclude"], "Private/**"]},
-        )
+        self.cfg = make_cfg(self.vault, self.data_dir, notes={"exclude": [*notesindex.DEFAULTS["exclude"], "Private/**"]},
+                            model="qwen3-embedding:0.6b", dims=8)
         self.notes_dir = self.data_dir / "notes"
 
     def tearDown(self):
@@ -617,7 +603,16 @@ class TestTickAndDoctor(NotesCase):
             return health.check_notes_index(self.cfg)
 
         old = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%dT%H:%M")
-        self.assertIn("old", with_manifest(built_at=old).message)
+        state = self.notes_dir / "state.json"
+        two_days, two_hours = time.time() - 2 * 86400, time.time() - 7200
+        os.utime(state, (two_days, two_days))
+        self.assertIsNone(with_manifest(built_at=old))   # old, but no note changed since: fine
+        note = self.vault / "Organoid bottlenecks.md"
+        os.utime(note, (two_hours, two_hours))           # edited 2 h ago, and the index never caught up
+        self.assertIn("hasn't picked up", with_manifest(built_at=old).message)
+        os.utime(note, None)                             # edited just now: the notes job is still due
+        self.assertIsNone(with_manifest(built_at=old))
+        os.utime(note, (two_days - 60, two_days - 60))
         r = with_manifest(model="other")
         self.assertIn("planner notes index --full", r.message)
         self.assertIn("degraded", with_manifest(degraded=True, missing_vectors=3, built_at=old).message.lower())

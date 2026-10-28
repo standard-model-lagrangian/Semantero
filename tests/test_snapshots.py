@@ -6,9 +6,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock
 
+from tests.helpers import make_cfg
 from planner import htmltext, searchindex, zotlib, zotwatch
 
-from planner.config import Config
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures" / "search"
 
@@ -100,10 +100,7 @@ class TestSnapshotIndexing(unittest.TestCase):
             sp = self.zotero_dir / "storage" / att_key
             sp.mkdir(parents=True)
             (sp / fname).write_bytes((FIXTURES_DIR / "sample.pdf").read_bytes())
-        self.cfg = Config(
-            vault=vault_dir, daily_dir=vault_dir, data_dir=self.data_dir, search={"zotero_dir": str(self.zotero_dir), "dims": 8, "chunk_words": 300,
-                    "chunk_overlap_words": 50, "max_chunks_per_paper": 150},
-        )
+        self.cfg = make_cfg(vault_dir, self.data_dir, zotero_dir=str(self.zotero_dir), dims=8)
 
     def tearDown(self):
         self.tmp.cleanup()

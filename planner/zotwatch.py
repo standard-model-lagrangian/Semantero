@@ -60,98 +60,96 @@ def wait_for_quiet(
         sleep_fn(wait_step)
 
 
+STATUS_FILE = "zotero-watch.json"   # in <data_dir>: consecutive failures and the last error, read by `doctor`
+
+
+def _record(cfg, error: Exception | None) -> None:
+    """Note the round's outcome for `doctor`. Writes only when it changes something (a failure, or the first success
+    after failures), so a watcher with nothing to do writes nothing."""
+    path = cfg.data_dir / STATUS_FILE
+    status = load_json(path, {})
+    if error is None:
+        if not status.get("consecutive_failures"):
+            return
+        status = {"consecutive_failures": 0, "last_ok": datetime.now().isoformat(timespec="seconds")}
+    else:
+        status["consecutive_failures"] = status.get("consecutive_failures", 0) + 1
+        status["last_error"] = f"{type(error).__name__}: {error}"[:300]
+        status["last_failure"] = datetime.now().isoformat(timespec="seconds")
+    write_json(path, status)
+
+
 def watch_run(
     cfg,
     quiet_s: float = QUIET_S,
     check_interval_s: float = 5.0,
     max_wait_s: float = 600.0,
+    lock_timeout_s: float = 120.0,
     time_fn=time.time,
     sleep_fn=time.sleep,
-) -> int:
+) -> None:
+    """One launchd run: wait for Zotero to go quiet, and if the library changed, publish it (keyword-only first, then
+    with vectors). Up to three rounds while Zotero keeps writing. Never raises."""
     zotero_dir = SearchSettings.of(cfg).zotero_dir
     db_path = zotero_dir / "zotero.sqlite"
-
     if not db_path.exists():
         log(f"{db_path} does not exist")
-        return 0
-
-    # 1. Non-blocking lock
+        return
+    state_file = cfg.data_dir / "search" / "state.json"
     try:
-        with search_lock(cfg, blocking=False):
-            round_count = 0
-            while round_count < 3:
-                round_count += 1
-
-                # 2. Wait for Zotero to go quiet
-                quiet = wait_for_quiet(
-                    db_path,
-                    quiet_s=quiet_s,
-                    check_interval_s=check_interval_s,
-                    max_wait_s=max_wait_s,
-                    time_fn=time_fn,
-                    sleep_fn=sleep_fn,
-                )
-                if not quiet:
-                    log("gave up waiting")
-                    return 0
-
-                # 3. Fingerprint
-                fp = compute_fingerprint(zotero_dir)
-                if fp is None:
-                    return 0
-
-                state_file = cfg.data_dir / "search" / "state.json"
+        for _ in range(3):
+            # Waiting takes no lock: a build started meanwhile (by hand, or a profile switch) must not time out on us.
+            if not wait_for_quiet(db_path, quiet_s=quiet_s, check_interval_s=check_interval_s, max_wait_s=max_wait_s,
+                                  time_fn=time_fn, sleep_fn=sleep_fn):
+                log("gave up waiting")
+                return
+            fp = compute_fingerprint(zotero_dir)
+            if fp is None:
+                return
+            with search_lock(cfg, timeout=lock_timeout_s):
                 state = load_json(state_file, {})
-                old_fp = state.get("fingerprint")
-
-                retry = fp == old_fp
+                retry = fp == state.get("fingerprint")
                 if retry:
                     if not state.get("degraded"):
                         log("no changes")
-                        return 0
+                        _record(cfg, None)
+                        return
                     # Keyword-only index: retry embedding, but only once the embedder answers, so an hourly
                     # check with it still down costs one HTTP probe, not a pdftotext pass.
                     name, up = embedder_up(cfg)
                     if not up:
                         log(f"keyword-only index, {name} still unavailable")
-                        return 0
+                        return
                     log(f"{name} is back, embedding the keyword-only texts")
 
-                # 4. Build index: a library change is published keyword-only first (citable in a second or two),
-                # then embedded (~0.4 s a chunk on pplx). A retry has nothing new to publish, so it embeds directly.
+                # A library change is published keyword-only first (citable in a second or two), then embedded
+                # (~0.4 s a chunk on pplx). A retry has nothing new to publish, so it embeds directly. Both builds
+                # record `fp`, the library they were built from.
                 t0 = time.time()
                 try:
+                    res = None
                     if not retry:
-                        res = searchindex.build_index(cfg, full=False, keyword_only=True)
+                        res = searchindex.build_index(cfg, full=False, keyword_only=True, fingerprint=fp)
                         if res.get("missing_vectors"):
                             log(f"keyword index published in {time.time() - t0:.1f}s ({res['papers']} papers); "
                                 f"embedding {res['missing_vectors']} texts")
-                    if retry or res.get("missing_vectors"):
-                        res = searchindex.build_index(cfg, full=False)
+                    if res is None or res.get("missing_vectors"):
+                        res = searchindex.build_index(cfg, full=False, fingerprint=fp)
                     log(f"build completed in {time.time() - t0:.1f}s ({res['papers']} papers, {res['chunks']} chunks)")
                     if res.get("missing_vectors"):
                         log(f"{res['missing_vectors']} texts keyword-only (embedder unavailable); retrying hourly")
                 except Exception as e:
                     log(f"build failed ({e})")
                     traceback.print_exc()
-                    return 0
-
-                # 5. Record fingerprint on success
-                state = load_json(state_file, {})
-                state["fingerprint"] = fp
-                write_json(state_file, state)
-
-                # 6. Recheck fingerprint before releasing lock
-                fp_after = compute_fingerprint(zotero_dir)
-                if fp_after == fp:
-                    break
-                # changed during build: continue to next round (up to 3)
-
-            return 0
-    except BlockingIOError:
-        log("busy")
-        return 0
+                    _record(cfg, e)
+                    return
+                _record(cfg, None)
+            # Zotero wrote during the build: go round again.
+            if compute_fingerprint(zotero_dir) == fp:
+                return
+    except TimeoutError:
+        log(f"busy: another build held the index for {lock_timeout_s:.0f}s; the next run catches up")
     except Exception as e:
         log(f"error ({e})")
         traceback.print_exc()
-        return 0
+        _record(cfg, e)
