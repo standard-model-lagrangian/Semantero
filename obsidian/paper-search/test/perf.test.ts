@@ -7,7 +7,7 @@ import { IndexStore } from "../src/core/indexstore.ts";
 import { keyword, semantic, hybrid } from "../src/core/engine.ts";
 import { findTrigger, isExcludedContext } from "../src/cite.ts";
 import { extractPassage } from "../src/passage.ts";
-import { maintainSelection, type FakeSuggestLike, type SuggestionItem } from "../src/inline.ts";
+import { selectionAfterRefresh, type FakeSuggestLike, type SuggestionItem } from "../src/inline.ts";
 import { buildSyntheticIndex } from "../scripts/make-synthetic-index.ts";
 
 const SYNTHETIC_DIR = path.resolve(import.meta.dirname, "fixtures/synthetic_index");
@@ -396,8 +396,8 @@ test("PF7 B14: Selection stability across 1,000 randomised re-rank sequences", {
       });
     }
 
-    // Call maintainSelection
-    maintainSelection(fakeSuggest, oldHits, newItems);
+    // What refreshSuggestions does with the selection
+    fakeSuggest.suggestions!.selectedItem = selectionAfterRefresh(oldHits, fakeSuggest.suggestions!.selectedItem ?? 0, newItems);
 
     const actualIdx = fakeSuggest.suggestions!.selectedItem;
     if (retain) {

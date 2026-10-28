@@ -3,7 +3,6 @@ import assert from "node:assert";
 import {
   InlineSuggestController,
   refreshSuggestions,
-  maintainSelection,
   LRUQueryCache,
   type SuggestionItem,
   type FakeSuggestLike,

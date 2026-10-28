@@ -92,16 +92,6 @@ export function selectionAfterRefresh(
   return idx === -1 ? 0 : idx;
 }
 
-/** Sets suggest.suggestions.selectedItem to the index from selectionAfterRefresh. */
-export function maintainSelection(
-  suggest: FakeSuggestLike,
-  oldHits: SuggestionItem[],
-  newHits: SuggestionItem[]
-): void {
-  if (!suggest.suggestions) return;
-  suggest.suggestions.selectedItem = selectionAfterRefresh(oldHits, suggest.suggestions.selectedItem ?? 0, newHits);
-}
-
 /** content_hash (or build time, or load id) of a loaded index: what the cached and shown lists were ranked on. */
 function indexVersion(index: LoadedIndex | null): unknown {
   return index?.manifest?.content_hash ?? index?.manifest?.built_at ?? (index as { id?: unknown } | null)?.id;

@@ -83,6 +83,6 @@ vault on purpose: the vault is in Documents, which may sync to iCloud.
 
 - One profile: `rm -rf "<vault>/.planner/profiles/<name>"` (not the live one; switch first), and `ollama rm <model>`.
 - pplx entirely: `launchctl bootout gui/$(id -u)/com.planner.pplxd`, `rm ~/Library/LaunchAgents/com.planner.pplxd.plist`,
-  then delete everything in `~/Library/Application\ Support/Semantero` except `spotlight.json` (the launcher's state
-  shares that folder).
+  then `rm -rf ~/Library/Application\ Support/Semantero` (the pplx model, llama.cpp and the service's venv; the
+  launcher keeps nothing there since Spotlight was removed).
 - The profile machinery itself stays harmless: with no `<vault>/.planner/profile.json`, `config.toml` decides as before.
