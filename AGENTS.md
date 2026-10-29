@@ -58,6 +58,7 @@ planner/                __main__ (CLI), config, health (doctor), embed (embeddin
                         searchindex.py (Zotero index builder), htmltext.py (snapshot text), zotwatch.py (incremental watcher)
                         mdtext.py (Markdown cleaning/sections/chunks), notesindex.py (vault notes index)
                         profiles.py (embedding profiles), pplx.py (pplx client, stdlib), pplxd.py (pplx service, numpy)
+                        litmap.py (weekly literature map: novelty, quoted passages, 3-D layout, SVG + note)
 pplx/                   frozen pplx-embed-v2-late: convert/ (stage, GGUF, parity), requirements-pplxd.txt
 obsidian/paper-search/  Obsidian plugin: src/core/ (the shared ranking core: engine, bm25, rank, text, vectors, ollama, semantic,
                         indexstore, zotero, textstore; no Obsidian imports), src/ (main, settings, modal (view), modalsearch (its
@@ -94,6 +95,7 @@ Run from the project folder with `.venv/bin/python -m planner …`:
 | `notes index [--full]` | build or update the vault notes search index |
 | `notes tick` | what the 5-minute job runs: `notes index` when it is on, non-blocking, never fails |
 | `notes stats` | notes per kind, chunks, literature notes matched, excluded, model, age |
+| `litmap [--week W] [--weeks N] [--relayout] [--dry-run] [--out DIR]` | weekly literature map ([docs/LITMAP_SPEC.md](docs/LITMAP_SPEC.md)): `<folder>/<week>.md` + `.svg`, layout in `.planner/litmap/`; off until `[litmap] enabled = true`, `--out` works regardless |
 | `profile list` / `profile build NAME [--full]` / `profile use NAME` | embedding profiles (`profiles.toml`): list, build one without touching the live index, switch the live index (docs/EMBED_INSTALLS.md) |
 | `--data DIR` (global) | use another data folder inside the vault |
 

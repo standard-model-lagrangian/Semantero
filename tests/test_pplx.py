@@ -75,6 +75,33 @@ class TestClient(unittest.TestCase):
             srv.shutdown()
             srv.server_close()
 
+    def test_rowscores_decodes_one_corpus_and_is_none_when_down(self):
+        seen = []
+
+        class H(BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def do_POST(self):
+                body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                seen.append((self.path, body))
+                s = base64.b64encode(array.array("f", [0.25, 0.5, 0.75]).tobytes()).decode()
+                out = json.dumps({"corpora": {"search": {"content_hash": "h", "rows": 3, "scores": s}}}).encode()
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(out)))
+                self.end_headers()
+                self.wfile.write(out)
+
+        srv, url = serve(H)
+        try:
+            self.assertEqual(pplx.rowscores("a passage", url), {"content_hash": "h", "scores": [0.25, 0.5, 0.75]})
+            self.assertEqual(seen, [("/rowscores", {"text": "a passage", "corpora": ["search"]})])
+            self.assertIsNone(pplx.rowscores("a passage", url, corpus="notes"))
+        finally:
+            srv.shutdown()
+            srv.server_close()
+        self.assertIsNone(pplx.rowscores("x", "http://127.0.0.1:9", timeout=1))
+
     def test_embed_documents_raises_when_service_is_down(self):
         with self.assertRaises(OSError):
             pplx.embed_documents(["a"], "http://127.0.0.1:9", max_retries=0, timeout=1)

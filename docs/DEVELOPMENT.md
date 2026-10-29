@@ -151,6 +151,7 @@ and must take a non-blocking lock. Health problems surface through `planner doct
 | `SEMANTERO_VAULT=<dir> SEMANTERO_NO_HOTKEY=1` | Run a build of the app against another vault (e.g. a copy of the indexes) without touching the installed app's hotkey or settings |
 | `footprint <pid>` / `vmmap -summary <pid>` | The real memory figure (`ps` RSS counts reclaimable pages) |
 | `planner notes stats`, `planner search stats`, `planner doctor` | Index contents, age, health |
+| `planner litmap --out <scratch dir> --week 2026-W44` | Weekly literature map without touching the vault ([LITMAP_SPEC.md](LITMAP_SPEC.md)) |
 
 ## Gotchas (each one cost time)
 

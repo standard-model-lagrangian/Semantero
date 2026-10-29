@@ -497,3 +497,24 @@ Also found while re-running `make app-selftest`: the self-test inherits the scop
 leaving the panel on Papers its "recent notes" step saw 0 rows (an empty query in Papers lists nothing). That explains
 the "self-test run without notes" noted under "Trailing space changed the results". It now starts in All and puts the
 saved scope back at the end.
+
+### Weekly literature map, M1 (29 Oct 2026)
+
+[LITMAP_SPEC.md](LITMAP_SPEC.md) records the measurements behind it (15 paper-similarity measures against Zotero
+collections and tags; 2-D vs 3-D layouts). What the implementation settled:
+- **Each job gets its own measure.** Centred paper mean vectors for the map, one-directional Chamfer over chunks for
+  novelty, the pplx service's MaxSim for the quoted passage (falling back to chunk vectors when the service is down or
+  serves a different index).
+- **Chunk records name their row.** An early analysis read chunk *i* as row *i*; abstract rows sit between papers'
+  chunks, so that scrambled which paper each chunk belonged to. Test LM2 pins it.
+- **Pure-Python SMACOF matches numpy** on the real library (global 0.90, local 0.54), in about 10 s for 195 papers.
+  It must run in double precision.
+- **40 candidate papers are enough for novelty**: rank correlation 0.999 with the exact version, same nearest paper
+  for all 194 papers.
+- **MaxSim calls dominate the run time** (about 3 s each, up to 3 per new paper).
+- **Drift dropped** for mean novelty: on centred vectors the centroid of everything before a week points away from
+  that week by construction.
+- **Open:** `litmap sweep`, the weekly launchd job, a doctor check, the plugin view (spec milestones M1b, M1c, M2), and
+  the owner's verdict on the W27 and W44 backtests. A personal `[notes] exclude` in `config.local.toml` replaces the
+  default list, so it needs `"Literature maps/**"` added by hand before the map writes into the vault.
+

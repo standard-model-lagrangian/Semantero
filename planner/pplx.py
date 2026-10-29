@@ -9,6 +9,8 @@ So the builders, their incremental reuse (cached rows keep their vector and so t
 and the service maps rows to tokens from vectors.f32 alone. Query scoring happens in the service, which returns one
 MaxSim score per row; the plugin and the app feed those into the same ranking code as any other model's row scores.
 """
+import array
+import base64
 import hashlib
 import json
 import time
@@ -67,6 +69,21 @@ def embed_documents(texts: list[str], url: str, dims: int = 128, batch_size: int
                              f"expected {len(texts[i:i + batch_size])} of {dims}")
         out.extend(vecs)
     return out
+
+
+def rowscores(text: str, url: str, corpus: str = "search", timeout: float = 120.0) -> dict | None:
+    """MaxSim of `text` (encoded as a query) against every row of one live corpus: {"content_hash", "scores"} with one
+    score per row of that corpus's vectors.f32, or None when the service is down or doesn't serve the corpus."""
+    try:
+        res = _post(url.rstrip("/") + "/rowscores", {"text": text, "corpora": [corpus]}, timeout)
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+        return None
+    c = (res.get("corpora") or {}).get(corpus) or {}
+    if "scores" not in c:
+        return None
+    scores = array.array("f")
+    scores.frombytes(base64.b64decode(c["scores"]))
+    return {"content_hash": c.get("content_hash"), "scores": scores.tolist()}
 
 
 def health(url: str, timeout: float = 2.0) -> dict | None:

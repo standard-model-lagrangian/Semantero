@@ -20,10 +20,18 @@ keep_alive = "5m"                   # Ollama unloads the model (~400 MB) this lo
 #   enabled = true
 #   exclude = [ ...defaults..., "Private/**" ]   # see docs/INSTALL.md
 enabled = false
-exclude = ["Templates/**", "Threads.md", "Zotero Template.md", "Zotero Citation Template.md"]
+exclude = ["Templates/**", "Threads.md", "Zotero Template.md", "Zotero Citation Template.md", "Literature maps/**"]
 chunk_words = 200            # notes are denser than papers; settled by the evaluation
 chunk_overlap_words = 40
 min_section_words = 25
 lead_words = 120
 max_chunks_per_note = 60
 # model, dims, query_instruction, batch_size, keep_alive come from [search]
+
+
+[litmap]
+# Weekly literature map (docs/LITMAP_SPEC.md): `planner litmap` writes <folder>/<week>.md and .svg into the vault.
+# Off by default; turn it on in config.local.toml. `planner litmap --out DIR` works while it is off.
+enabled = false
+folder = "Literature maps"   # inside the vault
+weeks = 3                    # how many weeks the colour window covers

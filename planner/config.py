@@ -14,6 +14,7 @@ class Config:
     data_dir: Path     # the indexes: <vault>/.planner/{search,notes}
     search: dict = field(default_factory=dict)
     notes: dict = field(default_factory=dict)
+    litmap: dict = field(default_factory=dict)   # weekly literature map (planner/litmap.py)
     profiles_path: Path = ROOT / "profiles.toml"   # embedding profiles (planner/profiles.py), next to config.toml
 
 
@@ -68,6 +69,7 @@ def load(path: Path = ROOT / "config.toml") -> Config:
         data_dir=vault / raw.get("data_dir", ".planner"),
         search=raw.get("search", {}),
         notes=raw.get("notes", {}),
+        litmap=raw.get("litmap", {}),
         profiles_path=path.parent / "profiles.toml",
     )
     cfg.search.update(active_profile_overrides(cfg.data_dir, cfg.profiles_path))

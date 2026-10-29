@@ -3,7 +3,9 @@ import argparse
 import sys
 from datetime import datetime, timedelta
 
-from . import config, embed, health, notesindex, profiles, searchindex
+from pathlib import Path
+
+from . import config, embed, health, litmap, notesindex, profiles, searchindex
 
 
 def notes_tick_warning(cfg, err: Exception) -> str | None:
@@ -124,6 +126,14 @@ def cmd_profile(cfg, args):
         _build_profile(cfg, False)
 
 
+def cmd_litmap(cfg, args):
+    res = litmap.run(cfg, week=args.week, weeks=args.weeks, relayout=args.relayout, dry_run=args.dry_run,
+                     out=Path(args.out).expanduser() if args.out else None)
+    if res.get("summary"):
+        print(res["summary"])
+    print(res["message"])
+
+
 def cmd_doctor(cfg, args):
     """Run every setup check now and print the result with its fix."""
     results = health.run(cfg)
@@ -161,13 +171,20 @@ def main():
     pf_b.add_argument("--full", action="store_true", help="force a full rebuild")
     pf_u = pf_sub.add_parser("use", help="make a built profile the live index, then catch it up")
     pf_u.add_argument("name")
+    lm = sub.add_parser("litmap", help="weekly literature map: where this week's Zotero papers landed (docs/LITMAP_SPEC.md)")
+    lm.add_argument("--week", help="ISO week such as 2026-W44 (default: the last complete week)")
+    lm.add_argument("--weeks", type=int, help="weeks in the colour window (default from [litmap], 3)")
+    lm.add_argument("--relayout", action="store_true", help="lay out every paper again (a new epoch)")
+    lm.add_argument("--dry-run", action="store_true", help="print this week's papers and write nothing")
+    lm.add_argument("--out", help="write the note, the SVG and the layout here instead (works while litmap is off)")
     dr = sub.add_parser("doctor", help="check the vault, the Python env, the indexes, the embedder and the watcher")
     dr.add_argument("--search", action="store_true", help=argparse.SUPPRESS)   # older docs and scripts pass it
     args = p.parse_args()
     cfg = config.load()
     if args.data:
         cfg.data_dir = cfg.vault / args.data
-    cmds = {"doctor": cmd_doctor, "search": cmd_search, "notes": cmd_notes, "profile": cmd_profile}
+    cmds = {"doctor": cmd_doctor, "search": cmd_search, "notes": cmd_notes, "profile": cmd_profile,
+            "litmap": cmd_litmap}
     cmds[args.cmd](cfg, args)
 
 
