@@ -133,5 +133,5 @@ test("R27b detail rows and subtitles", () => {
   assert.strictEqual(p.detail.find((d) => d.label === "File")!.value, "sample.pdf");
   const n = e.keyword("review replication hydrogel", "notes", 1)[0];
   assert.strictEqual(n.subtitle, "Reviews");
-  assert.deepStrictEqual(n.detail.map((d) => d.label), ["Path", "Modified"]);
+  assert.deepStrictEqual(n.detail.map((d) => d.label), ["Path", "Tags", "Modified"]); // its H1, as another name
 });

@@ -1,11 +1,11 @@
 {
   "format": 1,
-  "corpus": "notes",
   "built_at": "2026-10-21T11:05",
-  "content_hash": "ae09712bc49610eda882db69d7c136c35ca7115881b10d9f6908502952597e0e",
   "model": "qwen3-embedding:0.6b",
   "dims": 8,
   "query_instruction": "Given a description of what a paper found or showed, retrieve that paper",
+  "corpus": "notes",
+  "content_hash": "21239b3e6e3dbc4ac5f62a93cbda0d7678547c718ac561c035f91e97ac3de504",
   "chunker": "md-headings-v1",
   "vault": "/Users/test/Obsidian Vault",
   "vault_name": "Obsidian Vault",

@@ -44,12 +44,14 @@
   {
     "key": "N9602e330c5",
     "citekey": "2026-W42",
-    "title": "Review 2026-W42",
+    "title": "2026-W42",
     "authors": [],
     "year": null,
     "journal": null,
     "doi": null,
-    "tags": [],
+    "tags": [
+      "Review 2026-W42"
+    ],
     "collections": [
       "Reviews"
     ],
@@ -82,12 +84,14 @@
   {
     "key": "N8c2448e746",
     "citekey": "empty",
-    "title": "Only frontmatter",
+    "title": "empty",
     "authors": [],
     "year": null,
     "journal": null,
     "doi": null,
-    "tags": [],
+    "tags": [
+      "Only frontmatter"
+    ],
     "collections": [],
     "abstract": null,
     "pdfs": [],
@@ -100,12 +104,14 @@
   {
     "key": "N3735e60c0e",
     "citekey": "lesavage2022next",
-    "title": "Next generation cancer organoids",
+    "title": "lesavage2022next",
     "authors": [],
     "year": null,
     "journal": null,
     "doi": null,
-    "tags": [],
+    "tags": [
+      "Next generation cancer organoids"
+    ],
     "collections": [],
     "abstract": "Matrix stiffness and viscoelasticity regulate organoid growth and drug response, and permissive matrix degradation is required for outgrowth of organoids from patient tumour fragments.",
     "pdfs": [],
@@ -118,12 +124,14 @@
   {
     "key": "N244a2b5783",
     "citekey": "roth2023tunable",
-    "title": "Roth 2023 literature note",
+    "title": "roth2023tunable",
     "authors": [],
     "year": null,
     "journal": null,
     "doi": null,
-    "tags": [],
+    "tags": [
+      "Roth 2023 literature note"
+    ],
     "collections": [],
     "abstract": "Faster stress relaxation accelerated neuronal maturation and neural network development in hydrogels with tunable viscoelasticity for organoid culture. my thoughts on stress relaxation and neural maturation in matrices that relax stress quickly",
     "pdfs": [],

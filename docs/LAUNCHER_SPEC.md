@@ -248,7 +248,7 @@ Same four files, the same atomic write (`notes.tmp/` → swap) and `state.json` 
 |---|---|---|
 | `key` | `N` + first 10 hex digits of sha1 of the vault-relative path | — |
 | `citekey` | basename without `.md` | ×3 |
-| `title` | frontmatter `title`, else the first `# H1`, else the basename. Daily notes: `Tue 20 Oct 2026` | ×3 |
+| `title` | the basename, as Obsidian shows it (frontmatter `title` and the first `# H1` go into `tags`). Daily notes: `Tue 20 Oct 2026` | ×3 |
 | `authors` | `[]` | — |
 | `year` | `null` | — |
 | `journal` | `null` | — |
@@ -625,7 +625,7 @@ This is decided **by measurement in spike S1**, recorded in `DECISIONS_AND_GAPS.
 **mdtext**
 6. `test_frontmatter_title_tags_aliases_citekey`: list and string forms.
 7. `test_malformed_frontmatter_is_body_not_crash`
-8. `test_title_fallbacks`: frontmatter > H1 > basename; daily → `Tue 20 Oct 2026`.
+8. `test_title_is_the_filename_as_in_obsidian`: basename, never frontmatter or H1 (both searchable through `tags`); daily → `Tue 20 Oct 2026`.
 9. `test_planner_blocks_and_comments_removed`
 10. `test_links_simplified_embeds_removed`
 11. `test_markup_stripped_words_kept`

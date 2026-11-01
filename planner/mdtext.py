@@ -246,15 +246,16 @@ def parse_note(text: str, basename: str, daily_iso: str | None = None) -> Note:
             buf.append(piece.strip())
     flush()
 
+    # Obsidian's title is the file name (its inline title); headings and a frontmatter `title` don't change it.
+    title = format_daily_title(daily_iso) if daily_iso else basename
+    # They stay searchable as other names for the note, like aliases (headings aren't in the chunk text).
     fm_title = meta.get("title")
-    title = (str(fm_title).strip() if isinstance(fm_title, str) and fm_title.strip() else None)
-    if not title and daily_iso:
-        title = format_daily_title(daily_iso)
-    title = title or h1 or basename
+    other_names = [n.strip() for n in (fm_title if isinstance(fm_title, str) else None, h1) if n and n.strip()]
 
     tags: list[str] = []
-    for t in _as_list(meta.get("tags")) + collect_inline_tags(tag_source) + _as_list(meta.get("aliases")):
-        if t not in tags:
+    for t in (_as_list(meta.get("tags")) + collect_inline_tags(tag_source) + _as_list(meta.get("aliases"))
+              + other_names):
+        if t not in tags and t != title:
             tags.append(t)
     citekey = meta.get("citekey")
     return Note(

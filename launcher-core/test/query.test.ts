@@ -34,8 +34,7 @@ test("R15 empty query → recent notes by mtime, newest first, limit 10", () => 
   const r = e.keyword("", "all", 15);
   assert.strictEqual(r.length, 7);
   assert.deepStrictEqual(r.map((x) => x.title), [
-    "Roth 2023 literature note", "Next generation cancer organoids", "Only frontmatter", "bad-yaml",
-    "Review 2026-W42", "Organoid bottlenecks", "Tue 20 Oct 2026",
+    "roth2023tunable", "lesavage2022next", "empty", "bad-yaml", "2026-W42", "Organoid bottlenecks", "Tue 20 Oct 2026",
   ]);
   assert.strictEqual(e.keyword("   ", "all", 3).length, 3);
   assert.deepStrictEqual(e.keyword("", "papers", 5), []);

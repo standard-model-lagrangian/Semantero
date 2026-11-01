@@ -24,7 +24,7 @@ class TestFrontmatter(unittest.TestCase):
         txt = ('---\ntitle: "My title"\ntags: [a, "b c"]\naliases:\n  - alias one\n  - alias two\n'
                'citekey: smith2020x\n---\nBody words here now.\n')
         n = mdtext.parse_note(txt, "base")
-        self.assertEqual(n.title, "My title")
+        self.assertEqual(n.title, "base")  # the file name, as in Obsidian
         self.assertEqual(n.citekey, "smith2020x")
         self.assertEqual(n.aliases, ["alias one", "alias two"])
         self.assertEqual(n.tags[:2], ["a", "b c"])
@@ -44,10 +44,16 @@ class TestFrontmatter(unittest.TestCase):
         self.assertIn("this line is not yaml", n.body_text)  # the block itself counts as body
 
     # 8
-    def test_title_fallbacks(self):
-        self.assertEqual(mdtext.parse_note('---\ntitle: FM\n---\n# H1\nx y z\n', "base").title, "FM")
-        self.assertEqual(mdtext.parse_note("intro\n\n# The H1\nx y z\n", "base").title, "The H1")
+    def test_title_is_the_filename_as_in_obsidian(self):
+        """Obsidian's title is the file name (its inline title); a heading or a frontmatter `title` never replaces it."""
+        self.assertEqual(mdtext.parse_note('---\ntitle: FM\n---\n# H1\nx y z\n', "base").title, "base")
+        self.assertEqual(mdtext.parse_note("# Goals\nx y z\n", "base").title, "base")
+        self.assertEqual(mdtext.parse_note("intro\n\n# The H1\nx y z\n", "base").title, "base")
         self.assertEqual(mdtext.parse_note("just words here\n", "base").title, "base")
+        # ...but both stay searchable as other names for the note, like aliases
+        self.assertIn("Goals", mdtext.parse_note("# Goals\nx y z\n", "base").tags)
+        self.assertEqual(mdtext.parse_note('---\ntitle: FM\n---\n# H1\nx y z\n', "base").tags, ["FM", "H1"])
+        self.assertEqual(mdtext.parse_note("# base\nx y z\n", "base").tags, [])
         self.assertEqual(mdtext.parse_note("flow\n", "2026-10-20", daily_iso="2026-10-20").title, "Tue 20 Oct 2026")
         self.assertEqual(mdtext.parse_note("# H1\n", "2026-10-21", daily_iso="2026-10-21").title, "Wed 21 Oct 2026")
 
@@ -359,11 +365,14 @@ class TestBuild(NotesCase):
 
     # 25
     def test_renamed_note_reuses_vectors(self):
+        """A rename changes the title (the file name), so only the title + lead row is embedded again."""
         self.build()
         old_key = self.by_path()["Organoid bottlenecks.md"]["key"]
         (self.vault / "Organoid bottlenecks.md").rename(self.vault / "Renamed note.md")
         res = self.build()
-        self.assertEqual(res["calls"], [])
+        self.assertEqual(len(res["calls"]), 1)
+        self.assertEqual(len(res["calls"][0]), 1)
+        self.assertTrue(res["calls"][0][0].startswith("Renamed note\n\n"))
         bp = self.by_path()
         self.assertNotIn("Organoid bottlenecks.md", bp)
         self.assertNotEqual(bp["Renamed note.md"]["key"], old_key)
@@ -394,6 +403,17 @@ class TestBuild(NotesCase):
         with patch.object(notesindex, "CHUNKER", "md-headings-v2"):
             res = self.build()
             self.assertTrue(res["calls"])
+
+    def test_parser_change_reparses_unchanged_notes_reusing_vectors(self):
+        """A new note parser (e.g. the title rule) re-reads notes nobody touched, and embeds only the texts it changed."""
+        self.build()
+        with patch.object(notesindex, "PARSER", "test-v2"), \
+                patch.object(notesindex.mdtext, "format_daily_title", lambda iso: f"Daily {iso}"):
+            res = self.build()
+        self.assertTrue(res["changed"])
+        texts = [t for b in res["calls"] for t in b]
+        self.assertTrue(texts)
+        self.assertTrue(all(t.startswith("Daily ") for t in texts), texts)
 
     # 28
     def test_ollama_down_writes_degraded_keyword_index_then_recovers(self):
@@ -440,7 +460,7 @@ class TestBuild(NotesCase):
         self.build()
         empty = self.by_path()["empty.md"]
         self.assertIsNone(empty["abstractRow"])
-        self.assertEqual(empty["title"], "Only frontmatter")
+        self.assertEqual(empty["title"], "empty")
         idx = self.papers().index(empty)
         self.assertEqual([c for c in self.chunks() if c["paper"] == idx], [])
         self.assertIsNotNone(self.by_path()["bad-yaml.md"]["abstractRow"])  # malformed YAML: body still indexed

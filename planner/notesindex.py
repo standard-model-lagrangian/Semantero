@@ -21,6 +21,8 @@ from .indexfiles import manifest as index_manifest
 from .store import load_json, write_json
 
 CHUNKER = "md-headings-v1"
+# Bump when parsing changes what an entry says (e.g. its title): every note is read again, vectors reused by text hash.
+PARSER = "title-filename-v1"
 DEFAULTS = {
     "enabled": True,
     "exclude": ["Templates/**", "Threads.md", "Zotero Template.md", "Zotero Citation Template.md"],
@@ -155,7 +157,7 @@ def _signature(cfg, files: list[tuple[str, Path]], ns: dict, s: SearchSettings) 
     papers_hash = (load_json(cfg.data_dir / "search" / "manifest.json", {}) or {}).get("content_hash")
     return _sha(json.dumps({
         "files": stats_sig, "papers": papers_hash, "model": s.model, "dims": s.dims, "chunker": CHUNKER,
-        "ns": {k: ns[k] for k in sorted(ns)}, "vault": str(cfg.vault), "daily": str(cfg.daily_dir),
+        "parser": PARSER, "ns": {k: ns[k] for k in sorted(ns)}, "vault": str(cfg.vault), "daily": str(cfg.daily_dir),
     }, sort_keys=True))
 
 

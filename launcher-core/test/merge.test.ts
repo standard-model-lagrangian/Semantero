@@ -85,7 +85,7 @@ test("R10 collapse: the litnote ranked higher → note snippet and heading, ↵ 
   assert.strictEqual(vm.id, "P:KEY0001");
   assert.strictEqual(vm.hasNote, true);
   assert.match(vm.filePath!, /\/Users\/test\/Zotero\/storage\/ATT001\/sample\.pdf$/); // ⌘↵ still pastes the PDF
-  assert.strictEqual(vm.citation, `"my thoughts on stress relaxation" (note: Roth 2023 literature note › ${chunk.heading})`);
+  assert.strictEqual(vm.citation, `"my thoughts on stress relaxation" (note: roth2023tunable › ${chunk.heading})`);
   assert.match(vm.noteUrl!, /^obsidian:\/\/open\?vault=Obsidian%20Vault&file=roth2023tunable$/);
 });
 
@@ -95,7 +95,7 @@ test("R11 collapse: litnote whose paper is absent stays a note row", () => {
   const rows = collapseLitnotes([hit("notes", rothNote)], c);
   assert.strictEqual(rows.length, 1);
   assert.strictEqual(rows[0].paper, undefined);
-  const vm = fixtureEngine().keyword("faster stress relaxation", "notes", 10).find((r) => r.kind === "litnote" && r.title.startsWith("Roth"))!;
+  const vm = fixtureEngine().keyword("faster stress relaxation", "notes", 10).find((r) => r.kind === "litnote" && r.title === "roth2023tunable")!;
   assert.ok(vm);
   assert.strictEqual(vm.selectUrl, "zotero://select/library/items/KEY0001");
   assert.ok(vm.actions.includes("select-zotero"));
