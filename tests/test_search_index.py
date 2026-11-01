@@ -567,6 +567,85 @@ class TestSearchIndex(unittest.TestCase):
         total_rows = len(all_rows)
         self.assertEqual(all_rows, set(range(total_rows)))
 
+    def _add_authorless_webpage(self, cur):
+        """What the browser connector saves from a publisher's PDF viewer: a webpage item with a title and DOI, no
+        authors, date or journal, and the PDF as a child."""
+        cur.execute("INSERT INTO itemTypes (itemTypeID, typeName) VALUES (13, 'webpage')")
+        cur.execute("INSERT INTO items (itemID, itemTypeID, key, clientDateModified) VALUES (700, 13, 'WEB0001', '2026-10-13 18:28:22')")
+        cur.execute("INSERT INTO itemDataValues (valueID, value) VALUES (7001, 'Pulse waveform features'), (7002, 'PulseWaveformFeatures')")
+        cur.execute("INSERT INTO itemData (itemID, fieldID, valueID) VALUES (700, 1, 7001), (700, 9, 7002)")
+        cur.execute("INSERT INTO items (itemID, itemTypeID, key, clientDateModified) VALUES (701, 3, 'ATTWEB1', '2026-10-13 18:28:25')")
+        cur.execute("INSERT INTO itemAttachments (itemID, parentItemID, contentType, path) VALUES (701, 700, 'application/pdf', 'storage:web.pdf')")
+        sp = self.zotero_dir / "storage" / "ATTWEB1"
+        sp.mkdir(parents=True, exist_ok=True)
+        (sp / "web.pdf").write_bytes((FIXTURES_DIR / "sample.pdf").read_bytes())
+
+    @needs_pdftotext
+    def test_authors_added_by_hand_reach_the_index(self):
+        """Fixing an author-less item in Zotero (type changed, authors and date typed in) shows up on the next build."""
+        import sqlite3
+        from planner import searchindex
+
+        conn = sqlite3.connect(self.zotero_dir / "zotero.sqlite")
+        self._add_authorless_webpage(conn.cursor())
+        conn.commit()
+        searchindex.build_index(self.cfg, full=True, embed_fn=self.fake_embed)
+        papers = json.loads((self.data_dir / "search" / "papers.json").read_text())
+        web = next(p for p in papers if p["key"] == "WEB0001")
+        self.assertEqual((web["authors"], web["year"]), ([], None))
+
+        cur = conn.cursor()
+        cur.execute("UPDATE items SET itemTypeID = 2, clientDateModified = '2026-11-01 10:00:00' WHERE key = 'WEB0001'")
+        cur.execute("INSERT INTO creators (creatorID, firstName, lastName, fieldMode) VALUES (700, 'A.', 'Porter', 0)")
+        cur.execute("INSERT INTO itemCreators (itemID, creatorID, creatorTypeID, orderIndex) VALUES (700, 700, 1, 0)")
+        cur.execute("INSERT INTO itemDataValues (valueID, value) VALUES (7003, '2026-03-01')")
+        cur.execute("INSERT INTO itemData (itemID, fieldID, valueID) VALUES (700, 6, 7003)")
+        conn.commit()
+        conn.close()
+
+        mock_embed = MagicMock(side_effect=self.fake_embed)
+        res = searchindex.build_index(self.cfg, full=False, embed_fn=mock_embed)
+        self.assertTrue(res["changed"])
+        papers = json.loads((self.data_dir / "search" / "papers.json").read_text())
+        web = next(p for p in papers if p["key"] == "WEB0001")
+        self.assertEqual((web["authors"], web["year"]), (["Porter"], 2026))
+        mock_embed.assert_not_called()  # the PDF's chunks are unchanged
+
+    @needs_pdftotext
+    def test_pdf_moved_to_a_re_added_item_follows_it(self):
+        """Re-adding a paper by DOI, dragging its PDF onto the new item and trashing the old one: the new item has the
+        authors and the PDF's passages, the old item is gone, and nothing is re-extracted or re-embedded."""
+        import sqlite3
+        from planner import searchindex
+
+        conn = sqlite3.connect(self.zotero_dir / "zotero.sqlite")
+        self._add_authorless_webpage(conn.cursor())
+        conn.commit()
+        searchindex.build_index(self.cfg, full=True, embed_fn=self.fake_embed)
+
+        cur = conn.cursor()
+        cur.execute("INSERT INTO items (itemID, itemTypeID, key, clientDateModified) VALUES (710, 2, 'NEW0001', '2026-11-01 10:00:00')")
+        cur.execute("INSERT INTO itemDataValues (valueID, value) VALUES (7101, 'porterPulseWaveformFeatures2026')")
+        cur.execute("INSERT INTO itemData (itemID, fieldID, valueID) VALUES (710, 1, 7001), (710, 9, 7101)")
+        cur.execute("INSERT INTO creators (creatorID, firstName, lastName, fieldMode) VALUES (710, 'A.', 'Porter', 0)")
+        cur.execute("INSERT INTO itemCreators (itemID, creatorID, creatorTypeID, orderIndex) VALUES (710, 710, 1, 0)")
+        cur.execute("UPDATE itemAttachments SET parentItemID = 710 WHERE itemID = 701")
+        cur.execute("UPDATE items SET clientDateModified = '2026-11-01 10:00:05' WHERE itemID IN (700, 701)")
+        cur.execute("INSERT INTO deletedItems (itemID, dateDeleted) VALUES (700, '2026-11-01 10:00:05')")
+        conn.commit()
+        conn.close()
+
+        mock_embed = MagicMock(side_effect=self.fake_embed)
+        searchindex.build_index(self.cfg, full=False, embed_fn=mock_embed)
+        papers = json.loads((self.data_dir / "search" / "papers.json").read_text())
+        chunks = json.loads((self.data_dir / "search" / "chunks.json").read_text())
+        self.assertNotIn("WEB0001", [p["key"] for p in papers])
+        new = next(i for i, p in enumerate(papers) if p["key"] == "NEW0001")
+        self.assertEqual(papers[new]["authors"], ["Porter"])
+        self.assertEqual([p["attachmentKey"] for p in papers[new]["pdfs"]], ["ATTWEB1"])
+        self.assertTrue(any(c["paper"] == new and c["attachmentKey"] == "ATTWEB1" for c in chunks))
+        mock_embed.assert_not_called()
+
     # 25. Model or dims change forces full rebuild
     def test_model_or_dims_change_forces_full_rebuild(self):
         from planner import searchindex

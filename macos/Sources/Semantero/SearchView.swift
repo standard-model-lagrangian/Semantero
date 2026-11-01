@@ -62,7 +62,11 @@ struct SearchView: View {
     @FocusState private var fieldFocused: Bool
 
     private var rowHeight: CGFloat { 54 }
-    private var listHeight: CGFloat { min(CGFloat(max(model.results.count, 1)) * rowHeight, 360) }
+    // At least four rows' height once there are results, so one or two hits still leave the detail pane room.
+    private var listHeight: CGFloat {
+        if model.results.isEmpty { return rowHeight }
+        return min(max(CGFloat(model.results.count), 4) * rowHeight, 360)
+    }
 
     var body: some View {
         GlassEffectContainer {
