@@ -1,4 +1,4 @@
-import { EditorSuggest, ItemView, MarkdownView, Notice, Plugin, WorkspaceLeaf, requestUrl } from "obsidian";
+import { EditorSuggest, ItemView, MarkdownView, Notice, Plugin, TFile, WorkspaceLeaf, requestUrl } from "obsidian";
 import { IndexStore } from "./core/indexstore.ts";
 import { PaperSearchModal } from "./modal.ts";
 import { checkHotkeyConflict } from "./hotkey.ts";
@@ -8,6 +8,7 @@ import { createPaperSearchSuggestClass, InlineSuggestController } from "./inline
 import { createRelatedPapersViewClass, RelatedPapersController } from "./related.ts";
 import { ActiveEditorTracker, editorSnapshot } from "./editortracker.ts";
 import { ZoteroLive } from "./zoterolive.ts";
+import { CiteLinkNotes, OPEN_NOTE_ACTION } from "./citelinks.ts";
 import { DEFAULT_SETTINGS, PaperSearchSettingTab, type PaperSearchSettings } from "./settings.ts";
 
 export default class PaperSearchPlugin extends Plugin {
@@ -129,6 +130,43 @@ export default class PaperSearchPlugin extends Plugin {
           await relatedController.refresh(snap.text, snap.cursorOffset, snap.selection, snap.filePath);
         }
       },
+    });
+
+    // 4. Literature notes for citations made outside the plugin: a pasted [[citekey]] (the launcher's ⌘L), the
+    // launcher's ⌘O on a paper without a note (obsidian://semantero-note?vault=…&citekey=…), and a blank note made by
+    // clicking an unresolved [[citekey]].
+    const citeLinks = new CiteLinkNotes({
+      papers: async () => {
+        if (this.indexStore.isReady()) await this.indexStore.ensureFresh();
+        else await this.indexStore.load();
+        return this.indexStore.getIndex()?.papers ?? [];
+      },
+      vault: this.app.vault,
+      metadataCache: this.app.metadataCache,
+      settings: this.settings,
+      showNotice: (msg: string) => new Notice(msg),
+      sessionNotices: this.litNoteNotices,
+      openFile: (file) => this.app.workspace.getLeaf().openFile(file),
+    });
+    this.registerEvent(
+      this.app.workspace.on("editor-paste", (evt) => {
+        // Read now: the clipboard data is gone once the handler returns.
+        const text = evt.clipboardData?.getData("text/plain") ?? "";
+        citeLinks.onPaste(text).catch((err) => console.error("Paper search: literature note on paste failed:", err));
+      })
+    );
+    // "create" also fires for every existing file while the vault loads: listen only once the layout is ready.
+    this.app.workspace.onLayoutReady(() =>
+      this.registerEvent(
+        this.app.vault.on("create", (file) => {
+          if (!(file instanceof TFile)) return;
+          citeLinks.onCreate(file).catch((err) => console.error("Paper search: filling a blank literature note failed:", err));
+        })
+      )
+    );
+    this.registerObsidianProtocolHandler(OPEN_NOTE_ACTION, (params) => {
+      if (!params.citekey) return;
+      citeLinks.openNote(params.citekey).catch((err) => new Notice(`Paper search: ${err.message}`));
     });
 
     this.addSettingTab(new PaperSearchSettingTab(this.app, this));

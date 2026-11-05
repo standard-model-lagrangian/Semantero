@@ -33,7 +33,8 @@ saw, in `docs/DECISIONS_AND_GAPS.md` (or just tell Claude).
 | 2.2 | Find a paper whose row says `snapshot`, ↵ | Zotero opens the web snapshot |
 | 2.3 | Type a phrase from one of your notes (e.g. `organoid bottlenecks`), ↵ on the note | Obsidian opens the note. **Note whether it jumps to the heading** shown under the title, or only opens the note |
 | 2.4 | ⌘2, type `roth`, then ⌘⇧Z | Zotero selects the item in your library |
-| 2.5 | On a paper row, ⌘O | Its literature note opens, or (none yet) Obsidian creates `<citekey>.md`. **Note whether your Zotero template was applied** (probably not) |
+| 2.5 | On a paper row, ⌘O | Its literature note opens, or (none yet) the plugin creates `<citekey>.md` in your literature-note folder from your template (abstract, Zotero link) and opens it |
+| 2.5b | In an Obsidian note, ⌘L on a paper with no literature note | `[[citekey]]` is pasted and the literature note appears in your literature-note folder, filled from the template |
 | 2.6 | Clear the field | The 10 most recently edited notes show, newest first |
 
 ## 3. Getting the file into another app (the main point, 5 minutes)

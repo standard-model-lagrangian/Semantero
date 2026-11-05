@@ -9,9 +9,10 @@ export function obsidianOpenUrl(vaultName: string, path: string, heading?: strin
   return `obsidian://open?vault=${enc(vaultName)}&file=${enc(file)}${h}`;
 }
 
-/** obsidian://new, for a literature note that does not exist yet. */
-export function obsidianNewUrl(vaultName: string, name: string): string {
-  return `obsidian://new?vault=${enc(vaultName)}&file=${enc(name)}`;
+/** The Obsidian plugin's handler (src/citelinks.ts, OPEN_NOTE_ACTION) for a literature note that may not exist yet:
+ * it creates the note from the plugin's template (abstract, Zotero link) and opens it. `obsidian://new` made a blank note. */
+export function obsidianLitNoteUrl(vaultName: string, citekey: string): string {
+  return `obsidian://semantero-note?vault=${enc(vaultName)}&citekey=${enc(citekey)}`;
 }
 
 /** The last segment of a "A › B › C" heading path. */

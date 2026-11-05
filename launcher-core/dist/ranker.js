@@ -1417,8 +1417,8 @@
     const h = heading ? `%23${enc(heading)}` : "";
     return `obsidian://open?vault=${enc(vaultName)}&file=${enc(file)}${h}`;
   }
-  function obsidianNewUrl(vaultName, name) {
-    return `obsidian://new?vault=${enc(vaultName)}&file=${enc(name)}`;
+  function obsidianLitNoteUrl(vaultName, citekey) {
+    return `obsidian://semantero-note?vault=${enc(vaultName)}&citekey=${enc(citekey)}`;
   }
   function lastHeading(path) {
     if (!path) return void 0;
@@ -1469,7 +1469,7 @@
     const filePath = att ? resolvePaperFile(c.zoteroStorage, att.file) : null;
     const heading = noteWon ? noteHeading(c, row) : void 0;
     const snippet = noteWon ? row.note.hit.snippet : phit.snippet;
-    const noteUrl = notePath ? obsidianOpenUrl(c.vaultName, notePath) : paper.citekey && c.vaultName ? obsidianNewUrl(c.vaultName, paper.citekey) : null;
+    const noteUrl = notePath ? obsidianOpenUrl(c.vaultName, notePath) : paper.citekey && c.vaultName ? obsidianLitNoteUrl(c.vaultName, paper.citekey) : null;
     const openUrl = noteWon && notePath ? obsidianOpenUrl(c.vaultName, notePath, lastHeading(heading)) : hitUrl(paper, phit);
     const openLabel = noteWon ? "Open in Obsidian" : !att ? "Show in Zotero" : att.kind === "snapshot" ? "Open snapshot in Zotero" : loc.startsWith("p.") ? `Open in Zotero at ${loc}` : "Open in Zotero";
     const selectUrl = selectItemUrl(paper.key);

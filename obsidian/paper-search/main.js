@@ -2831,6 +2831,76 @@ function createRelatedPapersViewClass(ItemViewBase) {
   };
 }
 
+// src/citelinks.ts
+var OPEN_NOTE_ACTION = "semantero-note";
+var WIKILINK_RE = /(!?)\[\[([^\[\]\n]+?)\]\]/g;
+function wikilinkTargets(text) {
+  const out = /* @__PURE__ */ new Set();
+  for (const m of text.matchAll(WIKILINK_RE)) {
+    if (m[1]) continue;
+    const target = m[2].split("|")[0].split("#")[0].split("^")[0].trim();
+    const name = (target.split("/").pop() ?? "").replace(/\.md$/i, "").trim();
+    if (name) out.add(name);
+  }
+  return [...out];
+}
+var CiteLinkNotes = class {
+  deps;
+  /** Citekeys whose note is being made, so two pastes at once make it once. */
+  pending = /* @__PURE__ */ new Map();
+  constructor(deps) {
+    this.deps = deps;
+  }
+  /** Text was pasted into an editor: make the literature note of every cited paper that has none. */
+  async onPaste(text) {
+    if (this.deps.settings.createLiteratureNotes === false || !text.includes("[[")) return;
+    const targets = wikilinkTargets(text);
+    if (targets.length === 0) return;
+    const papers = await this.papersByCitekey();
+    const found = targets.map((t) => this.lookup(papers, t)).filter((p) => !!p);
+    await Promise.all(found.map((p) => this.ensure(p).catch(() => void 0)));
+  }
+  /** A file appeared. A blank Markdown note named after an indexed citekey (Obsidian makes one when an unresolved
+   * `[[citekey]]` is clicked) is filled from the template; ensureLiteratureNote never touches one with content. */
+  async onCreate(file) {
+    if (this.deps.settings.createLiteratureNotes === false || file.extension !== "md" || !file.basename) return;
+    const paper = this.lookup(await this.papersByCitekey(), file.basename);
+    if (!paper) return;
+    if ((await this.deps.vault.read(file)).trim() !== "") return;
+    await this.ensure(paper);
+  }
+  /** Open the literature note of `citekey`, creating it from the template if the paper is indexed. */
+  async openNote(citekey) {
+    const paper = this.lookup(await this.papersByCitekey(), citekey);
+    const file = paper ? (await this.ensure(paper)).file : findLiteratureNote(this.deps.vault, this.deps.metadataCache, citekey);
+    if (file) await this.deps.openFile(file);
+    else if (!paper) this.deps.showNotice(`Paper search: no paper with citekey "${citekey}" in the index yet.`);
+  }
+  ensure(paper) {
+    const running = this.pending.get(paper.citekey);
+    if (running) return running;
+    const job = ensureLiteratureNote(this.deps.vault, this.deps.metadataCache, paper, this.deps.settings, {
+      showNotice: this.deps.showNotice,
+      sessionNotices: this.deps.sessionNotices
+    }).finally(() => this.pending.delete(paper.citekey));
+    this.pending.set(paper.citekey, job);
+    return job;
+  }
+  async papersByCitekey() {
+    const map = /* @__PURE__ */ new Map();
+    for (const p of await this.deps.papers()) if (p.citekey) map.set(p.citekey, p);
+    return map;
+  }
+  /** Obsidian resolves links case-insensitively; an exact match wins. */
+  lookup(papers, name) {
+    const exact = papers.get(name);
+    if (exact) return exact;
+    const lower = name.toLowerCase();
+    for (const [k, p] of papers) if (k.toLowerCase() === lower) return p;
+    return void 0;
+  }
+};
+
 // src/settings.ts
 var import_obsidian2 = require("obsidian");
 var DEFAULT_SETTINGS = {
@@ -3053,6 +3123,37 @@ var PaperSearchPlugin = class extends import_obsidian3.Plugin {
           await relatedController.refresh(snap.text, snap.cursorOffset, snap.selection, snap.filePath);
         }
       }
+    });
+    const citeLinks = new CiteLinkNotes({
+      papers: async () => {
+        if (this.indexStore.isReady()) await this.indexStore.ensureFresh();
+        else await this.indexStore.load();
+        return this.indexStore.getIndex()?.papers ?? [];
+      },
+      vault: this.app.vault,
+      metadataCache: this.app.metadataCache,
+      settings: this.settings,
+      showNotice: (msg) => new import_obsidian3.Notice(msg),
+      sessionNotices: this.litNoteNotices,
+      openFile: (file) => this.app.workspace.getLeaf().openFile(file)
+    });
+    this.registerEvent(
+      this.app.workspace.on("editor-paste", (evt) => {
+        const text = evt.clipboardData?.getData("text/plain") ?? "";
+        citeLinks.onPaste(text).catch((err) => console.error("Paper search: literature note on paste failed:", err));
+      })
+    );
+    this.app.workspace.onLayoutReady(
+      () => this.registerEvent(
+        this.app.vault.on("create", (file) => {
+          if (!(file instanceof import_obsidian3.TFile)) return;
+          citeLinks.onCreate(file).catch((err) => console.error("Paper search: filling a blank literature note failed:", err));
+        })
+      )
+    );
+    this.registerObsidianProtocolHandler(OPEN_NOTE_ACTION, (params) => {
+      if (!params.citekey) return;
+      citeLinks.openNote(params.citekey).catch((err) => new import_obsidian3.Notice(`Paper search: ${err.message}`));
     });
     this.addSettingTab(new PaperSearchSettingTab(this.app, this));
   }

@@ -315,7 +315,8 @@ In order:
   - If the note's text won, the row shows the note's heading, and `↵` opens the note.
   - `⌘O` always opens the note.
 - **Literature note without its paper in the results:** it stays a note row, with `⌘⇧Z` available.
-- **Paper with no literature note:** `⌘O` opens `obsidian://new?vault=…&file=<citekey>`. The Obsidian plugin's template isn't applied this way. Manual check N-M9 confirms what happens, and the outcome is logged.
+- **Paper with no literature note:** `⌘O` opens `obsidian://semantero-note?vault=…&citekey=<citekey>`; the Obsidian plugin creates the note from its template and opens it (`obsidian://new` made a blank note; changed 5 Nov 2026).
+- **`⌘L` on a paper:** pastes `[[citekey]]`; when that lands in Obsidian, the plugin's paste listener creates the missing literature note, as `@@` does.
 
 ### Config (`config.toml`)
 
@@ -777,7 +778,7 @@ S33–S42 (`SpotlightDonor` and the Spotlight action's logic) were removed with 
 - [ ] **N-M6:** Dragging a row into Mail, the Finder and a browser upload field works.
 - [ ] **N-M7:** `⌘⇧F` reveals the file and `⌘Y` Quick Looks it.
 - [ ] **N-M8:** With no Accessibility permission, you see the toast and the file is copied. Grant permission in the system pane → pasting works without restarting. After a rebuild with the Personal Team signature, the permission is still granted.
-- [ ] **N-M9:** A paper and its literature note show as one row. `⌘O` works; on a paper without a literature note, what `obsidian://new` does is logged.
+- [ ] **N-M9:** A paper and its literature note show as one row. `⌘O` works; on a paper without a literature note the plugin creates it from the template.
 - [ ] **N-M10:** Stop Ollama → keyword results and the ○ status. Restart it → semantic results return.
 - [ ] **N-M11:** Edit a note and wait for one tick → findable with no app action (FSEvents reload). Add a paper in Zotero → findable within B13.
 - [ ] **N-M12:** A note in `exclude` never appears in the panel, even by its exact title.

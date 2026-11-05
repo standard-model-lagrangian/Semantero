@@ -99,14 +99,14 @@ test("R26 action list per kind: paper-with-pdf, paper-no-attachment, snapshot-on
   assert.ok(snap.actions.includes("paste-file"));
 });
 
-test("R26b the paper's literature-note target: existing note opens it, missing note creates it", () => {
+test("R26b the paper's literature-note target: existing note opens it, missing note goes to the plugin, which creates it from the template", () => {
   const e = fixtureEngine();
   const has = e.keyword("stress relaxation", "papers", 3).find((r) => r.id === "P:KEY0001")!;
   assert.strictEqual(has.hasNote, true);
   assert.strictEqual(has.noteUrl, "obsidian://open?vault=Obsidian%20Vault&file=roth2023tunable");
   const without = e.keyword("stiffer gels", "all", 3).find((r) => r.id === "P:KEY0004")!;
   assert.strictEqual(without.hasNote, false);
-  assert.strictEqual(without.noteUrl, "obsidian://new?vault=Obsidian%20Vault&file=wang2024engineered");
+  assert.strictEqual(without.noteUrl, "obsidian://semantero-note?vault=Obsidian%20Vault&citekey=wang2024engineered");
   assert.ok(without.actions.includes("open-note"));
 });
 

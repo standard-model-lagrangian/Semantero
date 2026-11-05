@@ -5,7 +5,7 @@ import { authorsShort, noteCitation, noteWikilink, paperCitation, paperWikilink 
 import type { Corpora } from "./corpora.ts";
 import type { Row } from "./merge.ts";
 import { chooseAttachment, resolveNoteFile, resolvePaperFile } from "./paths.ts";
-import { hitLocation, hitUrl, lastHeading, obsidianNewUrl, obsidianOpenUrl, selectItemUrl } from "./urls.ts";
+import { hitLocation, hitUrl, lastHeading, obsidianLitNoteUrl, obsidianOpenUrl, selectItemUrl } from "./urls.ts";
 import { fileName, folderOf, isoDate, shortDate } from "./util.ts";
 
 /** Everything the UI and the actions need. Swift only renders this and runs actions by id. */
@@ -86,7 +86,7 @@ function paperVM(row: Row, c: Corpora, tokens: string[]): ResultVM {
   const noteUrl = notePath
     ? obsidianOpenUrl(c.vaultName, notePath)
     : paper.citekey && c.vaultName
-      ? obsidianNewUrl(c.vaultName, paper.citekey)
+      ? obsidianLitNoteUrl(c.vaultName, paper.citekey)
       : null;
   const openUrl = noteWon && notePath ? obsidianOpenUrl(c.vaultName, notePath, lastHeading(heading)) : hitUrl(paper, phit);
   const openLabel = noteWon

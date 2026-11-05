@@ -518,3 +518,18 @@ collections and tags; 2-D vs 3-D layouts). What the implementation settled:
   the owner's verdict on the W27 and W44 backtests. A personal `[notes] exclude` in `config.local.toml` replaces the
   default list, so it needs `"Literature maps/**"` added by hand before the map writes into the vault.
 
+### Literature notes for launcher citations (5 Nov 2026)
+
+The launcher's `⌘L` pasted `[[citekey]]` without a literature note, and `⌘O` on a paper without one opened
+`obsidian://new`, which made a blank `<citekey>.md` in Obsidian's default folder (N-M9's "probably not"). Only the
+plugin's own inserts (`@@`, the modal, the related panel) created notes. Now the plugin (`src/citelinks.ts`):
+- **listens to `editor-paste`** and creates the note for every `[[target]]` in the pasted text that is an indexed
+  citekey (case-insensitive, as Obsidian resolves links). This covers `⌘L` and any other `[[citekey]]` pasted into the
+  vault, with no change to the app. Pasting into another app makes no note, as there is no link to resolve.
+- **handles `obsidian://semantero-note?vault=…&citekey=…`**, which the launcher's `⌘O` now opens for a paper without a
+  note: create from the template, then open. A citekey the index lacks opens an existing note, else a notice.
+- **fills a blank note named after a citekey** when one is created (clicking an unresolved `[[citekey]]`); it stays
+  where Obsidian put it. Listening starts once the layout is ready, since `create` fires for every file during load.
+
+Not changed: `⌘⇧↵`/`⌘⌥C` paste or copy a plain-text passage citation (`"…" (Roth et al., 2023, p. 6)`) with no link,
+so no note is made for them; `⌘L` always pastes `[[citekey]]`, not the plugin's `citationFormat`.

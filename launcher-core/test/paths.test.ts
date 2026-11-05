@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert";
 import { chooseAttachment, resolveInside, resolveNoteFile, resolvePaperFile } from "../src/paths.ts";
-import { lastHeading, obsidianNewUrl, obsidianOpenUrl } from "../src/urls.ts";
+import { lastHeading, obsidianLitNoteUrl, obsidianOpenUrl } from "../src/urls.ts";
+import { OPEN_NOTE_ACTION } from "../../obsidian/paper-search/src/citelinks.ts";
 import { fixtureEngine } from "./helpers.ts";
 import type { PaperMetadata } from "../../obsidian/paper-search/src/core/bm25.ts";
 
@@ -58,7 +59,8 @@ test("R20 obsidian open URL encodes spaces, &, #, unicode; strips .md; heading a
     "obsidian://open?vault=My%20Vault&file=Folder%2FNote%20%26%20Caf%C3%A9%20%231");
   assert.strictEqual(obsidianOpenUrl("V", "n.md", "Materials & more"), "obsidian://open?vault=V&file=n%23Materials%20%26%20more");
   assert.strictEqual(obsidianOpenUrl("V", "n.md", undefined), "obsidian://open?vault=V&file=n");
-  assert.strictEqual(obsidianNewUrl("V", "roth2023tunable"), "obsidian://new?vault=V&file=roth2023tunable");
+  assert.ok(obsidianLitNoteUrl("V", "k").startsWith(`obsidian://${OPEN_NOTE_ACTION}?`), "the plugin handles this action");
+  assert.strictEqual(obsidianLitNoteUrl("My Vault", "roth2023&x"), "obsidian://semantero-note?vault=My%20Vault&citekey=roth2023%26x");
   assert.strictEqual(lastHeading("A › B › C"), "C");
   assert.strictEqual(lastHeading(""), undefined);
   assert.strictEqual(lastHeading(undefined), undefined);
