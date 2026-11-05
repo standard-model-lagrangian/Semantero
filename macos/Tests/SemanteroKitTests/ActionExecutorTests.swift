@@ -73,6 +73,14 @@ struct ActionExecutorTests {
         #expect(f.log.all == ["write-string:[[roth2023]]", "hide", "sleep:60", "post-cmd-v"])
     }
 
+    @Test func pasteWikilinkWithoutACitekeyIsAnErrorAndPastesNothing() async {
+        let f = Fakes()
+        let noKey = vm("P:K2", title: "No key", actions: ["paste-wikilink"], wikilink: "")
+        let outcome = await f.executor().run("paste-wikilink", on: noKey)
+        #expect(outcome == .failed("This paper has no citekey. Install Better BibTeX in Zotero."))
+        #expect(f.log.all.isEmpty)
+    }
+
     // S24
     @Test func withoutAccessibilityItCopiesOnlyAndOffersTheSettingsPane() async {
         let f = Fakes()

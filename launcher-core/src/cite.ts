@@ -29,8 +29,9 @@ export function noteCitation(passage: string, title: string, heading: string | u
   return `"${passage}" (note: ${h ? `${title} › ${h}` : title})`;
 }
 
+/** `[[citekey]]`; "" for a paper without one (Better BibTeX missing), which the app reports instead of pasting `[[]]`. */
 export function paperWikilink(citekey: string): string {
-  return `[[${citekey}]]`;
+  return citekey ? `[[${citekey}]]` : "";
 }
 
 export function noteWikilink(path: string): string {

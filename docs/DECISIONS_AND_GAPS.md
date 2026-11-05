@@ -531,5 +531,18 @@ plugin's own inserts (`@@`, the modal, the related panel) created notes. Now the
 - **fills a blank note named after a citekey** when one is created (clicking an unresolved `[[citekey]]`); it stays
   where Obsidian put it. Listening starts once the layout is ready, since `create` fires for every file during load.
 
-Not changed: `⌘⇧↵`/`⌘⌥C` paste or copy a plain-text passage citation (`"…" (Roth et al., 2023, p. 6)`) with no link,
-so no note is made for them; `⌘L` always pastes `[[citekey]]`, not the plugin's `citationFormat`.
+**`@@` vs the launcher, checked side by side.** Same: the ranking (shared core, `semanticText`, 12-character semantic
+threshold), what is inserted (`[[citekey]]` is the plugin's default `citationFormat`) and, now, the literature note.
+Fixed:
+- A paper without a citekey pasted `[[]]` on `⌘L`; it now pastes nothing and says to install Better BibTeX, as `@@` does.
+- `⌘O` with "Create literature notes" off did nothing when the paper had no note; it now says note creation is off.
+
+Still different, on purpose or for later:
+- **New papers:** `@@` and the modal also ask Zotero's local API for papers the index doesn't list yet ("new in
+  Zotero"); the launcher shows only indexed papers. The keyword-only publish makes that gap seconds, not minutes.
+- **Settings the launcher doesn't read:** the plugin's `citationFormat` (`⌘L` always pastes `[[citekey]]`) and
+  `minCharsSemantic` (the launcher uses the default 12). The same with defaults.
+- **"Has a note" (📝)** comes from the notes index, so a note made by `⌘L` shows up to 5 minutes later, and a basename
+  must match the citekey's case; `⌘O` goes through the plugin, which finds it either way.
+- `⌘⇧↵`/`⌘⌥C` paste or copy a plain-text passage citation (`"…" (Roth et al., 2023, p. 6)`) with no link, so no note
+  is made for them.

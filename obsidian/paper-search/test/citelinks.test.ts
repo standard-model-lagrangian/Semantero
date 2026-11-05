@@ -96,6 +96,16 @@ test("CL7 opening a citekey the index does not list opens an existing note, else
   assert.strictEqual(vault.getAbstractFileByPath("Lit/nobody2000.md"), null);
 });
 
+test("CL7b ⌘O with literature notes turned off opens an existing note, else says notes are off", async () => {
+  const { vault, notes, opened, notices } = setup({ literatureNoteFolder: "Lit", createLiteratureNotes: false });
+  await notes.openNote("roth2023tunable");
+  assert.deepStrictEqual(opened, []);
+  assert.match(notices.join("\n"), /turned off/);
+  vault.addFile("Lit/roth2023tunable.md", "mine");
+  await notes.openNote("roth2023tunable");
+  assert.deepStrictEqual(opened, ["Lit/roth2023tunable.md"]);
+});
+
 test("CL8 two pastes of the same citation at once create one note without a notice", async () => {
   const { vault, notes, notices } = setup();
   await Promise.all([notes.onPaste("[[roth2023tunable]]"), notes.onPaste("[[roth2023tunable]]")]);

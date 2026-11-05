@@ -82,7 +82,10 @@ public final class ActionExecutor: Sendable {
         case "paste-passage": return await paste(text: vm.citation)
         case "copy-file": return await copy(file: vm)
         case "copy-passage": return await copy(text: vm.citation, label: "passage")
-        case "paste-wikilink": return await paste(text: vm.wikilink)
+        case "paste-wikilink":
+            // A paper without a citekey has no link (the Obsidian plugin says the same and inserts nothing).
+            guard !vm.wikilink.isEmpty else { return .failed("This paper has no citekey. Install Better BibTeX in Zotero.") }
+            return await paste(text: vm.wikilink)
         case "copy-path":
             guard let path = vm.filePath else { return .failed("No file for this result") }
             return await copy(text: path, label: "path")

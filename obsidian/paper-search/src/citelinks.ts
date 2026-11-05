@@ -79,6 +79,8 @@ export class CiteLinkNotes {
       : findLiteratureNote(this.deps.vault, this.deps.metadataCache, citekey);
     if (file) await this.deps.openFile(file);
     else if (!paper) this.deps.showNotice(`Paper search: no paper with citekey "${citekey}" in the index yet.`);
+    else if (this.deps.settings.createLiteratureNotes === false)
+      this.deps.showNotice(`Paper search: "${citekey}" has no literature note, and creating them is turned off in settings.`);
   }
 
   private ensure(paper: PaperMetadata): Promise<{ file: any | null; created: boolean }> {

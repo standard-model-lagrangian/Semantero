@@ -40,6 +40,7 @@ test("R23 note citation with heading path; lead row cites the title only", () =>
 
 test("R24 wikilinks: [[citekey]] for papers, [[Note name]] for notes (no .md, folder dropped)", () => {
   assert.strictEqual(paperWikilink("roth2023tunable"), "[[roth2023tunable]]");
+  assert.strictEqual(paperWikilink(""), "", "no citekey (Better BibTeX missing): nothing to paste, not [[]]");
   assert.strictEqual(noteWikilink("Reviews/2026-W42.md"), "[[2026-W42]]");
   assert.strictEqual(noteWikilink("Top note.md"), "[[Top note]]");
   const e = fixtureEngine();

@@ -1336,7 +1336,7 @@
     return `"${passage}" (note: ${h ? `${title} \u203A ${h}` : title})`;
   }
   function paperWikilink(citekey) {
-    return `[[${citekey}]]`;
+    return citekey ? `[[${citekey}]]` : "";
   }
   function noteWikilink(path) {
     return `[[${noteName(path)}]]`;
