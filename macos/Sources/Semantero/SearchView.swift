@@ -23,7 +23,7 @@ extension KeyChord {
         case .return: name = "return"
         case .escape: name = "escape"
         case .space: name = "space"
-        case .tab: name = "tab"
+        case .tab, KeyEquivalent("\u{19}"): name = "tab"  // ⇧Tab arrives as backtab (U+0019)
         case .upArrow: name = "up"
         case .downArrow: name = "down"
         default: name = String(press.key.character).lowercased()
@@ -113,6 +113,7 @@ struct SearchView: View {
                 Text("All").tag(Scope.all); Text("Papers").tag(Scope.papers); Text("Notes").tag(Scope.notes)
             }
             .pickerStyle(.segmented).labelsHidden().frame(width: 190)
+            .help("Tab / ⇧Tab or ⌘1–⌘3 to switch")
         }
         .padding(.horizontal, 16).padding(.vertical, 14)
     }
@@ -177,6 +178,8 @@ struct SearchView: View {
         case ("1", true, false, false, false): model.scope = .all; return .handled
         case ("2", true, false, false, false): model.scope = .papers; return .handled
         case ("3", true, false, false, false): model.scope = .notes; return .handled
+        // Tab cycles All → Papers → Notes (⇧Tab backwards) instead of moving focus out of the field.
+        case ("tab", false, let shift, false, false): model.scope = model.scope.cycled(by: shift ? -1 : 1); return .handled
         default: return model.runChord(chord) ? .handled : .ignored
         }
     }

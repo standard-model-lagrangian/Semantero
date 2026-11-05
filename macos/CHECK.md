@@ -1,7 +1,7 @@
 # Semantero: hands-on checks
 
 These are the things only a person at the screen can confirm. The keyboard plumbing (typing, arrows, ↵ / ⌘↵ / ⌘⇧↵,
-⌘K, Esc, ⌘L, ⌘1/⌘2) is already checked automatically by `make app-selftest`. Note anything that fails, with what you
+⌘K, Esc, ⌘L, ⌘1/⌘2, Tab/⇧Tab) is already checked automatically by `make app-selftest`. Note anything that fails, with what you
 saw, in `docs/DECISIONS_AND_GAPS.md` (or just tell Claude).
 
 ## 0. Set up (once, about 5 minutes)

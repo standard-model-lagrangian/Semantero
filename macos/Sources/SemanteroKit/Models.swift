@@ -2,6 +2,12 @@ import Foundation
 
 public enum Scope: String, Codable, Sendable, CaseIterable {
     case all, papers, notes
+
+    /// The scope `step` places along All → Papers → Notes, wrapping (Tab is +1, ⇧Tab −1).
+    public func cycled(by step: Int) -> Scope {
+        let all = Scope.allCases, n = all.count
+        return all[((all.firstIndex(of: self)! + step) % n + n) % n]
+    }
 }
 
 public struct DetailRow: Codable, Sendable, Equatable {

@@ -114,3 +114,14 @@ struct SettingsEffectTests {
         #expect(log.all.last?.query == "organoid")
     }
 }
+
+@Suite("Scope cycling (Tab / ⇧Tab)")
+struct ScopeCycleTests {
+    @Test func tabGoesAllPapersNotesAndWrapsShiftTabGoesBack() {
+        #expect(Scope.all.cycled(by: 1) == .papers)
+        #expect(Scope.papers.cycled(by: 1) == .notes)
+        #expect(Scope.notes.cycled(by: 1) == .all)
+        #expect(Scope.all.cycled(by: -1) == .notes)
+        #expect(Scope.notes.cycled(by: -1) == .papers)
+    }
+}

@@ -110,7 +110,7 @@ Run from the project folder with `.venv/bin/python -m planner …`:
 | `node launcher-core/scripts/eval.ts --vault <dir> [--scope all\|papers\|notes\|compare] [--keyword-only]` | evaluate against `eval/queries.toml` (`expect_note` for notes) |
 | `make app` / `make install-app` | build / install `Semantero.app` (Command Line Tools suffice) |
 | `make bench-app` | spike S1: JavaScriptCore vs Accelerate on your vault |
-| `make app-selftest` | builds the app and drives its real panel with synthetic keys (typing, arrows, ↵/⌘↵/⌘⇧↵, ⌘K, Esc, ⌘L, scopes); prints pass/fail |
+| `make app-selftest` | builds the app and drives its real panel with synthetic keys (typing, arrows, ↵/⌘↵/⌘⇧↵, ⌘K, Esc, ⌘L, scopes by ⌘1–⌘3 and Tab/⇧Tab); prints pass/fail |
 
 ### Obsidian Plugin Tests & Benchmarks
 Run from `obsidian/paper-search`:

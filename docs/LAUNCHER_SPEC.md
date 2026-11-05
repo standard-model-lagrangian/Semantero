@@ -80,7 +80,7 @@ Default hotkey `⌥Space`, configurable in settings:
 - Page or heading, and the file name.
 
 **Scope**
-- `⌘1` All · `⌘2` Papers · `⌘3` Notes. Remembered.
+- `⌘1` All · `⌘2` Papers · `⌘3` Notes, or `Tab` / `⇧Tab` to cycle through them (the search field keeps focus). Remembered.
 - Clicking the segmented control works too.
 
 **Footer**
